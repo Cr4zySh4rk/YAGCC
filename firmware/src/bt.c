@@ -9,8 +9,9 @@
 //
 // Pairing works like PS + Create on a PlayStation controller: hold Star power while plugging in or switching on
 // (or Star power + Plus for 5 s while running) and the guitar forgets every host and becomes discoverable.
-// Bonds use LE legacy pairing, so their keys come from one stored master key (ER): a host paired with several
-// modes keeps working in all of them, and forgetting all hosts is just a new master key.
+// Pairing uses LE Secure Connections with the keys stored in flash, like BTstack's HID demos. Each mode has its
+// own bond list (the bond database is given a mode-specific tag range in the TLV store), so a host paired with
+// several modes keeps a working key for each of them.
 #include "bt.h"
 
 #ifndef YACC_HAS_BT
@@ -24,6 +25,7 @@ bool bt_running(void) { return false; }
 void bt_send_report(const uint8_t *r, uint16_t len) { (void)r; (void)len; }
 void bt_set_usb_active(bool active) { (void)active; }
 int bt_vbus(void) { return -1; }
+uint16_t bt_log_read(uint8_t *out, uint16_t max) { (void)out; (void)max; return 0; }
 
 #else
 
@@ -37,7 +39,7 @@ int bt_vbus(void) { return -1; }
 #include "ble/gatt-service/hids_device.h"
 #include "yagcc.h"                       // GATT database generated from yagcc.gatt
 #include "btstack_tlv.h"
-#include "pico/rand.h"
+#include "ble/le_device_db_tlv.h"
 #include "config.h"
 #include "rgb.h"
 
@@ -50,7 +52,6 @@ void usb_mode_ids(uint16_t *vid, uint16_t *pid, uint16_t *version);
 #define WINDOW_TIMEOUT_MS   60000u       // after a mode change: let an already paired host add the new mode
 #define MAX_REPORT 64
 #define MAX_DESC   600
-#define TAG32(A, B, C, D) (((uint32_t)(A) << 24) | ((uint32_t)(B) << 16) | ((uint32_t)(C) << 8) | (uint32_t)(D))   // as sm.c
 
 static bool s_running;                    // radio initialised
 static volatile bool s_pairing;           // discoverable and accepting a new host
@@ -70,6 +71,19 @@ static uint16_t s_appearance;
 static uint8_t s_adv[31];
 static uint8_t s_adv_len;
 static btstack_packet_callback_registration_t s_hci_cb, s_sm_cb;
+
+// ---------------------------------------------------------------- event log (read over USB by the configurator)
+enum { L_BOOT = 1, L_WORKING, L_ADV, L_CONNECT, L_ENCRYPT, L_DISCONNECT, L_JUSTWORKS, L_PAIRED, L_SUBSCRIBE,
+       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS };
+#define LOG_N 48
+static struct { uint32_t t; uint8_t code, a; uint16_t b; } s_log[LOG_N];
+static uint8_t s_log_head, s_log_count;
+static void blog(uint8_t code, uint8_t a, uint16_t b) {
+    s_log[s_log_head].t = to_ms_since_boot(get_absolute_time());
+    s_log[s_log_head].code = code; s_log[s_log_head].a = a; s_log[s_log_head].b = b;
+    s_log_head = (uint8_t)((s_log_head + 1) % LOG_N);
+    if (s_log_count < LOG_N) s_log_count++;
+}
 
 // ---------------------------------------------------------------- identity of the running mode
 static const char *mode_short(uint8_t m) {
@@ -130,6 +144,7 @@ static void set_adv(bool discoverable) {
     gap_advertisements_set_params(itv, itv, 0 /* connectable undirected */, 1 /* own random address */, null_addr, 0x07, 0x00);
     gap_advertisements_set_data(s_adv_len, s_adv);
     gap_advertisements_enable(1);
+    blog(L_ADV, discoverable, 0);
 }
 
 static uint16_t att_read(hci_con_handle_t con, uint16_t handle, uint16_t offset, uint8_t *buf, uint16_t size) {
@@ -143,19 +158,35 @@ static uint16_t att_read(hci_con_handle_t con, uint16_t handle, uint16_t offset,
     return 0;
 }
 
+// ---------------------------------------------------------------- bonds, one list per mode
+// BTstack's LE device database stores entry i under tag 'BTD' i. Give it a view of the TLV store where that
+// becomes 'BM' <mode> i, so every mode keeps its own bonds.
+static const btstack_tlv_t *s_tlv;
+static void *s_tlv_ctx;
+#define BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'M' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
+static uint32_t map_tag(uint32_t tag) {
+    if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'D')) return BOND_TAG(g_usb_mode, tag & 0xFF);
+    return tag;
+}
+static int mt_get(void *c, uint32_t tag, uint8_t *buf, uint32_t size) { return s_tlv->get_tag(c, map_tag(tag), buf, size); }
+static int mt_store(void *c, uint32_t tag, const uint8_t *d, uint32_t size) { return s_tlv->store_tag(c, map_tag(tag), d, size); }
+static void mt_delete(void *c, uint32_t tag) { s_tlv->delete_tag(c, map_tag(tag)); }
+static const btstack_tlv_t mode_tlv = { mt_get, mt_store, mt_delete };
+
+static void forget_all_modes(void) {
+    if (!s_tlv) return;
+    for (int m = 0; m < NUM_MODES; m++)
+        for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) s_tlv->delete_tag(s_tlv_ctx, BOND_TAG(m, i));
+}
+
 // ---------------------------------------------------------------- pairing
 static void open_pairing(bool forget, uint32_t ms) {   // stack running; its context or under the lock
     if (forget) {
         if (s_con != HCI_CON_HANDLE_INVALID) gap_disconnect(s_con);
-        for (int i = 0; i < le_device_db_max_count(); i++) le_device_db_remove(i);
-        // a new master key makes every key handed out before useless: all old hosts are forgotten
-        sm_key_t er;
-        for (int i = 0; i < 16; i += 4) { uint32_t r = get_rand_32(); memcpy(&er[i], &r, 4); }
-        const btstack_tlv_t *tlv; void *ctx;
-        btstack_tlv_get_instance(&tlv, &ctx);
-        if (tlv) tlv->store_tag(ctx, TAG32('S', 'M', 'E', 'R'), er, 16);
-        sm_set_er(er);
+        for (int i = 0; i < le_device_db_max_count(); i++) le_device_db_remove(i);   // this mode (keeps the cache right)
+        forget_all_modes();
     }
+    blog(L_WINDOW, forget, (uint16_t)(ms / 1000));
     s_pairing = true;
     s_forget = forget;
     s_pair_until = to_ms_since_boot(get_absolute_time()) + ms;
@@ -170,6 +201,7 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
         case BTSTACK_EVENT_STATE:
             if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) break;
             s_powered = true;
+            blog(L_WORKING, g_usb_mode, 0);
             if (s_want_pair) { s_want_pair = false; open_pairing(true, PAIRING_TIMEOUT_MS); }
             else if (s_want_window) { s_want_window = false; open_pairing(false, WINDOW_TIMEOUT_MS); }
             else set_adv(false);
@@ -180,15 +212,17 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             // the spec says the subscription belongs to the bond, so the host expects us to remember it.
             // BTstack's HID service keeps it in RAM only, so treat an encrypted link as subscribed.
             bool v2 = hci_event_packet_get_type(packet) == HCI_EVENT_ENCRYPTION_CHANGE_V2;
+            blog(L_ENCRYPT, v2 ? hci_event_encryption_change_v2_get_encryption_enabled(packet) : hci_event_encryption_change_get_encryption_enabled(packet),
+                 v2 ? hci_event_encryption_change_v2_get_status(packet) : hci_event_encryption_change_get_status(packet));
             uint8_t on = v2 ? hci_event_encryption_change_v2_get_encryption_enabled(packet)
                             : hci_event_encryption_change_get_encryption_enabled(packet);
             hci_con_handle_t h = v2 ? hci_event_encryption_change_v2_get_connection_handle(packet)
                                     : hci_event_encryption_change_get_connection_handle(packet);
             if (on) {
-                // short supervision timeout: when the guitar is switched off the host notices within 2 s and is
+                // short supervision timeout: when the guitar is switched off the host notices within 3 s and is
                 // ready to take the reconnection, instead of holding a dead link for up to 30 s. 7.5-15 ms
                 // interval for low input latency.
-                gap_request_connection_parameter_update(h, 6, 12, 0, 200);
+                gap_request_connection_parameter_update(h, 6, 12, 0, 300);
             }
             if (on && !s_connected) {
                 s_con = h;
@@ -200,21 +234,32 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         }
         case HCI_EVENT_LE_META:
-            if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_CONNECTION_COMPLETE)
+            if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_CONNECTION_COMPLETE) {
                 s_con = hci_subevent_le_connection_complete_get_connection_handle(packet);
+                blog(L_CONNECT, hci_subevent_le_connection_complete_get_status(packet), hci_subevent_le_connection_complete_get_peer_address_type(packet));
+            }
             break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
+            blog(L_DISCONNECT, hci_event_disconnection_complete_get_reason(packet), 0);
             s_con = HCI_CON_HANDLE_INVALID;
             s_connected = false;
             set_adv(s_pairing);
             rgb_set_bt(s_pairing && !s_paused ? RGB_BT_PAIRING : RGB_BT_OFF);
             break;
+        case SM_EVENT_REENCRYPTION_COMPLETE:
+            blog(L_REENCRYPT, sm_event_reencryption_complete_get_status(packet), 0);
+            break;
+        case L2CAP_EVENT_CONNECTION_PARAMETER_UPDATE_RESPONSE:
+            blog(L_PARAMS, (uint8_t)little_endian_read_16(packet, 4), 0);
+            break;
         case SM_EVENT_JUST_WORKS_REQUEST:
+            blog(L_JUSTWORKS, s_pairing, 0);
             // a new host may only bond inside a pairing window; otherwise only known hosts reconnect
             if (s_pairing) sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
             else sm_bonding_decline(sm_event_just_works_request_get_handle(packet));
             break;
         case SM_EVENT_PAIRING_COMPLETE:
+            blog(L_PAIRED, sm_event_pairing_complete_get_status(packet), sm_event_pairing_complete_get_reason(packet));
             if (sm_event_pairing_complete_get_status(packet) == ERROR_CODE_SUCCESS) s_pairing = false;
             break;
         case HCI_EVENT_HIDS_META:
@@ -222,6 +267,7 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                 case HIDS_SUBEVENT_INPUT_REPORT_ENABLE:
                     s_con = hids_subevent_input_report_enable_get_con_handle(packet);
                     s_connected = hids_subevent_input_report_enable_get_enable(packet) != 0;
+                    blog(L_SUBSCRIBE, s_connected, 0);
                     if (s_connected) {
                         s_pairing = false;
                         rgb_set_bt(RGB_BT_CONNECTED);
@@ -247,6 +293,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     if (s_running || (!enabled && !pair)) return;   // radio stays off: no power, no PIO or DMA used
     if (cyw43_arch_init()) return;
     s_running = true;
+    blog(L_BOOT, (uint8_t)(pair | (open_window << 1)), g_usb_mode);
     s_want_pair = pair;
     s_want_window = open_window && !pair;
 
@@ -266,13 +313,14 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     l2cap_init();
     sm_init();
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
-    sm_set_authentication_requirements(SM_AUTHREQ_BONDING);   // legacy pairing: keys derive from ER (see top)
-    // rebuild a returning host's key from ER even if its entry in the bond list can't be matched (hosts that
-    // change their private address); ER is replaced when pairing forgets everyone, so old hosts still fail
-    sm_allow_ltk_reconstruction_without_le_device_db_entry(1);
-    // ask a connecting host to encrypt straight away (HID over GATT security request): a bonded host
-    // re-encrypts with its stored key, so input starts flowing without waiting for the host to try
-    sm_set_request_security(true);
+    sm_set_authentication_requirements(SM_AUTHREQ_SECURE_CONNECTION | SM_AUTHREQ_BONDING);
+    // per-mode bond list (see above); bonds from the older firmware ('BTD' tags, legacy keys) are dropped
+    btstack_tlv_get_instance(&s_tlv, &s_tlv_ctx);
+    if (s_tlv) {
+        for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++)
+            s_tlv->delete_tag(s_tlv_ctx, (((uint32_t)'B') << 24) | (((uint32_t)'T') << 16) | (((uint32_t)'D') << 8) | (uint32_t)i);
+        le_device_db_tlv_configure(&mode_tlv, s_tlv_ctx);
+    }
     att_server_init(profile_data, att_read, NULL);
     device_information_service_server_init();
     device_information_service_server_set_manufacturer_name("YAGCC");
@@ -330,6 +378,7 @@ void bt_set_usb_active(bool active) {
     async_context_t *ctx = cyw43_arch_async_context();
     async_context_acquire_lock_blocking(ctx);
     s_paused = active;
+    blog(L_PAUSE, active, 0);
     if (active) {
         // plugged into a PC or console: stop advertising and drop any wireless host, so nothing gets input twice
         gap_advertisements_enable(0);
@@ -347,6 +396,17 @@ int bt_vbus(void) {
     if (s_running) return cyw43_arch_gpio_get(CYW43_WL_GPIO_VBUS_PIN) ? 1 : 0;
 #endif
     return -1;
+}
+
+uint16_t bt_log_read(uint8_t *out, uint16_t max) {
+    uint16_t n = 0;
+    uint8_t first = (uint8_t)((s_log_head + LOG_N - s_log_count) % LOG_N);
+    for (uint8_t k = 0; k < s_log_count && n + 8 <= max; k++) {
+        uint8_t i = (uint8_t)((first + k) % LOG_N);
+        memcpy(&out[n], &s_log[i].t, 4); out[n + 4] = s_log[i].code; out[n + 5] = s_log[i].a;
+        memcpy(&out[n + 6], &s_log[i].b, 2); n += 8;
+    }
+    return n;
 }
 
 #endif

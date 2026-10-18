@@ -124,8 +124,9 @@ The **Hardware** page in the web app describes each board, the LED types, whammy
 * **Switch modes over Bluetooth**: hold **Star power + a fret for 3 s** to switch to the mode that fret selects at plug-in (the shortcuts on the Modes tab). The guitar saves the mode and restarts into it within a second or two, then stays discoverable for a minute so an already paired host can add that mode (pair each mode once; after that it reconnects by itself).
 * Otherwise it only lets hosts it is paired with reconnect, and it doesn't advertise as discoverable.
 * **USB turns Bluetooth off**: as soon as a PC or console talks to the guitar over USB, it drops any Bluetooth connection and stops advertising, so a cable and a wireless link never both feed a game. Unplug it (or use a charger) and Bluetooth comes back within a couple of seconds and the paired host reconnects. For the first 1.5 s after power-on it waits to see whether a USB host shows up.
-* Reconnection: the guitar asks a returning host to re-encrypt right away and requests a 2 s link timeout (and a 7.5–15 ms connection interval), so after a power cycle the host notices quickly and reconnects. It stays off in the PS4 / Xbox One modes only when the USB host port is set up, since both need the same hardware.
-* Pairings are stored in the two flash sectors below the settings sector.
+* Reconnection: after the link is encrypted the guitar requests a 3 s link timeout (and a 7.5–15 ms connection interval), so after a power cycle the host notices quickly and reconnects. It stays off in the PS4 / Xbox One modes only when the USB host port is set up, since both need the same hardware.
+* Pairing uses **LE Secure Connections** with the keys stored in flash (the two sectors below the settings sector), like BTstack's own HID examples; every mode keeps its own list of paired hosts.
+* **Bluetooth log**: the Setup page's Bluetooth step can show (and copy) the last 48 Bluetooth events since the guitar was switched on: advertising, connections, encryption, pairing results and disconnect reasons. After a problem, plug the guitar in without switching it off and read the log.
 
 ## Scope and roadmap
 

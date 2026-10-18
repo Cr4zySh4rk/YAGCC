@@ -386,8 +386,18 @@ function renderStep() {
       <div class="opt first"><div><h3>Bluetooth</h3><p class="dim">${sup ? 'To pair a new phone, PC or tablet, hold <b>Star power</b> while plugging in or switching on (or hold <b>Star power + Plus</b> for 5 s). The frets double-blink blue until it connects. It shows up as <b>YAGCC Guitar</b>.' : why}</p></div>
         <label class="switch"><input type="checkbox" id="btSw" ${state.cfg.btEnabled ? 'checked' : ''} ${sup ? '' : 'disabled'}><i></i></label></div>
       ${sup ? '<div class="notice warn"><b>Experimental:</b> over Bluetooth the guitar shows up as the same device as over USB in its current mode (XInput and Xbox modes use the standard gamepad). Hold <b>Star power + a fret</b> for 3 s to switch modes wirelessly. Used whenever no USB host is connected. Not yet tested on hardware.</div>' : ''}
+      ${sup ? '<div class="opt"><div><h3>Bluetooth log</h3><p class="dim">What happened over Bluetooth since the guitar was switched on. Plug it in without switching it off to read it after a problem.</p></div><button class="btn small" id="btLogBtn">Show</button></div><pre class="btlog" id="btLog" hidden></pre>' : ''}
       ${nav('<button class="btn primary" id="bSkip">Continue</button>')}`;
     wireNav();
+    $('#btLogBtn')?.addEventListener('click', async () => {
+      const pre = $('#btLog');
+      try {
+        const lines = await state.dev.getBtLog();
+        pre.textContent = lines.length ? lines.join('\n') : 'No Bluetooth events yet (needs firmware 0.14 or newer, with Bluetooth on).';
+      } catch { pre.textContent = 'This firmware has no Bluetooth log. Update to 0.14 or newer.'; }
+      pre.hidden = false;
+      try { await navigator.clipboard.writeText(pre.textContent); toast('Bluetooth log copied', 'ok'); } catch { /* clipboard blocked */ }
+    });
     $('#btSw').addEventListener('change', (e) => { state.cfg.btEnabled = e.target.checked; pushCfg(); });
   } else if (step.kind === 'tilt') {
     const renderTilt = () => {

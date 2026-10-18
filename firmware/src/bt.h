@@ -23,4 +23,6 @@ void bt_send_report(const uint8_t *report, uint16_t len);
 void bt_set_usb_active(bool active);
 // Pico W / Pico 2 W read USB power through the radio chip: 1 / 0, or -1 when unknown
 int bt_vbus(void);
+// Bluetooth event log (last 48 events, 8 bytes each: u32 ms, u8 code, u8 a, u16 b), oldest first
+uint16_t bt_log_read(uint8_t *out, uint16_t max);
 #endif

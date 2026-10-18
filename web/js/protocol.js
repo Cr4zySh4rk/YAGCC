@@ -4,7 +4,7 @@ export const PIDS = [0x0001, 0x0002, 0x0003];
 
 export const VREQ = {
   INFO: 0x30, STATUS: 0x31, GETCFG: 0x32, SETCFG: 0x33,
-  SAVE: 0x34, DEFAULTS: 0x35, REBOOT: 0x36, SETMODE: 0x37, LEDTEST: 0x38,
+  SAVE: 0x34, DEFAULTS: 0x35, REBOOT: 0x36, SETMODE: 0x37, LEDTEST: 0x38, BTLOG: 0x39,
 };
 
 export const FUNCS = ['green', 'red', 'yellow', 'blue', 'orange', 'strumUp', 'strumDown', 'star', 'plus'];
@@ -193,6 +193,32 @@ export function serializeConfig(c) {
   dv.setUint8(73, c.hostPin ?? PIN_NONE);
   dv.setUint32(92, crc32(new Uint8Array(buf, 0, 92)), true);
   return buf;
+}
+
+// Bluetooth event log (firmware 0.14+): 8 byte records, oldest first
+const BT_EVENTS = {
+  1: (a, b) => `radio on${a & 1 ? ', pairing requested' : ''}${a & 2 ? ', after a mode change' : ''} (mode ${b})`,
+  2: () => 'Bluetooth ready',
+  3: (a) => `advertising${a ? ' (discoverable)' : ' (paired hosts only)'}`,
+  4: (a, b) => (a === 0 ? `host connected (address type ${b})` : `connection failed, status 0x${a.toString(16)}`),
+  5: (a, b) => (b === 0 && a ? 'link encrypted' : `encryption ${a ? 'on' : 'failed'}, status 0x${b.toString(16)}`),
+  6: (a) => `disconnected, reason 0x${a.toString(16)}`,
+  7: (a) => `pairing request ${a ? 'accepted' : 'declined (not in pairing mode)'}`,
+  8: (a, b) => (a === 0 ? 'paired' : `pairing failed, status 0x${a.toString(16)}, reason 0x${b.toString(16)}`),
+  9: (a) => (a ? 'host subscribed to input' : 'host unsubscribed'),
+  10: (a) => (a ? 'USB host present: Bluetooth paused' : 'no USB host: Bluetooth resumed'),
+  11: (a, b) => `pairing window open for ${b} s${a ? ', all hosts forgotten' : ''}`,
+  12: (a) => (a === 0 ? 'reconnected with stored key' : `stored key rejected, status 0x${a.toString(16)}`),
+  13: (a) => `connection parameters ${a === 0 ? 'accepted' : 'rejected'} by host`,
+};
+export function parseBtLog(dv) {
+  const out = [];
+  for (let o = 0; o + 8 <= dv.byteLength; o += 8) {
+    const t = dv.getUint32(o, true), code = dv.getUint8(o + 4), a = dv.getUint8(o + 5), b = dv.getUint16(o + 6, true);
+    const f = BT_EVENTS[code];
+    out.push(`${(t / 1000).toFixed(2).padStart(8)} s  ${f ? f(a, b) : `event ${code} ${a} ${b}`}`);
+  }
+  return out;
 }
 
 export function parseInfo(dv) {
