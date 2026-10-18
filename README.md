@@ -71,6 +71,8 @@ This is ported from GP2040-CE's PS4 and Xbox One drivers but **has not yet been 
 
 **Live 3D guitar.** The Setup, Tune and Lights pages show a 3D Les Paul (blue-purple front plate, black trim) that copies the real guitar as you play it: frets press in and light up in their LED colours, the strum bar rocks up and down, the whammy bar dips as far as you push it, Star power and Plus light up, and the guitar lifts its neck when the tilt sensor fires. Drag to turn it, double-click to reset. It loads only when a page with the guitar is opened. If the browser has no hardware graphics acceleration, the flat drawing is shown instead (add `?2d` to the address to force it).
 
+**Firmware updates.** When a guitar connects, the configurator compares its firmware version with the latest one on the site. If the guitar is older, a banner offers the update: it opens the Flash page with your board already picked, and the guitar can restart itself into update mode (no BOOTSEL button needed), so you only drop the new file on the drive that appears. Settings are kept.
+
 See the **Compatibility** page in the web app for a game-by-game / console-by-console table with honest status labels (Supported, Experimental, Planned).
 
 ## Wiring
@@ -159,7 +161,10 @@ cmake --build build        # build/yacc.uf2 (published as yagcc-<board>.uf2) and
 
 ```bash
 node tests/detect.test.mjs
+node tests/firmware_version.test.mjs   # web/firmware.json must match firmware/CMakeLists.txt
 ```
+
+When you bump `YACC_VERSION_MINOR`, update `web/firmware.json` too: the configurator compares a connected guitar's version with it and offers an update when the guitar is older.
 
 ### Run the site locally
 

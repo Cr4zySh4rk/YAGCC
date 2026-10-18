@@ -26,6 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: node tests/detect.test.mjs
+      - run: node tests/firmware_version.test.mjs
 
   firmware:
     runs-on: ubuntu-latest

@@ -98,13 +98,43 @@ function updateViewer(v, s) {
   }
 }
 
+// ------------------------------------------------------------------ firmware updates
+// web/firmware.json holds the version the site ships (CI writes it from firmware/CMakeLists.txt)
+const BOARD_KEYS = { 0: 'pico', 1: 'pico_w', 2: 'pico2', 3: 'pico2_w', 4: 'pico_clone', 5: 'waveshare_rp2040_zero',
+  6: 'waveshare_rp2040_one', 7: 'sparkfun_promicro', 8: 'adafruit_kb2040' };
+let latestFw = null;
+const fwLatest = () => (latestFw ||= fetch('firmware.json?v=dev', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+const fwOlder = (i, l) => i.major < l.major || (i.major === l.major && i.minor < l.minor);
+
+async function checkFirmware() {
+  const banner = $('#fwBanner');
+  const info = state.info;
+  const latest = await fwLatest();
+  state.fwOutdated = !!(info && latest && fwOlder(info, latest));
+  updatePill();
+  if (!state.fwOutdated || store.get('yacc.fwSkip') === `${latest.major}.${latest.minor}`) { banner.hidden = true; return; }
+  banner.innerHTML = `<div class="fw-inner"><span><b>Firmware update available.</b> Your guitar runs v${info.major}.${info.minor}; v${latest.major}.${latest.minor} is out with fixes and new features.</span>
+    <span class="row"><button class="btn primary small" id="fwGo">Update</button><button class="btn small" id="fwLater">Not now</button></span></div>`;
+  banner.hidden = false;
+  $('#fwGo').onclick = () => goUpdate();
+  $('#fwLater').onclick = () => { store.set('yacc.fwSkip', `${latest.major}.${latest.minor}`); banner.hidden = true; };
+}
+
+function goUpdate() {
+  const key = BOARD_KEYS[state.info?.board];
+  const sel = $('#boardSel');
+  if (key && sel) { sel.value = key; sel.dispatchEvent(new Event('change')); }
+  showView('flash');
+  setTimeout(() => $('#install')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+}
+
 // ------------------------------------------------------------------ connection
 function updatePill() {
   const pill = $('#connPill');
   if (state.dev && state.info) {
     pill.classList.add('on');
     const m = MODES.find((x) => x.id === state.info.mode);
-    $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? 'Board'}</span><span class="seg-item">${state.info.setupSession ? 'Setup' : m ? m.short : '?'}</span><span class="seg-item mono">v${state.info.major}.${state.info.minor}</span>`;
+    $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? 'Board'}</span><span class="seg-item">${state.info.setupSession ? 'Setup' : m ? m.short : '?'}</span><span class="seg-item mono${state.fwOutdated ? ' old' : ''}" title="${state.fwOutdated ? 'A newer firmware is available' : 'Firmware version'}">v${state.info.major}.${state.info.minor}</span>`;
   } else {
     pill.classList.remove('on');
     $('#connText').textContent = state.connecting ? 'Connecting…' : 'Not connected';
@@ -138,6 +168,7 @@ async function connect(device, { navigate = false } = {}) {
     buildUi();
     updatePill();
     toast('Controller connected', 'ok');
+    checkFirmware();
     if (navigate) showView('setup');
   } catch (e) {
     state.dev = null;
@@ -148,7 +179,8 @@ async function connect(device, { navigate = false } = {}) {
 }
 
 function onLost() {
-  state.dev = null; state.info = null;
+  state.dev = null; state.info = null; state.fwOutdated = false;
+  $('#fwBanner').hidden = true;
   setTimeout(scanHid, 1500);
   updatePill();
   toast('Controller disconnected');
@@ -773,6 +805,14 @@ function initFlash() {
     $('#directNuke').onclick = () => directFlash(nk, `yagcc-nuke-${b.arch}.uf2`);
   };
   sel.onchange = apply; apply();
+  // a connected guitar can jump into the bootloader itself (same as Star power + Plus at plug-in)
+  const refreshBootsel = () => { const on = !!state.dev; $('#toBootsel').hidden = !on; $('#bootselNote').hidden = !on; };
+  $('#toBootsel').onclick = async () => {
+    try { await state.dev.reboot(true); toast('Restarting into update mode. Copy the firmware to the drive that appears.', 'ok'); }
+    catch (e) { toast('Could not restart it: ' + e.message, 'bad'); }
+  };
+  setInterval(refreshBootsel, 1000); refreshBootsel();
+
   if (!window.showDirectoryPicker) { $('#directFw').disabled = true; $('#directNuke').disabled = true; $('#directFw').title = 'Needs Chrome or Edge'; }
   if (!webusbSupported()) {
     const w = $('#browserWarn');

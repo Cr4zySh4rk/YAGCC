@@ -397,3 +397,9 @@ canvas.guitar3d.grabbing { cursor: grabbing; }
 .stage.compact .guitar-view.is-3d::after { display: none; }
 @keyframes g3d-in { from { opacity: 0; } to { opacity: 1; } }
 pre.btlog { margin: 10px 0 0; padding: 12px 14px; max-height: 260px; overflow: auto; background: var(--ink, #06080e); border: 1px solid var(--line); border-radius: var(--r); font: 12px/1.5 var(--mono); color: var(--dim); white-space: pre; }
+/* firmware update banner */
+.fw-banner { border-bottom: 1px solid rgba(154,77,255,.35); background: linear-gradient(90deg, rgba(47,123,255,.14), rgba(154,77,255,.14)); }
+.fw-inner { max-width: 1200px; margin: 0 auto; padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; font-size: 15px; color: var(--text, #e8ecf6); }
+.fw-inner .row { display: flex; gap: 8px; }
+.seg-item.old { color: var(--warn); }
+.seg-item.old::after { content: " ↑"; }

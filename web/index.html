@@ -35,6 +35,7 @@
     <div class="conn" id="connPill" role="status"><span class="led"></span><span id="connText">Not connected</span></div>
   </div>
 </header>
+<div class="fw-banner" id="fwBanner" hidden role="status"></div>
 
 <main>
   <!-- ================= FLASH ================= -->
@@ -62,6 +63,8 @@
       <li>
         <h3>Enter bootloader mode</h3>
         <p class="dim">Unplug the board, hold <b>BOOTSEL</b>, plug it back in and let go. A drive called <code>RPI-RP2</code> or <code>RP2350</code> appears.</p>
+        <p class="dim small" id="bootselNote" hidden>Already running YAGCC? It can restart itself into this mode. Or hold <b>Star power + Plus</b> while plugging it in.</p>
+        <button class="btn small" id="toBootsel" hidden>Restart the guitar into update mode</button>
       </li>
       <li>
         <h3>Copy the firmware</h3>
