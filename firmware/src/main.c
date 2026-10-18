@@ -505,8 +505,10 @@ int main(void) {
             vbus = gpio_get(PICO_VBUS_PIN);            // running from the battery alone: no sweep
 #endif
             if (bt_vbus() >= 0) vbus = bt_vbus() == 1;  // Pico W / Pico 2 W: read through the radio chip once it's on
-            // a Bluetooth host counts as a host too: no sweep while one is connected
-            bool bt_host = bt_state() == BT_STATE_CONNECTED;
+            // USB host present (or the first 1.5 s after power-on, while a PC would still be enumerating us):
+            // Bluetooth stays quiet so a cable and a wireless link never both feed the same game
+            bt_set_usb_active(mounted || now < 1500000 || (host_lost_at && now - host_lost_at < 1500000));
+            bool bt_host = bt_state() == BT_STATE_CONNECTED;   // a Bluetooth host counts too: no sweep
             rgb_set_charging(!mounted && !bt_host && vbus && host_lost_at && now - host_lost_at > 3000000);
         }
         rgb_task();

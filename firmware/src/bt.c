@@ -22,6 +22,7 @@ void bt_start_pairing(void) {}
 uint8_t bt_state(void) { return BT_STATE_OFF; }
 bool bt_running(void) { return false; }
 void bt_send_report(const uint8_t *r, uint16_t len) { (void)r; (void)len; }
+void bt_set_usb_active(bool active) { (void)active; }
 int bt_vbus(void) { return -1; }
 
 #else
@@ -57,6 +58,7 @@ static volatile bool s_forget;            // this pairing window started by forg
 static volatile bool s_connected;         // host subscribed to input reports
 static volatile bool s_want_pair, s_want_window;
 static volatile bool s_powered;
+static volatile bool s_paused;           // a USB host is using the guitar: Bluetooth stays quiet
 static uint32_t s_pair_until;
 static hci_con_handle_t s_con = HCI_CON_HANDLE_INVALID;
 static uint8_t s_report[MAX_REPORT];
@@ -121,6 +123,7 @@ static void build_adv(bool discoverable) {
 
 static void set_adv(bool discoverable) {
     bd_addr_t null_addr = {0};
+    if (s_paused) { gap_advertisements_enable(0); return; }
     build_adv(discoverable);
     gap_advertisements_enable(0);
     uint16_t itv = discoverable ? 0x0030 : 0x00A0;  // 30 ms while pairing, 100 ms waiting for a known host
@@ -157,7 +160,7 @@ static void open_pairing(bool forget, uint32_t ms) {   // stack running; its con
     s_forget = forget;
     s_pair_until = to_ms_since_boot(get_absolute_time()) + ms;
     if (s_con == HCI_CON_HANDLE_INVALID) set_adv(true);
-    rgb_set_bt(RGB_BT_PAIRING);
+    if (!s_paused) rgb_set_bt(RGB_BT_PAIRING);
 }
 
 static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint16_t size) {
@@ -181,6 +184,12 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                             : hci_event_encryption_change_get_encryption_enabled(packet);
             hci_con_handle_t h = v2 ? hci_event_encryption_change_v2_get_connection_handle(packet)
                                     : hci_event_encryption_change_get_connection_handle(packet);
+            if (on) {
+                // short supervision timeout: when the guitar is switched off the host notices within 2 s and is
+                // ready to take the reconnection, instead of holding a dead link for up to 30 s. 7.5-15 ms
+                // interval for low input latency.
+                gap_request_connection_parameter_update(h, 6, 12, 0, 200);
+            }
             if (on && !s_connected) {
                 s_con = h;
                 s_connected = true;
@@ -190,11 +199,15 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             }
             break;
         }
+        case HCI_EVENT_LE_META:
+            if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_CONNECTION_COMPLETE)
+                s_con = hci_subevent_le_connection_complete_get_connection_handle(packet);
+            break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
             s_con = HCI_CON_HANDLE_INVALID;
             s_connected = false;
             set_adv(s_pairing);
-            rgb_set_bt(s_pairing ? RGB_BT_PAIRING : RGB_BT_OFF);
+            rgb_set_bt(s_pairing && !s_paused ? RGB_BT_PAIRING : RGB_BT_OFF);
             break;
         case SM_EVENT_JUST_WORKS_REQUEST:
             // a new host may only bond inside a pairing window; otherwise only known hosts reconnect
@@ -257,6 +270,9 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     // rebuild a returning host's key from ER even if its entry in the bond list can't be matched (hosts that
     // change their private address); ER is replaced when pairing forgets everyone, so old hosts still fail
     sm_allow_ltk_reconstruction_without_le_device_db_entry(1);
+    // ask a connecting host to encrypt straight away (HID over GATT security request): a bonded host
+    // re-encrypts with its stored key, so input starts flowing without waiting for the host to try
+    sm_set_request_security(true);
     att_server_init(profile_data, att_read, NULL);
     device_information_service_server_init();
     device_information_service_server_set_manufacturer_name("YAGCC");
@@ -306,6 +322,23 @@ void bt_send_report(const uint8_t *r, uint16_t len) {
     memcpy(s_report, r, len);
     s_report_len = len;
     if (s_connected && s_con != HCI_CON_HANDLE_INVALID) hids_device_request_can_send_now_event(s_con);
+    async_context_release_lock(ctx);
+}
+
+void bt_set_usb_active(bool active) {
+    if (!s_running || active == s_paused) return;
+    async_context_t *ctx = cyw43_arch_async_context();
+    async_context_acquire_lock_blocking(ctx);
+    s_paused = active;
+    if (active) {
+        // plugged into a PC or console: stop advertising and drop any wireless host, so nothing gets input twice
+        gap_advertisements_enable(0);
+        if (s_con != HCI_CON_HANDLE_INVALID) gap_disconnect(s_con);
+        rgb_set_bt(RGB_BT_OFF);
+    } else if (s_powered) {
+        set_adv(s_pairing);                    // unplugged again: back to waiting for the paired host
+        if (s_pairing) rgb_set_bt(RGB_BT_PAIRING);
+    }
     async_context_release_lock(ctx);
 }
 
