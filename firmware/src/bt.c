@@ -376,6 +376,15 @@ static void get_report(hci_con_handle_t con, hid_report_type_t type, uint16_t id
     if (type == HID_REPORT_TYPE_INPUT) memcpy(out, s_report, s_report_len < max ? s_report_len : max);
 }
 
+// A notification carries at most MTU - 3 bytes. Until the host exchanges a bigger MTU (Windows does that
+// only after re-encrypting, while the subscription is already restored), it is 23: 20 bytes. BTstack's
+// att_server_notify copies MTU - 3 bytes of a longer value but still sends a PDU of the full length, with
+// junk at the end and bigger than the MTU, and Windows drops the link for it. That's why HID mode (7 byte
+// report) reconnected and PS3 (27), PS4 (63) didn't. Hold a report back until it fits.
+static bool report_fits(void) {
+    return s_con != HCI_CON_HANDLE_INVALID && (uint16_t)(s_report_len + 3) <= att_server_get_mtu(s_con);
+}
+
 // ---------------------------------------------------------------- pairing
 static void open_pairing(bool forget, uint32_t ms) {   // stack running; its context or under the lock
     if (forget) {
@@ -462,6 +471,8 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         case ATT_EVENT_MTU_EXCHANGE_COMPLETE:
             blog(L_MTU, 0, att_event_mtu_exchange_complete_get_MTU(packet));
+            // a report held back for the default 23 byte MTU can go now
+            if (s_connected && s_con != HCI_CON_HANDLE_INVALID && s_report_len) hids_device_request_can_send_now_event(s_con);
             break;
         case SM_EVENT_JUST_WORKS_REQUEST:
             blog(L_JUSTWORKS, s_pairing, 0);
@@ -491,7 +502,7 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                     }
                     break;
                 case HIDS_SUBEVENT_CAN_SEND_NOW:
-                    if (s_con != HCI_CON_HANDLE_INVALID && s_report_len)
+                    if (s_con != HCI_CON_HANDLE_INVALID && s_report_len && report_fits())
                         hids_device_send_input_report(s_con, s_report, s_report_len);
                     break;
                 default: break;
