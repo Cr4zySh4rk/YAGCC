@@ -49,7 +49,7 @@ bool config_validate(const yacc_config_t *c) {
     if (c->host_dp_pin != PIN_NONE && c->host_dp_pin + 1 >= NUM_DIGITAL_PINS) return false;
     for (int i = 0; i < NUM_FRETS; i++) if (c->led_map[i] >= MAX_LEDS) return false;
     if (c->no_fret_leds > 1 || c->strum_leds > MAX_STRUM_LEDS) return false;
-    for (int i = 0; i < c->strum_leds; i++) if (c->strum_map[i] >= MAX_LEDS) return false;
+    for (int i = 0; i < c->strum_leds; i++) if (strum_led_pos(c, i) >= MAX_LEDS) return false;
     return true;
 }
 

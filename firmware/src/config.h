@@ -64,8 +64,8 @@ enum {
 #define YACC_CFG_V3_SIZE 64
 
 #define NUM_LEDS 5          // fret LEDs
-#define MAX_STRUM_LEDS 4    // strum bar LEDs (e.g. one per side, or the four corners)
-#define MAX_LEDS (NUM_LEDS + MAX_STRUM_LEDS)   // longest chain: positions 0..8
+#define MAX_STRUM_LEDS 8    // strum bar LEDs (one per side, the four corners, or four along each side)
+#define MAX_LEDS (NUM_LEDS + MAX_STRUM_LEDS)   // longest chain: positions 0..12
 // what a strum LED reacts to (2 bits per LED in strum_roles)
 enum { STRUM_ROLE_BOTH = 0, STRUM_ROLE_UP = 1, STRUM_ROLE_DOWN = 2 };
 // What the fret LEDs do
@@ -123,16 +123,24 @@ typedef struct __attribute__((packed)) {
     // LED layout (bytes that used to be reserved, so zero = old behaviour: five fret LEDs, no strum LEDs)
     uint8_t  no_fret_leds;        // 74      1 = the chain has no fret LEDs (strum LEDs only)
     uint8_t  strum_leds;          // 75      number of strum bar LEDs, 0..MAX_STRUM_LEDS
-    uint8_t  strum_map[MAX_STRUM_LEDS]; // 76..79 position in the chain of each strum LED
+    uint8_t  strum_map[4];        // 76..79  position in the chain of strum LEDs 1..4
     uint8_t  strum_color[3];      // 80..82  R,G,B of the strum LEDs (0,0,0 = white)
-    uint8_t  strum_roles;         // 83      STRUM_ROLE_* per strum LED, 2 bits each (LED i at bits 2i..2i+1)
-    uint8_t  reserved[8];         // 84..91
+    uint8_t  strum_roles;         // 83      STRUM_ROLE_* of strum LEDs 1..4, 2 bits each (LED i at bits 2i..2i+1)
+    uint8_t  strum_map2[4];       // 84..87  position in the chain of strum LEDs 5..8 (v0.26)
+    uint8_t  strum_roles2;        // 88      roles of strum LEDs 5..8
+    uint8_t  reserved[3];         // 89..91
     uint32_t crc;                 // 92      crc32 of bytes 0..91
 } yacc_config_t;
 
 _Static_assert(sizeof(yacc_config_t) == 96, "config size");
 
 extern yacc_config_t g_cfg;
+
+// strum LED i (0..MAX_STRUM_LEDS-1): chain position and role, across the two halves of the config
+static inline uint8_t strum_led_pos(const yacc_config_t *c, int i) { return i < 4 ? c->strum_map[i] : c->strum_map2[i - 4]; }
+static inline uint8_t strum_led_role(const yacc_config_t *c, int i) {
+    return (uint8_t)(((i < 4 ? c->strum_roles : c->strum_roles2) >> (2 * (i & 3))) & 3);
+}
 
 void config_defaults(yacc_config_t *c);
 void config_load(void);

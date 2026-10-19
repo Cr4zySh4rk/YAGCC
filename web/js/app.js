@@ -356,7 +356,7 @@ function renderStep() {
       const used = new Set(assignedPins());
       const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p) || p === c.rgbPin);
       card.innerHTML = head + `
-        <div class="opt first"><div><h3>Addressable LEDs</h3><p class="dim">WS2812, SK6812 or APA102 LEDs on one chain: one under each fret, and optionally on the strum bar (one per side, or the four corners).</p></div>
+        <div class="opt first"><div><h3>Addressable LEDs</h3><p class="dim">WS2812, SK6812 or APA102 LEDs on one chain: one under each fret, and optionally up to eight on the strum bar.</p></div>
           <label class="switch"><input type="checkbox" id="rgbSw" ${c.rgbEnabled ? 'checked' : ''}><i></i></label></div>
         ${c.rgbEnabled ? `${ledLayoutControls(c)}
           <div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input.</p></div>
@@ -687,7 +687,7 @@ function updateLedPreview(s) {
 }
 
 // LED layout controls (setup wizard and Lights page): fret LEDs on / off, how many strum LEDs, wiring order
-const STRUM_COUNTS = ['None', '1', '2 (one per side)', '3', '4 (the four corners)'];
+const STRUM_COUNTS = ['None', '1', '2 (1 per side)', '3', '4 (corners)', '5', '6', '7', '8 (4 per side)'];
 function ledLayoutControls(c, pfx = 'lay') {
   const l = ledLayout(c);
   return `<div class="opt"><div><h3>Fret LEDs</h3><p class="dim">One LED under each of the five frets.</p></div>
@@ -770,10 +770,20 @@ function buildLights() {
     wireLedLayout(c, () => { drawLayout(); live(); }, 'lt');
     const n = c.strumLeds || 0;
     $('#strumOpts').innerHTML = n ? `<div class="col-row"><span>Strum LED colour</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>
+      ${n > 1 ? `<div class="opt"><div><h3>Quick setup</h3><p class="dim">What the strum LEDs light up on. Fine-tune each one below.</p></div>
+        <span class="row"><button class="btn small" data-rp="both">All: up and down</button><button class="btn small" data-rp="half">First half up, second half down</button><button class="btn small" data-rp="alt">Alternate up / down</button></span></div>` : ''}
       ${[...Array(n).keys()].map((k) => `<div class="opt"><div><h3>Strum LED ${k + 1}</h3><p class="dim">Lights up on</p></div>
         <select data-role="${k}">${STRUM_ROLES.map((r) => `<option value="${r.id}" ${c.strumRoles[k] === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}</select></div>`).join('')}` : '';
     $('#strumCol')?.addEventListener('input', (e) => { c.strumColor = e.target.value; $('#strumHex').textContent = c.strumColor.toUpperCase(); live(); });
     $('#strumOpts').onchange = (e) => { const k = e.target.dataset.role; if (k !== undefined) { c.strumRoles[+k] = +e.target.value; live(); } };
+    // presets, in chain order of the strum LEDs (so "first half" means the first ones along the wire)
+    $('#strumOpts').onclick = (e) => {
+      const p = e.target.closest('[data-rp]')?.dataset.rp;
+      if (!p) return;
+      const order = [...Array(n).keys()].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
+      order.forEach((k, j) => { c.strumRoles[k] = p === 'both' ? 0 : p === 'half' ? (j < Math.ceil(n / 2) ? 1 : 2) : (j % 2 ? 2 : 1); });
+      drawLayout(); live();
+    };
   };
   drawLayout();
   $('#saveLights').onclick = async () => { await saveToController(); $('#lightsState').textContent = 'Saved to the controller.'; };

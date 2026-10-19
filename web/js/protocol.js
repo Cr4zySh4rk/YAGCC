@@ -55,7 +55,7 @@ export const DEBOUNCE_MODES = [
 ];
 
 export const NUM_LEDS = 5;            // fret LEDs
-export const MAX_STRUM_LEDS = 4;      // strum bar LEDs
+export const MAX_STRUM_LEDS = 8;      // strum bar LEDs
 export const MAX_LEDS = NUM_LEDS + MAX_STRUM_LEDS;
 export const STRUM_ROLES = [
   { id: 0, name: 'Up and down' },
@@ -71,7 +71,7 @@ export function ledLayout(c) {
 }
 export function applyLedLayout(c, { frets, strum, strumFirst }) {
   const fretOrder = [0, 1, 2, 3, 4].sort((a, b) => c.ledMap[a] - c.ledMap[b]);
-  const strumOrder = [0, 1, 2, 3].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
+  const strumOrder = [...Array(MAX_STRUM_LEDS).keys()].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
   c.noFretLeds = !frets;
   c.strumLeds = strum;
   const fBase = frets && strumFirst ? strum : 0, sBase = frets && !strumFirst ? NUM_LEDS : 0;
@@ -151,7 +151,7 @@ export function defaultConfig() {
     ledType: 0, ledOrder: 0, ledClkPin: PIN_NONE, keys: [0x1e, 0x1f, 0x20, 0x21, 0x22, 0xe5, 0xe4, 0x4e, 0x29, 0x4e, 0x38],
     rgbEnabled: false, rgbBootFlash: true, rgbPin: PIN_NONE, rgbBrightness: 40, rgbEffect: 3, rgbSpeed: 5,
     ledMap: [0, 1, 2, 3, 4], colors: FRET_DEFAULT_COLORS.slice(),
-    noFretLeds: false, strumLeds: 0, strumMap: [200, 201, 202, 203], strumColor: '#ffffff', strumRoles: [0, 0, 0, 0],
+    noFretLeds: false, strumLeds: 0, strumMap: [200, 201, 202, 203, 204, 205, 206, 207], strumColor: '#ffffff', strumRoles: [0, 0, 0, 0, 0, 0, 0, 0],
   };
 }
 
@@ -183,10 +183,12 @@ export function parseConfig(dv) {
     ledMap: [0, 1, 2, 3, 4].map((i) => dv.getUint8(37 + i)),
     colors: [0, 1, 2, 3, 4].map((i) => rgbToHex(dv.getUint8(42 + i * 3), dv.getUint8(43 + i * 3), dv.getUint8(44 + i * 3))),
     // LED layout (firmware 0.25+; zero in older configs = five fret LEDs, no strum LEDs)
-    noFretLeds: !!dv.getUint8(74), strumLeds: Math.min(4, dv.getUint8(75)),
-    strumMap: [0, 1, 2, 3].map((i) => dv.getUint8(76 + i)),
+    noFretLeds: !!dv.getUint8(74), strumLeds: Math.min(8, dv.getUint8(75)),
+    // strum LEDs 1..4 at 76..79 / roles 83, 5..8 (firmware 0.26+) at 84..87 / roles 88
+    // slots past the strum LED count are parked at 200+ (configs from 0.25 have zeros there) so re-layouts keep them last
+    strumMap: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (i >= Math.min(8, dv.getUint8(75)) ? 200 + i : i < 4 ? dv.getUint8(76 + i) : dv.getUint8(84 + i - 4))),
     strumColor: (dv.getUint8(80) | dv.getUint8(81) | dv.getUint8(82)) ? rgbToHex(dv.getUint8(80), dv.getUint8(81), dv.getUint8(82)) : '#ffffff',
-    strumRoles: [0, 1, 2, 3].map((i) => (dv.getUint8(83) >> (2 * i)) & 3),
+    strumRoles: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (dv.getUint8(i < 4 ? 83 : 88) >> (2 * (i & 3))) & 3),
   };
 }
 
@@ -223,9 +225,11 @@ export function serializeConfig(c) {
   dv.setUint8(73, c.hostPin ?? PIN_NONE);
   dv.setUint8(74, c.noFretLeds ? 1 : 0);
   dv.setUint8(75, c.strumLeds || 0);
-  (c.strumMap || [5, 6, 7, 8]).forEach((m, i) => dv.setUint8(76 + i, m));
+  (c.strumMap || []).forEach((m, i) => dv.setUint8(i < 4 ? 76 + i : 84 + i - 4, m));
   { const [r, g, b] = hexToRgb(c.strumColor || '#ffffff'); dv.setUint8(80, r); dv.setUint8(81, g); dv.setUint8(82, b); }
-  dv.setUint8(83, (c.strumRoles || [0, 0, 0, 0]).reduce((v, role, i) => v | ((role & 3) << (2 * i)), 0));
+  const roles = c.strumRoles || [];
+  dv.setUint8(83, roles.slice(0, 4).reduce((v, role, i) => v | ((role & 3) << (2 * i)), 0));
+  dv.setUint8(88, roles.slice(4, 8).reduce((v, role, i) => v | ((role & 3) << (2 * i)), 0));
   dv.setUint32(92, crc32(new Uint8Array(buf, 0, 92)), true);
   return buf;
 }
