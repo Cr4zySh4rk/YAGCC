@@ -129,7 +129,7 @@ The **Hardware** page in the web app describes each board, the LED types, whammy
 * Reconnection: after the link is encrypted the guitar requests a 3 s link timeout (and a 7.5–15 ms connection interval), so after a power cycle the host notices quickly and reconnects. It stays off in the PS4 / Xbox One modes only when the USB host port is set up, since both need the same hardware.
 * Pairing uses **LE Secure Connections** with the keys stored in flash (the two sectors below the settings sector), like BTstack's own HID examples; every mode keeps its own list of paired hosts.
 * **Upgrading from v0.17 or older from an older version**: the guitar gets new Bluetooth addresses and a new Bluetooth service layout, and forgets its old pairings, so pair once more. Before pairing, remove every "YAGCC …" entry in Settings → Bluetooth & devices, and also in Device Manager (View → Show hidden devices → Bluetooth): Windows can keep a hidden record of an old pairing that keeps trying a stale key.
-* **Bluetooth services** (same layout as Santroller, without a Battery service since the guitar can't measure its battery): GAP, GATT (Service Changed + Database Hash), Device Information and HID. The guitar remembers which layout each paired host last saw and sends *Service Changed* when a firmware update changes it, so Windows, which caches the layout, looks again instead of giving up. Input reports go out only once the host subscribes; the host chooses the connection interval.
+* **Bluetooth services** (same layout as Santroller, without a Battery service since the guitar can't measure its battery): GAP, GATT (Service Changed + Database Hash), Device Information and HID. The guitar remembers which layout each paired host last saw and sends *Service Changed* when a firmware update changes it, so Windows, which caches the layout, looks again instead of giving up. Input reports go out only once the host subscribes, and the guitar then asks for a 7.5–8.75 ms connection interval, as Santroller does.
 * **Bluetooth log**: the Setup page's Bluetooth step can show (and copy) the last 48 Bluetooth events since the guitar was switched on: advertising, connections, encryption, pairing results and disconnect reasons. After a problem, plug the guitar in without switching it off and read the log.
 
 ## Scope and roadmap
@@ -159,12 +159,21 @@ cmake -S firmware -B build -G Ninja -DPICO_BOARD=pico_clone -DPICO_SDK_PATH=$PWD
 cmake --build build        # build/yacc.uf2 (published as yagcc-<board>.uf2) and build/nuke/yacc_nuke.uf2
 ```
 
-### Bluetooth test firmware
-
-`-DYACC_BT_LOG_FLASH=ON` (Pico W / Pico 2 W) builds firmware that also keeps the Bluetooth event log in 16 KB of flash, so it survives power cycles until **Clear** is pressed on the Setup page's Bluetooth step; the log is grouped by power-on. It is meant for chasing connection problems and is not published on the Flash page.
+Pico W / Pico 2 W builds use **Santroller's BTstack fork** ([sanjay900/btstack](https://github.com/sanjay900/btstack), a BTstack 1.8 development version with their Bluetooth gamepad fixes) instead of the BTstack 1.6.2 that ships with the Pico SDK, so the guitar runs the same Bluetooth stack as Santroller's Pico W controllers. The commit is pinned in `firmware/CMakeLists.txt` (`YACC_BTSTACK_COMMIT`):
 
 ```bash
-cmake -S firmware -B build-btlog -G Ninja -DPICO_BOARD=pico_w -DYACC_BT_LOG_FLASH=ON -DPICO_SDK_PATH=$PWD/pico-sdk
+git clone https://github.com/sanjay900/btstack && git -C btstack checkout $(sed -n 's/^set(YACC_BTSTACK_COMMIT \([0-9a-f]*\))/\1/p' firmware/CMakeLists.txt)
+git -C pico-sdk submodule update --init --depth 1 lib/cyw43-driver lib/lwip
+cmake -S firmware -B build-w -G Ninja -DPICO_BOARD=pico_w -DPICO_SDK_PATH=$PWD/pico-sdk -DPICO_BTSTACK_PATH=$PWD/btstack
+cmake --build build-w
+```
+
+### Bluetooth test firmware
+
+`-DYACC_BT_LOG_FLASH=ON` (Pico W / Pico 2 W) builds firmware that also keeps the Bluetooth event log in 16 KB of flash, so it survives power cycles until **Clear** is pressed on the Setup page's Bluetooth step; the log is grouped by power-on. It also records every Bluetooth GATT, pairing and L2CAP signalling message in both directions (except the guitar's own input reports), so the log shows the last thing a host asked for before it disconnected. It is meant for chasing connection problems and is not published on the Flash page.
+
+```bash
+cmake -S firmware -B build-btlog -G Ninja -DPICO_BOARD=pico_w -DYACC_BT_LOG_FLASH=ON -DPICO_SDK_PATH=$PWD/pico-sdk -DPICO_BTSTACK_PATH=$PWD/btstack
 cmake --build build-btlog
 ```
 

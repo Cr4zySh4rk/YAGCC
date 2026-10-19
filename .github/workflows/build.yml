@@ -49,10 +49,15 @@ jobs:
         run: |
           git clone --depth 1 -b ${PICO_SDK_VERSION} https://github.com/raspberrypi/pico-sdk "$RUNNER_TEMP/pico-sdk"
           git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1 lib/tinyusb lib/btstack lib/cyw43-driver lib/lwip
+          # Bluetooth: Santroller's BTstack fork, at the commit firmware/CMakeLists.txt names (YACC_BTSTACK_COMMIT)
+          BTSTACK_COMMIT=$(sed -n 's/^set(YACC_BTSTACK_COMMIT \([0-9a-f]*\))/\1/p' firmware/CMakeLists.txt)
+          git init -q "$RUNNER_TEMP/btstack"
+          git -C "$RUNNER_TEMP/btstack" fetch -q --depth 1 https://github.com/sanjay900/btstack "$BTSTACK_COMMIT"
+          git -C "$RUNNER_TEMP/btstack" checkout -q FETCH_HEAD
 
       - name: Build
         run: |
-          cmake -S firmware -B build -G Ninja -DPICO_BOARD=${{ matrix.board }} -DPICO_SDK_PATH="$RUNNER_TEMP/pico-sdk"
+          cmake -S firmware -B build -G Ninja -DPICO_BOARD=${{ matrix.board }} -DPICO_SDK_PATH="$RUNNER_TEMP/pico-sdk" -DPICO_BTSTACK_PATH="$RUNNER_TEMP/btstack"
           cmake --build build
 
       - name: Collect

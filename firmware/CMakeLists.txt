@@ -13,10 +13,24 @@ set(CMAKE_CXX_STANDARD 17)
 # USB host port for console authentication passthrough (Pico-PIO-USB 0.6.1, MIT, vendored)
 set(PICO_PIO_USB_PATH ${CMAKE_CURRENT_LIST_DIR}/lib/pico_pio_usb)
 
+# Bluetooth boards build against Santroller's BTstack (sanjay900/btstack, a BTstack 1.8 development fork with
+# their gamepad fixes) instead of the Pico SDK's BTstack 1.6.2: the same stack Santroller's Pico W controllers
+# reconnect to Windows with. Pass -DPICO_BTSTACK_PATH=<checkout of the commit in YACC_BTSTACK_COMMIT>
+# (CI does). BTstack 1.8 renamed hids_client.c, which SDK 2.1.1's file list still names: give it an empty one.
+set(YACC_BTSTACK_COMMIT 8327c89a6a95060812700e6b011e9d5c4f473981)
+if(PICO_BTSTACK_PATH AND EXISTS ${PICO_BTSTACK_PATH}/src/btstack.h)
+  if(NOT EXISTS ${PICO_BTSTACK_PATH}/src/ble/gatt-service/hids_client.c)
+    file(WRITE ${PICO_BTSTACK_PATH}/src/ble/gatt-service/hids_client.c "// empty: renamed hids_host.c in BTstack 1.8\n")
+  endif()
+  message(STATUS "YAGCC: BTstack from ${PICO_BTSTACK_PATH}")
+elseif(PICO_BOARD MATCHES "_w$")
+  message(WARNING "YAGCC: no PICO_BTSTACK_PATH given, Bluetooth uses the Pico SDK's BTstack instead of sanjay900/btstack@${YACC_BTSTACK_COMMIT}")
+endif()
+
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 19)
+set(YACC_VERSION_MINOR 20)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")

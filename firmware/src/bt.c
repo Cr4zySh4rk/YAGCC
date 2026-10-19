@@ -76,7 +76,7 @@ static btstack_packet_callback_registration_t s_hci_cb, s_sm_cb, s_l2cap_cb;
 
 // ---------------------------------------------------------------- event log (read over USB by the configurator)
 enum { L_BOOT = 1, L_WORKING, L_ADV, L_CONNECT, L_ENCRYPT, L_DISCONNECT, L_JUSTWORKS, L_PAIRED, L_SUBSCRIBE,
-       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS, L_LTK, L_PEER, L_CONNUPD, L_SVCCHG, L_MTU, L_READ };
+       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS, L_LTK, L_PEER, L_CONNUPD, L_SVCCHG, L_MTU, L_READ, L_PDU };
 #define LOG_N 48
 static struct { uint32_t t; uint8_t code, a; uint16_t b; } s_log[LOG_N];
 static uint8_t s_log_head, s_log_count;
@@ -165,6 +165,30 @@ static void flog_flush(void) {
     }
 }
 const uint8_t *bt_log_flash(uint16_t *len) { *len = FL_SIZE; return (const uint8_t *)(XIP_BASE + FL_OFFSET); }
+
+// Every ATT, Security Manager and LE signalling PDU in either direction, through BTstack's packet dump hook:
+// a = opcode, b = direction (0x8000 = from the host) | channel (0x4000 SM, 0x2000 signalling) | ATT handle,
+// or for an ATT error: 0x1000 | error code << 8 | request opcode. Shows exactly what a host asked for last.
+#include "hci_dump.h"
+static void pdu_log(uint8_t packet_type, uint8_t in, uint8_t *p, uint16_t len) {
+    if (packet_type != HCI_ACL_DATA_PACKET || len < 9) return;
+    if (((p[1] >> 4) & 3) == 1) return;                 // continuation fragment: no L2CAP header
+    uint16_t cid = little_endian_read_16(p, 6);
+    const uint8_t *d = &p[8]; uint16_t n = len - 8;
+    uint16_t b = in ? 0x8000 : 0;
+    if (cid == 4) {
+        if (d[0] == 0x01 && n >= 5) b |= 0x1000 | (uint16_t)(d[4] << 8) | d[1];
+        else if (n >= 3 && d[0] != 0x1B && d[0] != 0x1D && d[0] != 0x0B && d[0] != 0x0D && d[0] != 0x09 && d[0] != 0x11)
+            b |= little_endian_read_16(d, 1) & 0x0FFF;  // requests / notifications carry a handle
+        if (d[0] == 0x1B && !in) return;                 // input report notifications: too many to keep
+    } else if (cid == 6) b |= 0x4000;
+    else if (cid == 5) b |= 0x2000;
+    else return;
+    flog_push(to_ms_since_boot(get_absolute_time()), L_PDU, d[0], b);
+}
+static void pdu_reset(void) {}
+static void pdu_msg(int level, const char *fmt, va_list args) { (void)level; (void)fmt; (void)args; }
+static const hci_dump_t s_pdu_dump = { pdu_reset, pdu_log, pdu_msg };
 void bt_log_flash_clear(void) { s_fclear = true; }
 #else
 const uint8_t *bt_log_flash(uint16_t *len) { *len = 0; return NULL; }
@@ -459,8 +483,8 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                     s_connected = hids_subevent_input_report_enable_get_enable(packet) != 0;
                     blog(L_SUBSCRIBE, s_connected, 0);
                     if (s_connected) {
-                        // v0.19: no connection parameter request. In the v0.17 and v0.18 logs Windows hung up
-                        // shortly after accepting one, every time; Windows picks its own HID interval.
+                        // as Santroller: 7.5-8.75 ms, no latency, 1 s supervision timeout
+                        gap_request_connection_parameter_update(s_con, 6, 7, 0, 100);
                         s_pairing = false;
                         rgb_set_bt(RGB_BT_CONNECTED);
                         if (s_report_len) hids_device_request_can_send_now_event(s_con);
@@ -556,6 +580,9 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     att_server_register_packet_handler(packet_handler);       // MTU, indication results
     s_l2cap_cb.callback = &l2cap_handler;                     // connection parameter update responses
     l2cap_add_event_handler(&s_l2cap_cb);
+#if YACC_BT_LOG_FLASH
+    hci_dump_init(&s_pdu_dump);
+#endif
     hci_power_control(HCI_POWER_ON);
     if (pair || open_window) rgb_set_bt(RGB_BT_PAIRING);
 }

@@ -12,3 +12,7 @@ Guitar3DModel/
 
 # test firmware builds handed out for debugging
 debug/
+
+# Santroller checkout kept for reference, and Bluetooth logs pasted for debugging
+Santroller/
+debug_log*.txt

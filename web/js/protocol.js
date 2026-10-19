@@ -216,6 +216,15 @@ const BT_EVENTS = {
   17: (a, b) => (a === 0xff ? `database changed since host ${b} last saw it: sending Service Changed` : a === 0 ? 'host confirmed Service Changed' : `Service Changed not confirmed, status 0x${a.toString(16)}`),
   18: (a, b) => `host set MTU ${b}`,
   19: (a, b) => `host read ${['?', 'input', 'output', 'feature'][a] || a} report ${b}`,
+  20: (a, b) => {
+    const from = b & 0x8000 ? 'host →' : '→ host';
+    if (b & 0x4000) return `${from} pairing PDU 0x${a.toString(16)}`;
+    if (b & 0x2000) return `${from} L2CAP signalling 0x${a.toString(16)}`;
+    const ATT = { 0x01: 'error', 0x02: 'MTU request', 0x03: 'MTU response', 0x04: 'find information', 0x05: 'find information response', 0x06: 'find by type', 0x07: 'find by type response', 0x08: 'read by type', 0x09: 'read by type response', 0x0a: 'read', 0x0b: 'read response', 0x0c: 'read blob', 0x0d: 'read blob response', 0x0e: 'read multiple', 0x10: 'read by group type', 0x11: 'read by group type response', 0x12: 'write', 0x13: 'write response', 0x16: 'prepare write', 0x18: 'execute write', 0x1b: 'notification', 0x1d: 'indication', 0x1e: 'confirmation', 0x52: 'write command' };
+    if (a === 0x01 && b & 0x1000) return `${from} ATT error 0x${((b >> 8) & 0x0f).toString(16)} to ${ATT[b & 0xff] || '0x' + (b & 0xff).toString(16)}`;
+    const h = b & 0x0fff;
+    return `${from} ATT ${ATT[a] || '0x' + a.toString(16)}${h ? ` handle 0x${h.toString(16)}` : ''}`;
+  },
 };
 // Test firmware: log kept in flash, 16 byte records, grouped by power-on
 export function parseBtLogFlash(dv) {

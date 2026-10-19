@@ -515,7 +515,12 @@ int main(void) {
 #ifdef PICO_VBUS_PIN
             vbus = gpio_get(PICO_VBUS_PIN);            // running from the battery alone: no sweep
 #endif
-            if (bt_vbus() >= 0) vbus = bt_vbus() == 1;  // Pico W / Pico 2 W: read through the radio chip once it's on
+            // Pico W / Pico 2 W: USB power is read through the radio chip. Each read is a transaction on the bus
+            // Bluetooth also uses, so only every 50 ms (as Santroller does), not on every pass of the loop.
+            static int vbus_cached = -1;
+            static uint64_t vbus_at;
+            if (vbus_cached < 0 || now - vbus_at > 50000) { vbus_cached = bt_vbus(); vbus_at = now; }
+            if (vbus_cached >= 0) vbus = vbus_cached == 1;
             // A USB host (a PC or console enumerating the guitar, not just a charger) switches Bluetooth off:
             // the wireless host is dropped and the guitar stops advertising. Pairings stay saved; unplugging
             // brings Bluetooth back and the paired host reconnects.
