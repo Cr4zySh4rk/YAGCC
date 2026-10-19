@@ -121,7 +121,7 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             if (req->wValue < NUM_MODES) g_cfg.usb_mode = (uint8_t)req->wValue;
             return tud_control_status(rhport, req);
         case VREQ_LEDTEST:
-            rgb_test_led(req->wValue < NUM_LEDS ? (int)req->wValue : -1);
+            rgb_test_led(req->wValue < MAX_LEDS ? (int)req->wValue : -1);
             return tud_control_status(rhport, req);
         case VREQ_BTLOGFL: {
             uint16_t n;

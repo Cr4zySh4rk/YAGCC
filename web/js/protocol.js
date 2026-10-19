@@ -54,7 +54,31 @@ export const DEBOUNCE_MODES = [
   { id: 2, name: 'Classic', desc: 'Any change must be stable for the debounce time (adds latency both ways).' },
 ];
 
-export const NUM_LEDS = 5;
+export const NUM_LEDS = 5;            // fret LEDs
+export const MAX_STRUM_LEDS = 4;      // strum bar LEDs
+export const MAX_LEDS = NUM_LEDS + MAX_STRUM_LEDS;
+export const STRUM_ROLES = [
+  { id: 0, name: 'Up and down' },
+  { id: 1, name: 'Strum up' },
+  { id: 2, name: 'Strum down' },
+];
+// LED layout helpers. Fret LEDs keep their order relative to each other; strum LEDs go before or after them.
+export function ledLayout(c) {
+  const frets = !c.noFretLeds, n = c.strumLeds || 0;
+  const fretOrder = [0, 1, 2, 3, 4].sort((a, b) => c.ledMap[a] - c.ledMap[b]);
+  const firstFret = frets ? Math.min(...c.ledMap) : 99, firstStrum = n ? Math.min(...c.strumMap.slice(0, n)) : 99;
+  return { frets, strum: n, strumFirst: firstStrum < firstFret, fretOrder, chain: (frets ? NUM_LEDS : 0) + n };
+}
+export function applyLedLayout(c, { frets, strum, strumFirst }) {
+  const fretOrder = [0, 1, 2, 3, 4].sort((a, b) => c.ledMap[a] - c.ledMap[b]);
+  const strumOrder = [0, 1, 2, 3].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
+  c.noFretLeds = !frets;
+  c.strumLeds = strum;
+  const fBase = frets && strumFirst ? strum : 0, sBase = frets && !strumFirst ? NUM_LEDS : 0;
+  fretOrder.forEach((f, k) => { c.ledMap[f] = frets ? fBase + k : k; });
+  // unused strum slots are parked past the chain (the firmware ignores slots beyond strumLeds) so they keep sorting last
+  strumOrder.forEach((s, k) => { c.strumMap[s] = k < strum ? sBase + k : 200 + k; });
+}
 export const LED_TYPES = [
   { id: 0, name: 'WS2812B / NeoPixel', desc: 'One data wire. Also WS2813, SK6812 (RGB) and most addressable strips.' },
   { id: 1, name: 'SK6812 RGBW', desc: 'One data wire, with a separate white LED in each pixel.' },
@@ -127,6 +151,7 @@ export function defaultConfig() {
     ledType: 0, ledOrder: 0, ledClkPin: PIN_NONE, keys: [0x1e, 0x1f, 0x20, 0x21, 0x22, 0xe5, 0xe4, 0x4e, 0x29, 0x4e, 0x38],
     rgbEnabled: false, rgbBootFlash: true, rgbPin: PIN_NONE, rgbBrightness: 40, rgbEffect: 3, rgbSpeed: 5,
     ledMap: [0, 1, 2, 3, 4], colors: FRET_DEFAULT_COLORS.slice(),
+    noFretLeds: false, strumLeds: 0, strumMap: [200, 201, 202, 203], strumColor: '#ffffff', strumRoles: [0, 0, 0, 0],
   };
 }
 
@@ -157,6 +182,11 @@ export function parseConfig(dv) {
     rgbPin: dv.getUint8(33), rgbBrightness: dv.getUint8(34), rgbEffect: dv.getUint8(35), rgbSpeed: dv.getUint8(36),
     ledMap: [0, 1, 2, 3, 4].map((i) => dv.getUint8(37 + i)),
     colors: [0, 1, 2, 3, 4].map((i) => rgbToHex(dv.getUint8(42 + i * 3), dv.getUint8(43 + i * 3), dv.getUint8(44 + i * 3))),
+    // LED layout (firmware 0.25+; zero in older configs = five fret LEDs, no strum LEDs)
+    noFretLeds: !!dv.getUint8(74), strumLeds: Math.min(4, dv.getUint8(75)),
+    strumMap: [0, 1, 2, 3].map((i) => dv.getUint8(76 + i)),
+    strumColor: (dv.getUint8(80) | dv.getUint8(81) | dv.getUint8(82)) ? rgbToHex(dv.getUint8(80), dv.getUint8(81), dv.getUint8(82)) : '#ffffff',
+    strumRoles: [0, 1, 2, 3].map((i) => (dv.getUint8(83) >> (2 * i)) & 3),
   };
 }
 
@@ -191,6 +221,11 @@ export function serializeConfig(c) {
   dv.setUint8(61, c.ledClkPin ?? PIN_NONE);
   (c.keys || []).forEach((k, i) => dv.setUint8(62 + i, k));
   dv.setUint8(73, c.hostPin ?? PIN_NONE);
+  dv.setUint8(74, c.noFretLeds ? 1 : 0);
+  dv.setUint8(75, c.strumLeds || 0);
+  (c.strumMap || [5, 6, 7, 8]).forEach((m, i) => dv.setUint8(76 + i, m));
+  { const [r, g, b] = hexToRgb(c.strumColor || '#ffffff'); dv.setUint8(80, r); dv.setUint8(81, g); dv.setUint8(82, b); }
+  dv.setUint8(83, (c.strumRoles || [0, 0, 0, 0]).reduce((v, role, i) => v | ((role & 3) << (2 * i)), 0));
   dv.setUint32(92, crc32(new Uint8Array(buf, 0, 92)), true);
   return buf;
 }

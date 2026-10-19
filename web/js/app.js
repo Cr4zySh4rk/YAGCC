@@ -1,6 +1,6 @@
 import {
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
-  DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS,
+  DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
 } from './protocol.js?v=dev';
 import { YaccDevice, webusbSupported } from './usb.js?v=dev';
@@ -217,8 +217,8 @@ const STEPS = [
   { kind: 'button', func: 7, title: 'Star power', prompt: 'Press the star power button twice within one second.', focus: ['star'] },
   { kind: 'button', func: 8, title: 'Plus / Start', prompt: 'Press the plus button twice within one second.', focus: ['plus'] },
   { kind: 'whammy', title: 'Whammy bar', prompt: 'Move the whammy bar all the way down and back up, twice.', focus: ['whammy'] },
-  { kind: 'rgb', title: 'RGB lighting', prompt: 'Did you wire WS2812 LEDs under the frets?', focus: [] },
-  { kind: 'ledmap', title: 'LED order', prompt: 'Teach YAGCC which LED sits under which fret.', focus: [] },
+  { kind: 'rgb', title: 'RGB lighting', prompt: 'Did you wire addressable LEDs under the frets or on the strum bar?', focus: [] },
+  { kind: 'ledmap', title: 'LED order', prompt: 'Teach YAGCC which LED sits under which fret or on the strum bar.', focus: [] },
   { kind: 'bluetooth', title: 'Bluetooth', prompt: 'Go wireless?', focus: [] },
   { kind: 'tilt', title: 'Tilt switch', prompt: 'Use a tilt switch as a star power shortcut?', focus: ['tilt'] },
   { kind: 'review', title: 'All done', prompt: 'Check everything, then save it to the controller.', focus: [] },
@@ -356,9 +356,10 @@ function renderStep() {
       const used = new Set(assignedPins());
       const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p) || p === c.rgbPin);
       card.innerHTML = head + `
-        <div class="opt first"><div><h3>LEDs under the frets</h3><p class="dim">Five addressable LEDs (WS2812, SK6812 or APA102), one per fret.</p></div>
+        <div class="opt first"><div><h3>Addressable LEDs</h3><p class="dim">WS2812, SK6812 or APA102 LEDs on one chain: one under each fret, and optionally on the strum bar (one per side, or the four corners).</p></div>
           <label class="switch"><input type="checkbox" id="rgbSw" ${c.rgbEnabled ? 'checked' : ''}><i></i></label></div>
-        ${c.rgbEnabled ? `<div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input.</p></div>
+        ${c.rgbEnabled ? `${ledLayoutControls(c)}
+          <div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input.</p></div>
             <select id="rgbPinSel"><option value="255">Choose pin…</option>${free.map((p) => `<option value="${p}" ${p === c.rgbPin ? 'selected' : ''}>GP${p}</option>`).join('')}</select></div>
           <div class="slider-row"><label for="rgbBriS">Brightness</label><span class="val" id="rgbBriSVal">${c.rgbBrightness}</span>
             <input type="range" id="rgbBriS" min="0" max="255" step="1" value="${c.rgbBrightness}"></div>
@@ -366,46 +367,59 @@ function renderStep() {
         ${nav(`<button class="btn primary" id="bSkip" ${c.rgbEnabled && c.rgbPin === PIN_NONE ? 'disabled' : ''}>${c.rgbEnabled ? 'Continue' : 'Skip, no LEDs'}</button>`)}`;
       wireNav();
       $('#rgbSw').addEventListener('change', (e) => { c.rgbEnabled = e.target.checked; applyColors(); pushCfg(); renderRgb(); });
+      wireLedLayout(c, () => { pushCfg(); renderRgb(); });
       $('#rgbPinSel')?.addEventListener('change', (e) => { c.rgbPin = +e.target.value; pushCfg(); renderRgb(); });
       $('#rgbBriS')?.addEventListener('input', (e) => { c.rgbBrightness = +e.target.value; $('#rgbBriSVal').textContent = c.rgbBrightness; pushCfg(); });
     };
     renderRgb();
   } else if (step.kind === 'ledmap') {
     const c = state.cfg;
+    const lay = ledLayout(c);
+    stepCtx.chain = lay.chain;
     stepCtx.idx = 0;
     stepCtx.assign = [-1, -1, -1, -1, -1];     // fret -> chain position
+    stepCtx.strumAssign = [];                  // chain positions of the strum LEDs, in the order found
     stepCtx.base = null;
     stepCtx.lockUntil = 0;
     const finish = () => {
-      // frets that were skipped take whatever positions are left, in order
-      const left = [0, 1, 2, 3, 4].filter((p) => !stepCtx.assign.includes(p));
-      c.ledMap = stepCtx.assign.map((p) => (p >= 0 ? p : left.shift()));
+      // LEDs that were skipped take whatever positions are left, in order
+      const taken = new Set([...stepCtx.assign.filter((p) => p >= 0), ...stepCtx.strumAssign]);
+      const left = [...Array(lay.chain).keys()].filter((p) => !taken.has(p));
+      if (lay.frets) c.ledMap = stepCtx.assign.map((p) => (p >= 0 ? p : left.shift()));
+      for (let k = 0; k < MAX_STRUM_LEDS; k++) c.strumMap[k] = k < lay.strum ? (stepCtx.strumAssign[k] ?? left.shift()) : 200 + k;
       pushCfg();
     };
+    const label = (pos) => {
+      const f = lay.frets ? c.ledMap.indexOf(pos) : -1;
+      if (f >= 0) return `<b style="color:${c.colors[f]}">${funcName(f)}</b>`;
+      const k = c.strumMap.slice(0, lay.strum).indexOf(pos);
+      return k >= 0 ? `<b>Strum ${k + 1}</b>` : '<b>?</b>';
+    };
     const draw = () => {
-      if (stepCtx.idx >= NUM_LEDS) {
+      if (stepCtx.idx >= lay.chain) {
         finish();
         clearInterval(stepCtx.timer); stepCtx.timer = 0;
         state.dev?.ledTest(-1).catch(() => {});
-        const order = c.ledMap.map((pos, f) => ({ pos, f })).sort((x, y) => x.pos - y.pos);
-        card.innerHTML = head + `<div class="result ok">LED order: ${order.map((o) => `<b style="color:${c.colors[o.f]}">${funcName(o.f)}</b>`).join(' → ')}</div>
+        card.innerHTML = head + `<div class="result ok">LED order: ${[...Array(lay.chain).keys()].map(label).join(' → ')}</div>
           ${nav('<button class="btn quiet" id="mRedo">Redo</button><button class="btn primary" id="bSkip">Continue</button>')}`;
         wireNav();
         $('#mRedo').addEventListener('click', () => renderStep());
         return;
       }
-      const dots = [...Array(NUM_LEDS).keys()].map((i) => {
-        const f = stepCtx.assign.indexOf(i);
-        return `<i class="${i === stepCtx.idx ? 'lit' : f >= 0 ? 'done' : ''}" style="--c:${f >= 0 ? c.colors[f] : '#fff'}"></i>`;
+      const dots = [...Array(lay.chain).keys()].map((i) => {
+        const f = stepCtx.assign.indexOf(i), sk = stepCtx.strumAssign.indexOf(i);
+        return `<i class="${i === stepCtx.idx ? 'lit' : f >= 0 || sk >= 0 ? 'done' : ''}" style="--c:${f >= 0 ? c.colors[f] : '#fff'}"></i>`;
       }).join('');
-      const noPins = c.pins.slice(0, NUM_FRETS).every((p) => p === PIN_NONE);
+      const what = lay.frets && lay.strum ? 'Press the fret above it, or strum if it is on the strum bar.'
+        : lay.frets ? 'Press the fret above it.' : 'Strum once.';
+      const noPins = lay.frets ? c.pins.slice(0, NUM_FRETS).every((p) => p === PIN_NONE) : (c.pins[5] === PIN_NONE && c.pins[6] === PIN_NONE);
       card.innerHTML = head + `<div class="led-test">${dots}</div>
-        <div class="result"><span class="pulse"></span><span>${noPins ? 'No frets are assigned yet. Go back and map them first.' : `LED ${stepCtx.idx + 1} of ${NUM_LEDS} is lit white. Press the fret above it.`}</span></div>
+        <div class="result"><span class="pulse"></span><span>${!lay.chain ? 'No LEDs are set up. Go back and choose fret and / or strum LEDs.' : noPins ? 'The frets / strum bar are not assigned yet. Go back and map them first.' : `LED ${stepCtx.idx + 1} of ${lay.chain} is lit white. ${what}`}</span></div>
         ${nav('<button class="btn" id="mSkipLed">Skip this LED</button>')}`;
       wireNav();
       $('#mSkipLed').addEventListener('click', () => { stepCtx.idx++; stepCtx.base = null; draw(); sendTest(); });
     };
-    const sendTest = () => { if (stepCtx.idx < NUM_LEDS) state.dev?.ledTest(stepCtx.idx).catch(() => {}); };
+    const sendTest = () => { if (stepCtx.idx < lay.chain) state.dev?.ledTest(stepCtx.idx).catch(() => {}); };
     stepCtx.redraw = () => { draw(); sendTest(); };
     stepCtx.redraw();
     stepCtx.timer = setInterval(sendTest, 1000);
@@ -536,20 +550,23 @@ function tickStep(s) {
       $('#wLabel').textContent = 'Live input: move the bar to check it';
       const b = $('#bSkip'); if (b) { b.textContent = 'Continue'; b.classList.add('primary'); }
     }
-  } else if (step.kind === 'ledmap' && stepCtx.assign && stepCtx.idx < NUM_LEDS) {
+  } else if (step.kind === 'ledmap' && stepCtx.assign && stepCtx.idx < stepCtx.chain) {
     if (!stepCtx.base) { stepCtx.base = s.counts.slice(); return; }
     if (performance.now() < stepCtx.lockUntil) { stepCtx.base = s.counts.slice(); return; }
+    const lay = ledLayout(state.cfg);
+    const hit = (pin) => pin !== PIN_NONE && diff8(s.counts[pin], stepCtx.base[pin]) >= 1;
+    const next = () => { stepCtx.idx++; stepCtx.base = s.counts.slice(); stepCtx.lockUntil = performance.now() + 500; stepCtx.redraw(); };
+    if (lay.strum && stepCtx.strumAssign.length < lay.strum && (hit(state.cfg.pins[5]) || hit(state.cfg.pins[6]))) {
+      stepCtx.strumAssign.push(stepCtx.idx);    // a strum: this LED is the next strum LED
+      next();
+      return;
+    }
+    if (!lay.frets) return;
     for (let f = 0; f < NUM_FRETS; f++) {
-      const pin = state.cfg.pins[f];
-      if (pin === PIN_NONE || stepCtx.assign[f] >= 0) continue;
-      if (diff8(s.counts[pin], stepCtx.base[pin]) >= 1) {
-        stepCtx.assign[f] = stepCtx.idx;
-        stepCtx.idx++;
-        stepCtx.base = s.counts.slice();
-        stepCtx.lockUntil = performance.now() + 500;
-        stepCtx.redraw();
-        break;
-      }
+      if (stepCtx.assign[f] >= 0 || !hit(state.cfg.pins[f])) continue;
+      stepCtx.assign[f] = stepCtx.idx;
+      next();
+      break;
     }
   } else if (step.kind === 'tilt' && stepCtx.active && stepCtx.detector) {
     const r = stepCtx.detector.feed(s);
@@ -658,9 +675,43 @@ function applyColors() {
 function updateLedPreview(s) {
   const c = state.cfg;
   if (!c) return;
+  const up = isPressed(s, c.pins[5]), down = isPressed(s, c.pins[6]);
   document.querySelectorAll('#mapView .led').forEach((el) => {
-    const f = +el.dataset.fret;
-    el.classList.toggle('on', isPressed(s, c.pins[f]));
+    if (el.dataset.strum !== undefined) {
+      const role = c.strumRoles[+el.dataset.strum] || 0;
+      el.classList.toggle('on', role === 1 ? up : role === 2 ? down : up || down);
+      return;
+    }
+    el.classList.toggle('on', isPressed(s, c.pins[+el.dataset.fret]));
+  });
+}
+
+// LED layout controls (setup wizard and Lights page): fret LEDs on / off, how many strum LEDs, wiring order
+const STRUM_COUNTS = ['None', '1', '2 (one per side)', '3', '4 (the four corners)'];
+function ledLayoutControls(c, pfx = 'lay') {
+  const l = ledLayout(c);
+  return `<div class="opt"><div><h3>Fret LEDs</h3><p class="dim">One LED under each of the five frets.</p></div>
+      <label class="switch"><input type="checkbox" id="${pfx}Frets" ${l.frets ? 'checked' : ''}><i></i></label></div>
+    <div class="opt"><div><h3>Strum bar LEDs</h3><p class="dim">LEDs on the strum bar, on the same chain. They light up when you strum.</p></div>
+      <select id="${pfx}Strum">${STRUM_COUNTS.map((t, n) => `<option value="${n}" ${n === l.strum ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+    ${l.frets && l.strum ? `<div class="opt"><div><h3>Wiring order</h3><p class="dim">Which LEDs come first on the chain, starting from the data pin.</p></div>
+      <select id="${pfx}Order"><option value="0" ${!l.strumFirst ? 'selected' : ''}>Frets first</option><option value="1" ${l.strumFirst ? 'selected' : ''}>Strum LEDs first</option></select></div>` : ''}
+    ${!l.frets && !l.strum ? '<p class="dim small">Choose fret LEDs, strum LEDs or both.</p>' : ''}`;
+}
+function wireLedLayout(c, changed, pfx = 'lay') {
+  const set = (patch) => { const l = ledLayout(c); applyLedLayout(c, { frets: l.frets, strum: l.strum, strumFirst: l.strumFirst, ...patch }); changed(); };
+  $(`#${pfx}Frets`)?.addEventListener('change', (e) => set({ frets: e.target.checked }));
+  $(`#${pfx}Strum`)?.addEventListener('change', (e) => set({ strum: +e.target.value }));
+  $(`#${pfx}Order`)?.addEventListener('change', (e) => set({ strumFirst: e.target.value === '1' }));
+}
+// chain position -> what sits there
+function chainLabels(c) {
+  const l = ledLayout(c);
+  return [...Array(l.chain).keys()].map((p) => {
+    const f = l.frets ? c.ledMap.indexOf(p) : -1;
+    if (f >= 0) return { fret: f, color: c.colors[f], name: funcName(f) };
+    const k = c.strumMap.slice(0, l.strum).indexOf(p);
+    return { strum: k, color: c.strumColor || '#ffffff', name: `Strum ${k + 1}` };
   });
 }
 
@@ -692,9 +743,10 @@ function buildLights() {
     $spd.value = c.rgbSpeed; $('#fxSpeedVal').textContent = c.rgbSpeed;
     document.querySelectorAll('input[name=fx]').forEach((r) => { r.checked = +r.value === c.rgbEffect; });
     document.querySelectorAll('[data-col]').forEach((i) => { i.value = c.colors[+i.dataset.col]; $(`[data-hex="${i.dataset.col}"]`).textContent = c.colors[+i.dataset.col].toUpperCase(); });
-    for (const id of ['#rgbOpts', '#fxCard', '#colCard', '#mapCard']) $(id).classList.toggle('rgb-disabled', !c.rgbEnabled);
-    const pos = [0, 1, 2, 3, 4].map((p) => c.ledMap.findIndex((m) => m === p));
-    $('#mapView').innerHTML = pos.map((f, p) => f < 0 ? '' : `${p ? '<span class="arrow">→</span>' : ''}<div class="led" data-fret="${f}" style="--c:${c.colors[f]}"><b style="background:${c.colors[f]}"></b>LED ${p + 1}<br>${funcName(f)}</div>`).join('');
+    for (const id of ['#rgbOpts', '#fxCard', '#colCard', '#mapCard', '#strumCard']) $(id).classList.toggle('rgb-disabled', !c.rgbEnabled);
+    $('#colCard').classList.toggle('rgb-disabled', !c.rgbEnabled || !!c.noFretLeds);
+    $('#mapView').innerHTML = chainLabels(c).map((l, p) => `${p ? '<span class="arrow">→</span>' : ''}<div class="led" ${l.fret !== undefined ? `data-fret="${l.fret}"` : `data-strum="${l.strum}"`} style="--c:${l.color}"><b style="background:${l.color}"></b>LED ${p + 1}<br>${l.name}</div>`).join('')
+      || '<p class="dim">No LEDs set up: choose fret and / or strum LEDs under LED layout.</p>';
     applyColors();
   };
   const live = () => { refresh(); $('#lightsState').textContent = 'Live changes, not saved yet.'; pushCfg(); };
@@ -712,6 +764,18 @@ function buildLights() {
   $('#colRows').oninput = (e) => { const f = e.target.dataset.col; if (f !== undefined) { c.colors[+f] = e.target.value; live(); } };
   $('#presets').onclick = (e) => { const b = e.target.closest('[data-preset]'); if (b) { c.colors = RGB_PRESETS[+b.dataset.preset].colors.slice(); live(); } };
   $('#mapWizard').onclick = () => { showView('setup'); goStep(STEPS.findIndex((s) => s.kind === 'ledmap')); };
+  // LED layout: fret / strum LEDs, wiring order, strum colour and what each strum LED follows
+  const drawLayout = () => {
+    $('#layoutOpts').innerHTML = ledLayoutControls(c, 'lt');
+    wireLedLayout(c, () => { drawLayout(); live(); }, 'lt');
+    const n = c.strumLeds || 0;
+    $('#strumOpts').innerHTML = n ? `<div class="col-row"><span>Strum LED colour</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>
+      ${[...Array(n).keys()].map((k) => `<div class="opt"><div><h3>Strum LED ${k + 1}</h3><p class="dim">Lights up on</p></div>
+        <select data-role="${k}">${STRUM_ROLES.map((r) => `<option value="${r.id}" ${c.strumRoles[k] === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}</select></div>`).join('')}` : '';
+    $('#strumCol')?.addEventListener('input', (e) => { c.strumColor = e.target.value; $('#strumHex').textContent = c.strumColor.toUpperCase(); live(); });
+    $('#strumOpts').onchange = (e) => { const k = e.target.dataset.role; if (k !== undefined) { c.strumRoles[+k] = +e.target.value; live(); } };
+  };
+  drawLayout();
   $('#saveLights').onclick = async () => { await saveToController(); $('#lightsState').textContent = 'Saved to the controller.'; };
   refresh();
 }

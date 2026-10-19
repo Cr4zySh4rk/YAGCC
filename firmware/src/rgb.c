@@ -1,6 +1,7 @@
-// Fret lighting: WS2812 / SK6812 (RGBW) over PIO or APA102 (data + clock), per-fret colour,
+// Fret and strum bar lighting: WS2812 / SK6812 (RGBW) over PIO or APA102 (data + clock), per-fret colour,
 // remappable chain order, press-reactive effects, brightness, a boot-time mode indicator and
-// star power glow when a game reports it.
+// star power glow when a game reports it. One chain of up to 9 LEDs: the five fret LEDs (optional) and up
+// to four strum bar LEDs (one per side, or the four corners), in any order along the chain.
 #include "rgb.h"
 #include <string.h>
 #include "pico/stdlib.h"
@@ -41,8 +42,7 @@ static uint32_t last_frame, boot_t0;
 static int boot_fret = -1;
 static int test_led = -1;
 static uint32_t test_until;
-static uint8_t fade[NUM_FRETS];
-static bool was_pressed[NUM_FRETS];
+static uint8_t fade[MAX_LEDS];        // per light (frets 0..4, strum LEDs 5..8)
 
 // WS2812s are linear: a screen colour like #EF4444 (a clear red on a monitor) comes out pink and
 // #FB923C (orange) comes out a washed-out peach, because the "small" channels are still far too bright.
@@ -129,17 +129,17 @@ static void apa102_byte(uint8_t v) {
     }
 }
 
-static void output(const px_t *px) {
+static void output(const px_t *px, int n) {
     if (cur_type == LED_APA102) {
         for (int i = 0; i < 4; i++) apa102_byte(0x00);                    // start frame
-        for (int i = 0; i < NUM_LEDS; i++) {
+        for (int i = 0; i < n; i++) {
             apa102_byte(0xFF);                                            // full global brightness (scaled in colour)
             apa102_byte(px[i].b); apa102_byte(px[i].g); apa102_byte(px[i].r);
         }
         for (int i = 0; i < 4; i++) apa102_byte(0xFF);                    // end frame
         return;
     }
-    for (int i = 0; i < NUM_LEDS; i++) {
+    for (int i = 0; i < n; i++) {
         uint8_t r = px[i].r, g = px[i].g, b = px[i].b;
         if (cur_type == LED_SK6812_RGBW) {
             uint8_t w = r < g ? (r < b ? r : b) : (g < b ? g : b);        // move the shared white into W
@@ -160,6 +160,39 @@ static void output(const px_t *px) {
     }
 }
 
+// one shared (not inlined) colour path keeps rgb_task small
+static void __attribute__((noinline)) set_px(px_t *px, uint8_t pos, uint8_t r, uint8_t g, uint8_t b, uint8_t level, uint8_t bright) {
+    if (pos < MAX_LEDS) px[pos] = pack(r, g, b, level, bright);
+}
+
+// One light in the chain: a fret LED or a strum LED
+typedef struct {
+    uint8_t pos;            // position in the chain
+    uint8_t r, g, b;        // its colour
+    uint8_t idx;            // 0..4 fret, 5..8 strum LED (effect state and phase)
+    int8_t  fret;           // the fret it sits under, -1 for a strum LED
+    bool    down;           // its button is held (the fret, or the strum direction it follows)
+} light_t;
+
+static int build_lights(light_t *l, int *chain) {
+    int n = 0, len = 0;
+    if (!g_cfg.no_fret_leds)
+        for (int f = 0; f < NUM_FRETS; f++)
+            l[n++] = (light_t){ g_cfg.led_map[f], g_cfg.colors[f][0], g_cfg.colors[f][1], g_cfg.colors[f][2],
+                                (uint8_t)f, (int8_t)f, input_func(f) };
+    bool white = !g_cfg.strum_color[0] && !g_cfg.strum_color[1] && !g_cfg.strum_color[2];
+    bool up = input_func(F_STRUM_UP), dn = input_func(F_STRUM_DOWN);
+    for (int i = 0; i < g_cfg.strum_leds && i < MAX_STRUM_LEDS; i++) {
+        uint8_t role = (g_cfg.strum_roles >> (2 * i)) & 3;
+        bool down = role == STRUM_ROLE_UP ? up : role == STRUM_ROLE_DOWN ? dn : (up || dn);
+        l[n++] = (light_t){ g_cfg.strum_map[i], white ? 255 : g_cfg.strum_color[0], white ? 255 : g_cfg.strum_color[1],
+                            white ? 255 : g_cfg.strum_color[2], (uint8_t)(NUM_FRETS + i), -1, down };
+    }
+    for (int k = 0; k < n; k++) if (l[k].pos < MAX_LEDS && l[k].pos + 1 > len) len = l[k].pos + 1;
+    *chain = len;
+    return n;
+}
+
 void rgb_task(void) {
     bool enabled = (g_cfg.flags & CFG_FLAG_RGB_ENABLED) && g_cfg.rgb_pin < NUM_DIGITAL_PINS;
     if (!program_loaded) return;
@@ -172,45 +205,59 @@ void rgb_task(void) {
     last_frame = now;
 
     uint8_t bright = g_cfg.rgb_brightness;                  // 0..255
-    px_t px[NUM_LEDS];
+    light_t L[MAX_LEDS];
+    int chain;
+    int n = build_lights(L, &chain);
+    px_t px[MAX_LEDS];
     memset(px, 0, sizeof(px));
+#define SET(k, rr, gg, bb, lv) set_px(px, L[k].pos, (rr), (gg), (bb), (lv), bright)
     bool sp = star_power && (g_cfg.flags & CFG_FLAG_RGB_STARPOWER);
     bool testing = test_led >= 0 && (int32_t)(now - test_until) < 0;
     bool booting = (g_cfg.flags & CFG_FLAG_RGB_BOOTFLASH) && boot_fret >= 0 && (uint32_t)(now - boot_t0) < BOOT_FLASH_US;
 
     if (testing) {
-        if (test_led < NUM_LEDS) px[test_led] = pack(255, 255, 255, 255, bright);
+        if (test_led < MAX_LEDS) { px[test_led] = pack(255, 255, 255, 255, bright); if (test_led + 1 > chain) chain = test_led + 1; }
     } else if (booting) {
+        // the fret that picks the running mode flashes; with no fret LEDs the strum LEDs flash in its colour
         if (((now - boot_t0) / BLINK_US) % 2 == 0) {
-            int f = boot_fret;
-            px[g_cfg.led_map[f]] = pack(g_cfg.colors[f][0], g_cfg.colors[f][1], g_cfg.colors[f][2], 255, bright);
+            const uint8_t *c = g_cfg.colors[boot_fret];
+            for (int k = 0; k < n; k++)
+                if (L[k].fret == boot_fret || (g_cfg.no_fret_leds && L[k].fret < 0)) SET(k, c[0], c[1], c[2], 255);
         }
     } else if (bt_led == RGB_BT_PAIRING) {
-        // Bluetooth pairing: all frets double-blink blue, like a controller looking for a new console
+        // Bluetooth pairing: every LED double-blinks blue, like a controller looking for a new console
         uint32_t ph = now % 1200000u;
         bool on = ph < 120000u || (ph >= 240000u && ph < 360000u);
-        for (int f = 0; f < NUM_FRETS; f++)
-            px[g_cfg.led_map[f]] = input_func(f) ? pack(g_cfg.colors[f][0], g_cfg.colors[f][1], g_cfg.colors[f][2], 255, bright)
-                                                 : pack(0x20, 0x60, 0xFF, on ? 255 : 0, bright);
+        for (int k = 0; k < n; k++) {
+            if (L[k].down) SET(k, L[k].r, L[k].g, L[k].b, 255);
+            else SET(k, 0x20, 0x60, 0xFF, on ? 255 : 0);
+        }
     } else if (bt_connected_at && (uint32_t)(now - bt_connected_at) < BT_CONNECTED_SHOW_US) {
-        for (int f = 0; f < NUM_FRETS; f++) px[g_cfg.led_map[f]] = pack(0x20, 0x60, 0xFF, 255, bright);   // paired / reconnected
+        for (int k = 0; k < n; k++) SET(k, 0x20, 0x60, 0xFF, 255);   // paired / reconnected
     } else if (charging) {
         // No USB host, only power (a charger, or a power bank feeding the TP4056 through the Pico's USB port):
-        // a soft light runs from the orange fret to the green one, like a charge bar. Held frets still light up.
-        uint32_t t = now % (CHARGE_SWEEP_US + CHARGE_PAUSE_US);
-        int32_t head = (int32_t)((uint64_t)t * 1000u * NUM_FRETS / CHARGE_SWEEP_US);   // 0 .. 5000 in milli-frets
-        for (int f = 0; f < NUM_FRETS; f++) {
-            int32_t d = head - (NUM_FRETS - 1 - f) * 1000;                             // how far the head is past this fret
+        // a soft light runs from the orange fret to the green one and on to the strum bar, like a charge bar.
+        // Held frets and strums still light up.
+        int frets = g_cfg.no_fret_leds ? 0 : NUM_FRETS;
+        int steps = frets + (g_cfg.strum_leds ? 1 : 0);
+        if (steps == 0) steps = 1;
+        uint32_t sweep = CHARGE_SWEEP_US * (uint32_t)steps / NUM_FRETS;
+        uint32_t t = now % (sweep + CHARGE_PAUSE_US);
+        int32_t head = (int32_t)((uint64_t)t * 1000u * steps / sweep);            // in milli-steps
+        for (int k = 0; k < n; k++) {
+            int step = L[k].fret >= 0 ? NUM_FRETS - 1 - L[k].fret : frets;          // strum LEDs come after green
+            int32_t d = head - step * 1000;                                       // how far the head is past it
             int32_t lv = d < -250 ? 0 : d < 0 ? 255 + d : d < 1600 ? 255 - d * 255 / 1600 : 0;
-            if (t >= CHARGE_SWEEP_US) lv = 0;
-            if (input_func(f)) lv = 255;
-            px[g_cfg.led_map[f]] = pack(g_cfg.colors[f][0], g_cfg.colors[f][1], g_cfg.colors[f][2], (uint8_t)lv, bright);
+            if (t >= sweep) lv = 0;
+            if (L[k].down) lv = 255;
+            SET(k, L[k].r, L[k].g, L[k].b, (uint8_t)lv);
         }
     } else {
         uint8_t speed = g_cfg.rgb_speed < 1 ? 1 : g_cfg.rgb_speed > 10 ? 10 : g_cfg.rgb_speed;
-        for (int f = 0; f < NUM_FRETS; f++) {
-            bool down = input_func(f);
-            uint8_t r = g_cfg.colors[f][0], g = g_cfg.colors[f][1], b = g_cfg.colors[f][2];
+        for (int k = 0; k < n; k++) {
+            bool down = L[k].down;
+            uint8_t i = L[k].idx;
+            uint8_t r = L[k].r, g = L[k].g, b = L[k].b;
             uint8_t level = 255;
             switch (g_cfg.rgb_effect) {
                 case EFX_STATIC: break;
@@ -220,22 +267,22 @@ void rgb_task(void) {
                 case EFX_FADE: {
                     uint32_t fade_ms = 1100u - speed * 100u;           // 1000 ms .. 100 ms
                     uint8_t step = (uint8_t)((255u * (FRAME_US / 1000u)) / fade_ms) + 1;
-                    if (down) fade[f] = 255;
-                    else fade[f] = fade[f] > step ? fade[f] - step : 0;
-                    level = fade[f] < 28 ? 28 : fade[f];
+                    if (down) fade[i] = 255;
+                    else fade[i] = fade[i] > step ? fade[i] - step : 0;
+                    level = fade[i] < 28 ? 28 : fade[i];
                     break;
                 }
                 case EFX_BREATHE: {
                     if (down) { level = 255; break; }
                     uint32_t period = 4000000u - speed * 350000u;      // 3.65 s .. 0.5 s
-                    uint32_t ph = ((now + f * (period / 10)) % period) * 512u / period;   // 0..511
+                    uint32_t ph = ((now + i * (period / 10)) % period) * 512u / period;   // 0..511
                     uint32_t tri = ph < 256 ? ph : 511 - ph;
                     level = (uint8_t)(40 + tri * 100 / 255);
                     break;
                 }
                 case EFX_RAINBOW: {
                     if (down) { level = 255; break; }
-                    uint32_t hue = (now / 1000u * speed / 40u + f * 40u) & 0xFF;
+                    uint32_t hue = (now / 1000u * speed / 40u + i * 40u) & 0xFF;
                     hsv((uint8_t)hue, &r, &g, &b);
                     level = 150;
                     break;
@@ -243,15 +290,15 @@ void rgb_task(void) {
                 default: break;
             }
             if (sp && !down) {
-                // star power / overdrive from the game: idle frets glow a pulsing cyan
+                // star power / overdrive from the game: idle LEDs glow a pulsing cyan
                 uint32_t ph = (now % 600000u) * 512u / 600000u;
                 uint32_t tri = ph < 256 ? ph : 511 - ph;
                 r = 0x40; g = 0xE0; b = 0xFF;
                 level = (uint8_t)(110 + tri * 145 / 255);
             }
-            was_pressed[f] = down;
-            px[g_cfg.led_map[f]] = pack(r, g, b, level, bright);
+            SET(k, r, g, b, level);
         }
     }
-    output(px);
+#undef SET
+    output(px, chain);
 }

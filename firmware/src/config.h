@@ -63,7 +63,11 @@ enum {
 #define YACC_CFG_VERSION 4
 #define YACC_CFG_V3_SIZE 64
 
-#define NUM_LEDS 5
+#define NUM_LEDS 5          // fret LEDs
+#define MAX_STRUM_LEDS 4    // strum bar LEDs (e.g. one per side, or the four corners)
+#define MAX_LEDS (NUM_LEDS + MAX_STRUM_LEDS)   // longest chain: positions 0..8
+// what a strum LED reacts to (2 bits per LED in strum_roles)
+enum { STRUM_ROLE_BOTH = 0, STRUM_ROLE_UP = 1, STRUM_ROLE_DOWN = 2 };
 // What the fret LEDs do
 enum {
     EFX_STATIC = 0,   // always full colour
@@ -116,7 +120,13 @@ typedef struct __attribute__((packed)) {
     uint8_t  led_clk_pin;         // 61      APA102 clock GPIO or PIN_NONE
     uint8_t  keys[NUM_KEYS];      // 62..72  HID usage codes for keyboard mode (0 = none, 0xE0..E7 = modifiers)
     uint8_t  host_dp_pin;         // 73      USB host port D+ GPIO (D- is the next pin) or PIN_NONE
-    uint8_t  reserved[18];        // 74..91
+    // LED layout (bytes that used to be reserved, so zero = old behaviour: five fret LEDs, no strum LEDs)
+    uint8_t  no_fret_leds;        // 74      1 = the chain has no fret LEDs (strum LEDs only)
+    uint8_t  strum_leds;          // 75      number of strum bar LEDs, 0..MAX_STRUM_LEDS
+    uint8_t  strum_map[MAX_STRUM_LEDS]; // 76..79 position in the chain of each strum LED
+    uint8_t  strum_color[3];      // 80..82  R,G,B of the strum LEDs (0,0,0 = white)
+    uint8_t  strum_roles;         // 83      STRUM_ROLE_* per strum LED, 2 bits each (LED i at bits 2i..2i+1)
+    uint8_t  reserved[8];         // 84..91
     uint32_t crc;                 // 92      crc32 of bytes 0..91
 } yacc_config_t;
 

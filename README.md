@@ -24,10 +24,10 @@ Flash the board, plug it in, and the web app walks you through mapping every but
 3. **Guided setup** – for every control YAGCC asks you to press it twice within a second, watches which GPIO changed, and assigns it:
    green → red → yellow → blue → orange → strum up → strum down → star power → plus.
 4. **Whammy** – move the bar through two full sweeps; YAGCC finds the analog pin, calibrates min/max, detects direction and shows a live meter. Live readings of GP26–28 are shown, with a manual *Use pin* / *Capture rest* / *Capture full* fallback.
-5. **RGB** – say whether you wired 5 RGB LEDs, give the data pin, and teach YAGCC which LED sits under which fret by pressing the frets.
+5. **RGB** – say whether you wired LEDs under the frets and / or on the strum bar (0–4 strum LEDs, wired before or after the frets), give the data pin, and teach YAGCC the chain order by pressing the fret above each lit LED, or strumming for a strum LED.
 6. **Add-ons** – Bluetooth toggle (Pico W / Pico 2 W only) and an optional tilt switch (a plain digital switch such as a mercury ball switch; tilt up twice within 5 s to register it as a star-power shortcut).
 7. **Tune** – debounce time (presets or slider), combined-strum debounce, whammy smoothing, dead-zone and direction, all live.
-8. **Lights** – optional RGB LEDs under the frets (WS2812, SK6812 RGBW or APA102; colours, reactive effects, brightness, LED order, star power glow).
+8. **Lights** – optional RGB LEDs under the frets and on the strum bar (WS2812, SK6812 RGBW or APA102; colours, reactive effects, brightness, LED layout and order, star power glow).
 9. **Modes** – choose what the controller pretends to be, the XInput guitar type and the Fortnite Festival key bindings.
 10. **Hardware / Compatibility** – reference pages listing supported boards and parts, and what works with which game and console.
 
@@ -84,12 +84,13 @@ See the **Compatibility** page in the web app for a game-by-game / console-by-co
 
 ## RGB lighting
 
-* Five individually addressable LEDs under the frets. Supported chips:
+* Up to nine individually addressable LEDs on one chain: five under the frets and up to four on the strum bar. Supported chips:
   * **WS2812 / WS2812B / NeoPixel** (one data pin, PIO-driven) with selectable colour order (GRB, RGB, BRG, …)
   * **SK6812 RGBW** (one data pin; the shared white part of a colour moves to the white LED)
   * **APA102 / SK9822 / DotStar** (data + clock pins)
-* **Brightness 0–255** – full range; five LEDs at full white draw up to ~300 mA from USB.
-* Per-fret **colours** with presets (gamma-corrected on the LEDs, so the red and orange you pick on screen come out red and orange, not pink and peach), and an **LED order wizard**: each LED lights white in turn and you press the fret above it.
+* **Brightness 0–255** – full range; each LED at full white draws up to ~60 mA, so nine draw up to ~540 mA: keep brightness moderate on USB.
+* **LED layout**: one chain of up to 9 LEDs – the five fret LEDs, up to four **strum bar LEDs** (one per side, or the four corners), or both, with the strum LEDs wired before or after the frets (or strum LEDs only). Strum LEDs have their own colour and each follows strum up, strum down or both, and they get every effect, the star power glow, the Bluetooth pairing blink and the charging sweep (which runs on from the green fret to the strum bar). With no fret LEDs, the strum LEDs flash the mode colour at plug-in.
+* Per-fret **colours** with presets (gamma-corrected on the LEDs, so the red and orange you pick on screen come out red and orange, not pink and peach), and an **LED order wizard**: each LED lights white in turn and you press the fret above it (or strum, for a strum LED).
 * **Effects**: static, dim on press, off on press, brighten on press, flash & fade, breathing, rainbow (speed adjustable).
 * **Mode indicator**: after plug-in the fret LED that selects the running mode (green = XInput, red = PS3 Rock Band, yellow = HID, blue = PS3 Guitar Hero, orange = Switch by default) flashes for one second.
 * **Star power glow**: in XInput mode, games that report star power (Clone Hero, YARG, Guitar Hero via the rumble channel) make the idle frets pulse cyan.
@@ -196,7 +197,7 @@ python3 -m http.server -d web 8000   # then open http://localhost:8000 in Chrome
 ## Protocol (for hackers)
 
 Configuration travels over WebUSB vendor control transfers on interface 1 (WinUSB via MS OS 2.0 descriptors):
-`0x30` info · `0x31` live status (GPIO levels, ADCs, debounced press counters) · `0x32/0x33` get/set config (96 bytes, version 4, CRC32, byte 73 = USB host port D+ pin; older 64-byte v3 configs are migrated on boot) · `0x34` save · `0x35` defaults · `0x36` reboot/bootloader · `0x37` set mode · `0x38` light one LED (wizard).
+`0x30` info · `0x31` live status (GPIO levels, ADCs, debounced press counters) · `0x32/0x33` get/set config (96 bytes, version 4, CRC32, byte 73 = USB host port D+ pin, bytes 74–83 = LED layout (no fret LEDs, strum LED count, positions, colour, roles); older 64-byte v3 configs are migrated on boot) · `0x34` save · `0x35` defaults · `0x36` reboot/bootloader · `0x37` set mode · `0x38` light one LED (wizard).
 In the PS3 and Wii modes the configurator sends HID feature report `YAGCC!` to restart the controller once in setup mode.
 See `firmware/src/config.h`, `firmware/src/usb_common.h` and `web/js/protocol.js`.
 

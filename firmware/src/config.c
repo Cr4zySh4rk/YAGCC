@@ -47,7 +47,9 @@ bool config_validate(const yacc_config_t *c) {
     if (c->xinput_type > XI_ROCK_BAND || c->led_type >= NUM_LED_TYPES || c->led_order >= NUM_ORDERS) return false;
     if (c->led_clk_pin != PIN_NONE && c->led_clk_pin >= NUM_DIGITAL_PINS) return false;
     if (c->host_dp_pin != PIN_NONE && c->host_dp_pin + 1 >= NUM_DIGITAL_PINS) return false;
-    for (int i = 0; i < NUM_FRETS; i++) if (c->led_map[i] >= NUM_LEDS) return false;
+    for (int i = 0; i < NUM_FRETS; i++) if (c->led_map[i] >= MAX_LEDS) return false;
+    if (c->no_fret_leds > 1 || c->strum_leds > MAX_STRUM_LEDS) return false;
+    for (int i = 0; i < c->strum_leds; i++) if (c->strum_map[i] >= MAX_LEDS) return false;
     return true;
 }
 

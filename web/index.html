@@ -146,13 +146,13 @@
 
   <!-- ================= LIGHTS ================= -->
   <section class="view" id="view-lights">
-    <div class="page-head"><h1 class="display">Lights</h1><p class="dim">Five addressable LEDs, one under each fret. Everything applies live.</p></div>
+    <div class="page-head"><h1 class="display">Lights</h1><p class="dim">Addressable LEDs under the frets and on the strum bar. Everything applies live.</p></div>
     <div id="lightsGate" class="gate small-gate"><p class="dim">Connect a controller to set up its lights.</p><button class="btn primary" data-connect>Connect controller</button></div>
     <div id="lightsMain" style="display:none">
       <div class="stage compact"><div id="lightsStage"></div></div>
       <div class="cols">
         <div class="panel">
-          <div class="opt first"><div><h2>LEDs</h2><p class="dim">Turn on if you wired LEDs under the frets.</p></div>
+          <div class="opt first"><div><h2>LEDs</h2><p class="dim">Turn on if you wired LEDs under the frets or on the strum bar.</p></div>
             <label class="switch"><input type="checkbox" id="rgbOn"><i></i></label></div>
           <div id="rgbOpts">
             <div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input.</p></div><select id="rgbPin"></select></div>
@@ -161,7 +161,7 @@
             <div class="opt" id="ledClkRow"><div><h3>Clock pin</h3><p class="dim">The APA102 clock input.</p></div><select id="ledClk"></select></div>
             <div class="slider-row"><label for="rgbBri">Brightness</label><output class="val" id="rgbBriVal"></output>
               <input type="range" id="rgbBri" min="0" max="255" step="1"></div>
-            <div class="opt"><div><h3>Star power glow</h3><p class="dim">Idle frets pulse cyan when the game reports star power (XInput).</p></div>
+            <div class="opt"><div><h3>Star power glow</h3><p class="dim">Idle LEDs pulse cyan when the game reports star power (XInput).</p></div>
               <label class="switch"><input type="checkbox" id="rgbSp"><i></i></label></div>
             <div class="opt"><div><h3>Show the mode at plug-in</h3><p class="dim">The fret that picks the running mode flashes for a second.</p></div>
               <label class="switch"><input type="checkbox" id="rgbFlash"><i></i></label></div>
@@ -173,6 +173,11 @@
             <div id="colRows"></div>
             <div class="presets" id="presets"></div>
           </div>
+          <div class="panel" id="strumCard">
+            <h2>LED layout</h2>
+            <div id="layoutOpts"></div>
+            <div id="strumOpts"></div>
+          </div>
           <div class="panel" id="fxCard">
             <h2>Effect</h2>
             <div class="choice-list" id="fxList"></div>
@@ -181,7 +186,7 @@
           </div>
           <div class="panel" id="mapCard">
             <h2>LED order</h2>
-            <p class="dim">Which LED in the chain sits under which fret.</p>
+            <p class="dim">Which LED in the chain sits under which fret or on the strum bar.</p>
             <div id="mapView" class="ledmap"></div>
             <button class="btn" id="mapWizard">Remap with the wizard</button>
           </div>
