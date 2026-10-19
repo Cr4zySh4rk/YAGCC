@@ -16,7 +16,7 @@ set(PICO_PIO_USB_PATH ${CMAKE_CURRENT_LIST_DIR}/lib/pico_pio_usb)
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 14)
+set(YACC_VERSION_MINOR 15)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")
@@ -105,6 +105,11 @@ if(PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w")
     PICO_FLASH_BANK_STORAGE_OFFSET=\(PICO_FLASH_SIZE_BYTES-12288\)
   )
   target_link_libraries(yacc pico_cyw43_arch_none pico_btstack_ble pico_btstack_cyw43 pico_rand)
+  # test builds: -DYACC_BT_LOG_FLASH=ON keeps the Bluetooth event log in flash across power cycles
+  option(YACC_BT_LOG_FLASH "Keep the Bluetooth event log in flash (test builds)" OFF)
+  if(YACC_BT_LOG_FLASH)
+    target_compile_definitions(yacc PRIVATE YACC_BT_LOG_FLASH=1)
+  endif()
   pico_btstack_make_gatt_header(yacc PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src/yagcc.gatt)
 endif()
 

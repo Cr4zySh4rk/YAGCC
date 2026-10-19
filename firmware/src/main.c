@@ -123,6 +123,13 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
         case VREQ_LEDTEST:
             rgb_test_led(req->wValue < NUM_LEDS ? (int)req->wValue : -1);
             return tud_control_status(rhport, req);
+        case VREQ_BTLOGFL: {
+            uint16_t n;
+            const uint8_t *p = bt_log_flash(&n);
+            if (!n) return false;                         // normal builds: stall
+            if (req->bmRequestType_bit.direction == TUSB_DIR_OUT) { bt_log_flash_clear(); return tud_control_status(rhport, req); }
+            return reply(rhport, req, p, n);
+        }
         case VREQ_BTLOG: {
             static uint8_t logbuf[48 * 8];
             return reply(rhport, req, logbuf, bt_log_read(logbuf, sizeof(logbuf)));

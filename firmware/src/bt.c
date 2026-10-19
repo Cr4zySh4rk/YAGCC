@@ -26,6 +26,8 @@ void bt_send_report(const uint8_t *r, uint16_t len) { (void)r; (void)len; }
 void bt_set_usb_active(bool active) { (void)active; }
 int bt_vbus(void) { return -1; }
 uint16_t bt_log_read(uint8_t *out, uint16_t max) { (void)out; (void)max; return 0; }
+const uint8_t *bt_log_flash(uint16_t *len) { *len = 0; return 0; }
+void bt_log_flash_clear(void) {}
 
 #else
 
@@ -78,12 +80,96 @@ enum { L_BOOT = 1, L_WORKING, L_ADV, L_CONNECT, L_ENCRYPT, L_DISCONNECT, L_JUSTW
 #define LOG_N 48
 static struct { uint32_t t; uint8_t code, a; uint16_t b; } s_log[LOG_N];
 static uint8_t s_log_head, s_log_count;
+#if YACC_BT_LOG_FLASH
+static void flog_push(uint32_t t, uint8_t code, uint8_t a, uint16_t b);
+#endif
 static void blog(uint8_t code, uint8_t a, uint16_t b) {
+#if YACC_BT_LOG_FLASH
+    flog_push(to_ms_since_boot(get_absolute_time()), code, a, b);
+#endif
     s_log[s_log_head].t = to_ms_since_boot(get_absolute_time());
     s_log[s_log_head].code = code; s_log[s_log_head].a = a; s_log[s_log_head].b = b;
     s_log_head = (uint8_t)((s_log_head + 1) % LOG_N);
     if (s_log_count < LOG_N) s_log_count++;
 }
+
+// ---------------------------------------------------------------- test build only: log kept in flash
+// Built with -DYACC_BT_LOG_FLASH=1. Every event is also appended to 16 KB of flash (four sectors just below
+// the Bluetooth bond storage), so it survives power cycles until it is cleared from the configurator.
+// Flash is only written from the main loop (bt_task), never from the Bluetooth interrupt context.
+#if YACC_BT_LOG_FLASH
+#include "hardware/flash.h"
+#include "pico/flash.h"
+#define FL_SECTORS 4
+#define FL_SIZE    (FL_SECTORS * FLASH_SECTOR_SIZE)
+#define FL_OFFSET  (PICO_FLASH_SIZE_BYTES - 8 * FLASH_SECTOR_SIZE)   // sectors -8..-5; -4 free, -3..-2 bonds, -1 config
+typedef struct { uint32_t seq, t; uint16_t boot; uint8_t code, a; uint16_t b, pad; } frec_t;   // 16 bytes
+static frec_t s_q[64];
+static volatile uint8_t s_qh, s_qt;                 // queue head (producer) / tail (main loop)
+static uint32_t s_fseq, s_foff;
+static uint16_t s_fboot;
+static bool s_fready;
+static volatile bool s_fclear;
+static const frec_t *frec(uint32_t off) { return (const frec_t *)(XIP_BASE + FL_OFFSET + off); }
+
+static void flog_init(void) {
+    uint32_t best = 0, best_off = 0; bool any = false; uint16_t boot = 0;
+    for (uint32_t off = 0; off < FL_SIZE; off += sizeof(frec_t)) {
+        const frec_t *r = frec(off);
+        if (r->seq == 0xFFFFFFFFu) continue;
+        if (!any || r->seq > best) { best = r->seq; best_off = off; boot = r->boot; any = true; }
+    }
+    s_fseq = any ? best + 1 : 1;
+    s_fboot = any ? (uint16_t)(boot + 1) : 1;
+    s_foff = any ? (best_off + sizeof(frec_t)) % FL_SIZE : 0;
+    s_fready = true;
+}
+static void flog_push(uint32_t t, uint8_t code, uint8_t a, uint16_t b) {
+    uint8_t n = (uint8_t)((s_qh + 1) % 64);
+    if (n == s_qt) return;                             // queue full: drop (main loop is stalled)
+    s_q[s_qh] = (frec_t){ 0, t, 0, code, a, b, 0xFFFF };
+    s_qh = n;
+}
+typedef struct { bool erase; uint32_t off; const uint8_t *page; } fop_t;
+static void fop(void *p) {
+    const fop_t *o = (const fop_t *)p;
+    if (o->erase) flash_range_erase(FL_OFFSET + o->off, FLASH_SECTOR_SIZE);
+    else flash_range_program(FL_OFFSET + o->off, o->page, FLASH_PAGE_SIZE);
+}
+static bool sector_blank(uint32_t off) {
+    const uint32_t *w = (const uint32_t *)(XIP_BASE + FL_OFFSET + off);
+    for (uint32_t i = 0; i < FLASH_SECTOR_SIZE / 4; i++) if (w[i] != 0xFFFFFFFFu) return false;
+    return true;
+}
+static void flog_flush(void) {
+    if (!s_fready) return;
+    if (s_fclear) {
+        s_fclear = false;
+        for (uint32_t off = 0; off < FL_SIZE; off += FLASH_SECTOR_SIZE) { fop_t o = { true, off, NULL }; flash_safe_execute(fop, &o, 500); }
+        s_foff = 0;
+    }
+    while (s_qt != s_qh) {
+        frec_t r = s_q[s_qt];
+        r.seq = s_fseq++; r.boot = s_fboot;
+        if (s_foff % FLASH_SECTOR_SIZE == 0 && !sector_blank(s_foff)) {   // wrapped onto old records: drop the oldest 4 KB
+            fop_t o = { true, s_foff, NULL }; flash_safe_execute(fop, &o, 500);
+        }
+        static uint8_t page[FLASH_PAGE_SIZE];
+        memset(page, 0xFF, sizeof(page));                // 0xFF leaves the other records in the page untouched
+        uint32_t in_page = s_foff % FLASH_PAGE_SIZE;
+        memcpy(&page[in_page], &r, sizeof(r));
+        fop_t o = { false, s_foff - in_page, page };
+        flash_safe_execute(fop, &o, 500);
+        s_foff = (s_foff + sizeof(frec_t)) % FL_SIZE;
+        s_qt = (uint8_t)((s_qt + 1) % 64);
+    }
+}
+const uint8_t *bt_log_flash(uint16_t *len) { *len = FL_SIZE; return (const uint8_t *)(XIP_BASE + FL_OFFSET); }
+void bt_log_flash_clear(void) { s_fclear = true; }
+#else
+const uint8_t *bt_log_flash(uint16_t *len) { *len = 0; return NULL; }
+void bt_log_flash_clear(void) {}
+#endif
 
 // ---------------------------------------------------------------- identity of the running mode
 static const char *mode_short(uint8_t m) {
@@ -291,6 +377,9 @@ bool bt_running(void) { return s_running; }
 
 void bt_init(bool enabled, bool pair, bool open_window) {
     if (s_running || (!enabled && !pair)) return;   // radio stays off: no power, no PIO or DMA used
+#if YACC_BT_LOG_FLASH
+    flog_init();
+#endif
     if (cyw43_arch_init()) return;
     s_running = true;
     blog(L_BOOT, (uint8_t)(pair | (open_window << 1)), g_usb_mode);
@@ -348,6 +437,9 @@ void bt_start_pairing(void) {
 }
 
 void bt_task(void) {
+#if YACC_BT_LOG_FLASH
+    flog_flush();
+#endif
     if (!s_running || !s_pairing) return;
     if ((int32_t)(to_ms_since_boot(get_absolute_time()) - s_pair_until) <= 0) return;
     async_context_t *ctx = cyw43_arch_async_context();     // nobody paired in time: stop being discoverable

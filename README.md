@@ -157,6 +157,15 @@ cmake -S firmware -B build -G Ninja -DPICO_BOARD=pico_clone -DPICO_SDK_PATH=$PWD
 cmake --build build        # build/yacc.uf2 (published as yagcc-<board>.uf2) and build/nuke/yacc_nuke.uf2
 ```
 
+### Bluetooth test firmware
+
+`-DYACC_BT_LOG_FLASH=ON` (Pico W / Pico 2 W) builds firmware that also keeps the Bluetooth event log in 16 KB of flash, so it survives power cycles until **Clear** is pressed on the Setup page's Bluetooth step; the log is grouped by power-on. It is meant for chasing connection problems and is not published on the Flash page.
+
+```bash
+cmake -S firmware -B build-btlog -G Ninja -DPICO_BOARD=pico_w -DYACC_BT_LOG_FLASH=ON -DPICO_SDK_PATH=$PWD/pico-sdk
+cmake --build build-btlog
+```
+
 ### Tests
 
 ```bash

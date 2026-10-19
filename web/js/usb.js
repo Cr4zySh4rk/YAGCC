@@ -1,4 +1,4 @@
-import { VID, PIDS, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog } from './protocol.js?v=dev';
+import { VID, PIDS, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash } from './protocol.js?v=dev';
 
 const IFACE = 1;   // vendor config interface
 
@@ -49,6 +49,9 @@ export class YaccDevice extends EventTarget {
   async getInfo() { return parseInfo(await this._in(VREQ.INFO, 16)); }
   async getStatus() { return parseStatus(await this._in(VREQ.STATUS, 64)); }
   async getBtLog() { return parseBtLog(await this._in(VREQ.BTLOG, 384)); }
+  // test firmware only (throws on normal builds, which stall the request)
+  async getBtLogFlash() { return parseBtLogFlash(await this._in(VREQ.BTLOGFL, 16384)); }
+  async clearBtLogFlash() { await this._out(VREQ.BTLOGFL); }
   async getConfig() { return parseConfig(await this._in(VREQ.GETCFG, CFG_SIZE)); }
   async setConfig(cfg) { await this._out(VREQ.SETCFG, 0, serializeConfig(cfg)); }
   async save() { await this._out(VREQ.SAVE); }

@@ -42,6 +42,7 @@
 #define VREQ_SETMODE  0x37   // OUT : wValue = mode to store (applies after reboot)
 
 #define VREQ_BTLOG    0x39   // IN  : Bluetooth event log (bt_log_read)
+#define VREQ_BTLOGFL  0x3A   // IN  : Bluetooth log kept in flash (test builds), OUT: erase it
 #define VREQ_LEDTEST  0x38   // OUT : wValue = chain position to light white, 0xFFFF = back to normal
 
 #define XINPUT_REPORT_LEN 20

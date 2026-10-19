@@ -4,7 +4,7 @@ export const PIDS = [0x0001, 0x0002, 0x0003];
 
 export const VREQ = {
   INFO: 0x30, STATUS: 0x31, GETCFG: 0x32, SETCFG: 0x33,
-  SAVE: 0x34, DEFAULTS: 0x35, REBOOT: 0x36, SETMODE: 0x37, LEDTEST: 0x38, BTLOG: 0x39,
+  SAVE: 0x34, DEFAULTS: 0x35, REBOOT: 0x36, SETMODE: 0x37, LEDTEST: 0x38, BTLOG: 0x39, BTLOGFL: 0x3A,
 };
 
 export const FUNCS = ['green', 'red', 'yellow', 'blue', 'orange', 'strumUp', 'strumDown', 'star', 'plus'];
@@ -211,6 +211,24 @@ const BT_EVENTS = {
   12: (a) => (a === 0 ? 'reconnected with stored key' : `stored key rejected, status 0x${a.toString(16)}`),
   13: (a) => `connection parameters ${a === 0 ? 'accepted' : 'rejected'} by host`,
 };
+// Test firmware: log kept in flash, 16 byte records, grouped by power-on
+export function parseBtLogFlash(dv) {
+  const recs = [];
+  for (let o = 0; o + 16 <= dv.byteLength; o += 16) {
+    const seq = dv.getUint32(o, true);
+    if (seq === 0xffffffff || seq === 0) continue;
+    recs.push({ seq, t: dv.getUint32(o + 4, true), boot: dv.getUint16(o + 8, true), code: dv.getUint8(o + 10), a: dv.getUint8(o + 11), b: dv.getUint16(o + 12, true) });
+  }
+  recs.sort((x, y) => x.seq - y.seq);
+  const out = []; let boot = -1;
+  for (const r of recs) {
+    if (r.boot !== boot) { boot = r.boot; out.push(`--- power-on #${boot} ---`); }
+    const f = BT_EVENTS[r.code];
+    out.push(`${(r.t / 1000).toFixed(2).padStart(8)} s  ${f ? f(r.a, r.b) : `event ${r.code} ${r.a} ${r.b}`}`);
+  }
+  return out;
+}
+
 export function parseBtLog(dv) {
   const out = [];
   for (let o = 0; o + 8 <= dv.byteLength; o += 8) {

@@ -25,4 +25,8 @@ void bt_set_usb_active(bool active);
 int bt_vbus(void);
 // Bluetooth event log (last 48 events, 8 bytes each: u32 ms, u8 code, u8 a, u16 b), oldest first
 uint16_t bt_log_read(uint8_t *out, uint16_t max);
+// Test builds (-DYACC_BT_LOG_FLASH=1): the log kept in flash, 16 byte records (u32 seq, u32 ms, u16 boot,
+// u8 code, u8 a, u16 b, u16 pad); erased sectors read as 0xFF. len = 0 when the build doesn't keep one.
+const uint8_t *bt_log_flash(uint16_t *len);
+void bt_log_flash_clear(void);
 #endif
