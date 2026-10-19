@@ -69,6 +69,11 @@ export function ledLayout(c) {
   const firstFret = frets ? Math.min(...c.ledMap) : 99, firstStrum = n ? Math.min(...c.strumMap.slice(0, n)) : 99;
   return { frets, strum: n, strumFirst: firstStrum < firstFret, fretOrder, chain: (frets ? NUM_LEDS : 0) + n };
 }
+// brightness ceiling for the layout, same as the firmware's led_max_brightness
+export function maxBrightness(c) {
+  if (!c.strumLeds) return 255;
+  return c.noFretLeds ? 200 : 150;
+}
 export function applyLedLayout(c, { frets, strum, strumFirst }) {
   const fretOrder = [0, 1, 2, 3, 4].sort((a, b) => c.ledMap[a] - c.ledMap[b]);
   const strumOrder = [...Array(MAX_STRUM_LEDS).keys()].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
@@ -78,6 +83,7 @@ export function applyLedLayout(c, { frets, strum, strumFirst }) {
   fretOrder.forEach((f, k) => { c.ledMap[f] = frets ? fBase + k : k; });
   // unused strum slots are parked past the chain (the firmware ignores slots beyond strumLeds) so they keep sorting last
   strumOrder.forEach((s, k) => { c.strumMap[s] = k < strum ? sBase + k : 200 + k; });
+  c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
 }
 export const LED_TYPES = [
   { id: 0, name: 'WS2812B / NeoPixel', desc: 'One data wire. Also WS2813, SK6812 (RGB) and most addressable strips.' },

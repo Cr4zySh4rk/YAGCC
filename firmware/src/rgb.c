@@ -204,7 +204,8 @@ void rgb_task(void) {
     if ((uint32_t)(now - last_frame) < FRAME_US) return;
     last_frame = now;
 
-    uint8_t bright = g_cfg.rgb_brightness;                  // 0..255
+    uint8_t bright = g_cfg.rgb_brightness;                  // 0..255, capped for the layout (led_max_brightness)
+    if (bright > led_max_brightness(&g_cfg)) bright = led_max_brightness(&g_cfg);
     light_t L[MAX_LEDS];
     int chain;
     int n = build_lights(L, &chain);

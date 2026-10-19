@@ -136,6 +136,13 @@ _Static_assert(sizeof(yacc_config_t) == 96, "config size");
 
 extern yacc_config_t g_cfg;
 
+// Brightness ceiling for the LED layout, to keep the chain's current in check: 255 with the five fret LEDs
+// only, 200 with strum LEDs only, 150 with fret and strum LEDs together
+static inline uint8_t led_max_brightness(const yacc_config_t *c) {
+    if (!c->strum_leds) return 255;
+    return c->no_fret_leds ? 200 : 150;
+}
+
 // strum LED i (0..MAX_STRUM_LEDS-1): chain position and role, across the two halves of the config
 static inline uint8_t strum_led_pos(const yacc_config_t *c, int i) { return i < 4 ? c->strum_map[i] : c->strum_map2[i - 4]; }
 static inline uint8_t strum_led_role(const yacc_config_t *c, int i) {

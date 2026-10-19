@@ -1,6 +1,6 @@
 import {
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
-  DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout,
+  DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
 } from './protocol.js?v=dev';
 import { YaccDevice, webusbSupported } from './usb.js?v=dev';
@@ -362,7 +362,8 @@ function renderStep() {
           <div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input.</p></div>
             <select id="rgbPinSel"><option value="255">Choose pin…</option>${free.map((p) => `<option value="${p}" ${p === c.rgbPin ? 'selected' : ''}>GP${p}</option>`).join('')}</select></div>
           <div class="slider-row"><label for="rgbBriS">Brightness</label><span class="val" id="rgbBriSVal">${c.rgbBrightness}</span>
-            <input type="range" id="rgbBriS" min="0" max="255" step="1" value="${c.rgbBrightness}"></div>
+            <input type="range" id="rgbBriS" min="0" max="${maxBrightness(c)}" step="1" value="${c.rgbBrightness}"></div>
+          ${brightNote(c)}
           <p class="dim small">Colours, effects and the LED type are on the Lights page.</p>` : ''}
         ${nav(`<button class="btn primary" id="bSkip" ${c.rgbEnabled && c.rgbPin === PIN_NONE ? 'disabled' : ''}>${c.rgbEnabled ? 'Continue' : 'Skip, no LEDs'}</button>`)}`;
       wireNav();
@@ -686,6 +687,12 @@ function updateLedPreview(s) {
   });
 }
 
+// why the brightness slider stops short of 255
+function brightNote(c) {
+  const m = maxBrightness(c);
+  if (m === 255) return '';
+  return `<p class="dim small">Brightness is limited to ${m} with ${c.noFretLeds ? 'strum LEDs only' : 'fret and strum LEDs together'}, to keep the current the LED chain draws in check.</p>`;
+}
 // LED layout controls (setup wizard and Lights page): fret LEDs on / off, how many strum LEDs, wiring order
 const STRUM_COUNTS = ['None', '1', '2 (1 per side)', '3', '4 (corners)', '5', '6', '7', '8 (4 per side)'];
 function ledLayoutControls(c, pfx = 'lay') {
@@ -738,7 +745,9 @@ function buildLights() {
     $('#ledClkRow').style.display = c.ledType === 2 ? '' : 'none';
     $('#rgbSp').checked = !!c.rgbStarPower;
     $pin.value = String(c.rgbPin);
+    $bri.max = maxBrightness(c); c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
     $bri.value = c.rgbBrightness; $('#rgbBriVal').textContent = c.rgbBrightness;
+    $('#rgbBriNote').innerHTML = brightNote(c);
     $('#rgbFlash').checked = c.rgbBootFlash;
     $spd.value = c.rgbSpeed; $('#fxSpeedVal').textContent = c.rgbSpeed;
     document.querySelectorAll('input[name=fx]').forEach((r) => { r.checked = +r.value === c.rgbEffect; });
