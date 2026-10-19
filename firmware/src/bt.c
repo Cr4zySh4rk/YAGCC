@@ -76,7 +76,7 @@ static btstack_packet_callback_registration_t s_hci_cb, s_sm_cb;
 
 // ---------------------------------------------------------------- event log (read over USB by the configurator)
 enum { L_BOOT = 1, L_WORKING, L_ADV, L_CONNECT, L_ENCRYPT, L_DISCONNECT, L_JUSTWORKS, L_PAIRED, L_SUBSCRIBE,
-       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS };
+       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS, L_LTK, L_PEER };
 #define LOG_N 48
 static struct { uint32_t t; uint8_t code, a; uint16_t b; } s_log[LOG_N];
 static uint8_t s_log_head, s_log_count;
@@ -250,7 +250,9 @@ static uint16_t att_read(hci_con_handle_t con, uint16_t handle, uint16_t offset,
 // becomes 'BM' <mode> i, so every mode keeps its own bonds.
 static const btstack_tlv_t *s_tlv;
 static void *s_tlv_ctx;
-#define BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'M' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
+// 'BN' since v0.17 (new addresses, see bt_init); the 'BM' bonds of v0.14-v0.16 are dropped
+#define BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'N' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
+#define OLD_BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'M' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
 static uint32_t map_tag(uint32_t tag) {
     if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'D')) return BOND_TAG(g_usb_mode, tag & 0xFF);
     return tag;
@@ -324,6 +326,15 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_CONNECTION_COMPLETE) {
                 s_con = hci_subevent_le_connection_complete_get_connection_handle(packet);
                 blog(L_CONNECT, hci_subevent_le_connection_complete_get_status(packet), hci_subevent_le_connection_complete_get_peer_address_type(packet));
+                bd_addr_t pa;
+                hci_subevent_le_connection_complete_get_peer_address(packet, pa);
+                blog(L_PEER, pa[3], (uint16_t)((pa[4] << 8) | pa[5]));   // last three bytes: tells two hosts apart
+            } else if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_LONG_TERM_KEY_REQUEST) {
+                // the host starts encryption with a stored key. EDIV / Rand are zero for a Secure Connections key
+                // (the only kind this firmware makes); non-zero means the host holds an old legacy key.
+                uint8_t legacy = hci_subevent_le_long_term_key_request_get_encryption_diversifier(packet) != 0;
+                for (int i = 5; i < 13; i++) if (packet[i]) legacy = 1;
+                blog(L_LTK, legacy, hci_subevent_le_long_term_key_request_get_encryption_diversifier(packet));
             }
             break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
@@ -398,17 +409,26 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     bd_addr_t addr;                                  // static random address, different for every mode
     for (int i = 0; i < 6; i++) addr[i] = uid.id[2 + i];
     addr[5] ^= (uint8_t)(g_usb_mode * 0x2B + 1);
+    // v0.17: new addresses. Windows can keep a hidden, stale record (with an old legacy key) for an address it
+    // was once paired with; it then keeps trying that key alongside the current one and the link fails with a
+    // MIC error (0x3D) on every other attempt. Fresh addresses leave any such record behind for good.
+    addr[4] ^= 0xA7;
     addr[0] |= 0xC0;                                 // static random: top two bits set
 
     l2cap_init();
     sm_init();
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
     sm_set_authentication_requirements(SM_AUTHREQ_SECURE_CONNECTION | SM_AUTHREQ_BONDING);
+    // A host with a key we don't have gets "key missing" (0x06) instead of a made-up legacy key that fails with
+    // a MIC error, so it knows to pair again instead of retrying forever.
+    sm_allow_ltk_reconstruction_without_le_device_db_entry(0);
     // per-mode bond list (see above); bonds from the older firmware ('BTD' tags, legacy keys) are dropped
     btstack_tlv_get_instance(&s_tlv, &s_tlv_ctx);
     if (s_tlv) {
-        for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++)
+        for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) {
             s_tlv->delete_tag(s_tlv_ctx, (((uint32_t)'B') << 24) | (((uint32_t)'T') << 16) | (((uint32_t)'D') << 8) | (uint32_t)i);
+            for (int m = 0; m < NUM_MODES; m++) s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG(m, i));
+        }
         le_device_db_tlv_configure(&mode_tlv, s_tlv_ctx);
     }
     att_server_init(profile_data, att_read, NULL);

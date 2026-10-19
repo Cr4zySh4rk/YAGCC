@@ -210,6 +210,8 @@ const BT_EVENTS = {
   11: (a, b) => `pairing window open for ${b} s${a ? ', all hosts forgotten' : ''}`,
   12: (a) => (a === 0 ? 'reconnected with stored key' : `stored key rejected, status 0x${a.toString(16)}`),
   13: (a) => `connection parameters ${a === 0 ? 'accepted' : 'rejected'} by host`,
+  14: (a, b) => (a ? `host used an old legacy key (EDIV 0x${b.toString(16)})` : 'host asked for its stored key'),
+  15: (a, b) => `host address …:${[a, b >> 8, b & 255].map((x) => x.toString(16).padStart(2, '0')).join(':')}`,
 };
 // Test firmware: log kept in flash, 16 byte records, grouped by power-on
 export function parseBtLogFlash(dv) {
