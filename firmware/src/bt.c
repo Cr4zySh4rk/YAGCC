@@ -39,7 +39,6 @@ void bt_log_flash_clear(void) {}
 #include "btstack.h"
 #include "ble/gatt-service/device_information_service_server.h"
 #include "ble/gatt-service/hids_device.h"
-#include "ble/gatt-service/battery_service_server.h"
 #include "yagcc.h"                       // GATT database generated from yagcc.gatt
 #include "btstack_tlv.h"
 #include "ble/le_device_db_tlv.h"
@@ -440,9 +439,6 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
         case ATT_EVENT_MTU_EXCHANGE_COMPLETE:
             blog(L_MTU, 0, att_event_mtu_exchange_complete_get_MTU(packet));
             break;
-        case L2CAP_EVENT_CONNECTION_PARAMETER_UPDATE_RESPONSE:
-            blog(L_PARAMS, (uint8_t)little_endian_read_16(packet, 4), 0);
-            break;
         case SM_EVENT_JUST_WORKS_REQUEST:
             blog(L_JUSTWORKS, s_pairing, 0);
             // always accept (as Santroller does): a host whose key went stale can pair again instead of being
@@ -463,8 +459,8 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                     s_connected = hids_subevent_input_report_enable_get_enable(packet) != 0;
                     blog(L_SUBSCRIBE, s_connected, 0);
                     if (s_connected) {
-                        // as Santroller: 7.5-8.75 ms, no latency, 1 s supervision timeout
-                        gap_request_connection_parameter_update(s_con, 6, 7, 0, 100);
+                        // v0.19: no connection parameter request. In the v0.17 and v0.18 logs Windows hung up
+                        // shortly after accepting one, every time; Windows picks its own HID interval.
                         s_pairing = false;
                         rgb_set_bt(RGB_BT_CONNECTED);
                         if (s_report_len) hids_device_request_can_send_now_event(s_con);
@@ -479,6 +475,13 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         default: break;
     }
+}
+
+// L2CAP passes some HCI events on to its handlers too: only take its own here, so nothing is handled twice
+static void l2cap_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint16_t size) {
+    (void)channel; (void)size;
+    if (type == HCI_EVENT_PACKET && hci_event_packet_get_type(packet) == L2CAP_EVENT_CONNECTION_PARAMETER_UPDATE_RESPONSE)
+        blog(L_PARAMS, (uint8_t)little_endian_read_16(packet, 4), 0);
 }
 
 // ---------------------------------------------------------------- API
@@ -536,7 +539,6 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     s_gatt_service.read_callback = &gatt_read;
     s_gatt_service.write_callback = &gatt_write;
     att_server_register_service_handler(&s_gatt_service);
-    battery_service_server_init(100);
     device_information_service_server_init();
     device_information_service_server_set_manufacturer_name("YAGCC");
     device_information_service_server_set_model_number(s_name);
@@ -552,7 +554,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     hids_device_register_packet_handler(packet_handler);
     hids_device_register_get_report_callback(get_report);
     att_server_register_packet_handler(packet_handler);       // MTU, indication results
-    s_l2cap_cb.callback = &packet_handler;                    // connection parameter update responses
+    s_l2cap_cb.callback = &l2cap_handler;                     // connection parameter update responses
     l2cap_add_event_handler(&s_l2cap_cb);
     hci_power_control(HCI_POWER_ON);
     if (pair || open_window) rgb_set_bt(RGB_BT_PAIRING);

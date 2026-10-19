@@ -516,8 +516,10 @@ int main(void) {
             vbus = gpio_get(PICO_VBUS_PIN);            // running from the battery alone: no sweep
 #endif
             if (bt_vbus() >= 0) vbus = bt_vbus() == 1;  // Pico W / Pico 2 W: read through the radio chip once it's on
-            // Bluetooth is no longer switched off by a USB host (that broke playing wirelessly while the cable
-            // charges from a PC); instead a connected Bluetooth host takes the input and USB gets a neutral pad.
+            // A USB host (a PC or console enumerating the guitar, not just a charger) switches Bluetooth off:
+            // the wireless host is dropped and the guitar stops advertising. Pairings stay saved; unplugging
+            // brings Bluetooth back and the paired host reconnects.
+            bt_set_usb_active(mounted);
             bool bt_host = bt_state() == BT_STATE_CONNECTED;   // a Bluetooth host counts too: no sweep
             rgb_set_charging(!mounted && !bt_host && vbus && host_lost_at && now - host_lost_at > 3000000);
         }
@@ -571,9 +573,8 @@ int main(void) {
         pad_t st;
         read_pad(&st);
         // Bluetooth carries the same HID report as USB in this mode. XInput, OG Xbox and Xbox One aren't HID
-        // over USB, so they use the generic gamepad. When both are connected, Bluetooth gets the input and the
-        // USB host sees a pad with nothing pressed, so a game never gets every press twice.
-        if (bt_running()) {
+        // over USB, so they use the generic gamepad. Bluetooth is off while a USB host is connected.
+        if (bt_running() && !tud_mounted()) {
             static uint8_t bt_last[64];
             static uint16_t bt_len;
             static bool bt_first = true;
@@ -599,9 +600,6 @@ int main(void) {
                     uint8_t c[64]; memcpy(c, p, n); c[6] = (uint8_t)(bt_counter << 2); bt_counter = (bt_counter + 1) & 0x3F;
                     bt_send_report(c, n);
                 } else bt_send_report(p, n);
-            }
-            if (bt_state() == BT_STATE_CONNECTED) {      // Bluetooth host in charge: USB gets a neutral pad
-                memset(&st, 0, sizeof(st));
             }
         }
         if (g_usb_mode == MODE_XBONE) {                 // GIP has its own sequencing, acks and auth gate

@@ -1,6 +1,6 @@
 // Same layout as Santroller's gamepad database: GAP, then the GATT service (Service Changed + Database
 // Hash) so a bonded host such as Windows, which caches the database, can be told when it changed, then
-// Battery (mandatory for HID over GATT), Device Information and HID.
+// Device Information and HID. No Battery service: the guitar can't measure its battery.
 PRIMARY_SERVICE, GAP_SERVICE
 CHARACTERISTIC, GAP_DEVICE_NAME, DYNAMIC | READ,
 CHARACTERISTIC, GAP_APPEARANCE, DYNAMIC | READ,
@@ -8,8 +8,6 @@ CHARACTERISTIC, GAP_APPEARANCE, DYNAMIC | READ,
 PRIMARY_SERVICE, GATT_SERVICE
 CHARACTERISTIC, GATT_SERVICE_CHANGED, DYNAMIC | INDICATE,
 CHARACTERISTIC, GATT_DATABASE_HASH, READ,
-
-#import <battery_service.gatt>
 
 #import <device_information_service.gatt>
 
