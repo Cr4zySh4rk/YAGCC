@@ -2,20 +2,32 @@
 
 # YAGCC — Yet Another Guitar Controller Configurator
 
-A browser-based configurator **and** matching firmware for DIY guitar controllers on the Raspberry Pi Pico family.
-Flash the board, plug it in, and the web app walks you through mapping every button — no matter which pins you wired them to.
+[![Build firmware & deploy site](https://github.com/Cr4zySh4rk/YAGCC/actions/workflows/build.yml/badge.svg)](https://github.com/Cr4zySh4rk/YAGCC/actions/workflows/build.yml)
+[![Latest firmware](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fcr4zysh4rk.github.io%2FYAGCC%2Ffirmware.json&query=%24.minor&prefix=v0.&label=firmware&color=5B4EE8)](https://cr4zysh4rk.github.io/YAGCC/)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![Web app](https://img.shields.io/badge/web%20app-open-38e1c6)](https://cr4zysh4rk.github.io/YAGCC/)
+
+**Free, open-source firmware and browser configurator for DIY Guitar Hero and Rock Band guitar controllers on the Raspberry Pi Pico family** (Pico, Pico W, Pico 2, Pico 2 W and RP2040 boards such as the Waveshare RP2040-Zero, SparkFun Pro Micro RP2040 and Adafruit KB2040).
+Flash the board, plug it in, and the web app walks you through mapping every button, whichever pins you wired them to. Play Clone Hero, YARG, Fortnite Festival, Rock Band and Guitar Hero over USB or Bluetooth.
 
 **Web app:** https://cr4zysh4rk.github.io/YAGCC/ (GitHub Pages) · also deployable on Vercel (see below)
 
 > Requires a Chromium-based browser (Chrome, Edge, Brave, …) for WebUSB. Downloading firmware works in any browser.
 
-## Demo
-
 <p align="center">
-  <a href="https://cr4zysh4rk.github.io/YAGCC/demo/yagcc-demo.mp4"><img src="assets/demo/demo-preview.gif" alt="Guided setup: each fret is pressed twice and YAGCC assigns its pin" width="800"></a>
+  <a href="https://cr4zysh4rk.github.io/YAGCC/"><img src="assets/demo/demo-preview.gif" alt="The YAGCC configurator: frets and strum mapped with a live 3D guitar, fret LED colours, then picking a USB mode" width="800"></a>
 </p>
 
-**[▶ Watch the full walkthrough (5 min, with voice-over and subtitles)](https://cr4zysh4rk.github.io/YAGCC/demo/yagcc-demo.mp4)**: flashing, guided setup, whammy calibration, LED mapping, tuning, lights, modes and the compatibility tables. No real guitar was used; a simulated controller feeds the configurator the same data the firmware sends.
+## Features at a glance
+
+* **Any-pin button mapping**: press each fret twice and the configurator finds its pin, with a live 3D guitar that mirrors the real one.
+* **Many controller modes**: Xbox 360 (XInput), PS3 Guitar Hero and Rock Band, Wii Rock Band, Nintendo Switch, generic HID, keyboard (Fortnite Festival), original Xbox, and PS4 / PS5 and Xbox One / Series with console authentication passed through to a licensed controller *(experimental)*. Pick a mode by holding a fret at plug-in.
+* **Bluetooth LE** on the Pico W / Pico 2 W, presenting the same controller as the USB mode, with automatic reconnects.
+* **Whammy calibration**, smoothing, dead zone and per-input debounce, all live.
+* **RGB lighting**: WS2812, SK6812 RGBW and APA102 LEDs under the frets and on the strum bar (up to 13), colours, reactive effects and star power glow.
+* **No toolchain needed**: firmware downloads and in-browser flashing, update notifications, backup and restore of all settings.
+
+An earlier 5-minute walkthrough with voice-over (from v0.4; the setup flow is the same, newer features are missing) is **[here](https://cr4zysh4rk.github.io/YAGCC/demo/yagcc-demo.mp4)**. No real guitar was used in either; a simulated controller feeds the configurator the same data the firmware sends.
 
 ## How it works
 

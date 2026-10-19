@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /downloads/
+
+Sitemap: https://cr4zysh4rk.github.io/YAGCC/sitemap.xml
