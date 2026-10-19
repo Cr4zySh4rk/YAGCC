@@ -7,7 +7,7 @@
 #define BT_STATE_PAIRING    1   // discoverable, accepting a new host
 #define BT_STATE_CONNECTED  2
 
-// enabled: Bluetooth switched on in the configurator. pair: forget every host and pair a new one
+// enabled: Bluetooth switched on in the configurator. pair: forget this mode's hosts and pair a new one
 // (Star power held at power-on). open_window: be discoverable for a minute without forgetting anyone
 // (after switching modes, so a host can add the new mode). With neither enabled nor pair, the radio stays off.
 // The Bluetooth device copies the running USB mode (g_usb_mode): same HID descriptor, reports and ids.

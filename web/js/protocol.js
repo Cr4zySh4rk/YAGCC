@@ -118,7 +118,7 @@ export function defaultConfig() {
     pins: Array(FUNCS.length).fill(PIN_NONE),
     whammyCh: PIN_NONE, whammyInvert: false, whammyMin: 0, whammyMax: 4095,
     tiltPin: PIN_NONE,
-    btEnabled: false, tiltEnabled: false, combinedStrum: true,
+    btEnabled: false, btDebugLog: false, tiltEnabled: false, combinedStrum: true,
     usbMode: 0, debounceMode: 0, debounce100us: 50,
     whammySmooth: 2, whammyDeadzone: 3,
     bootModes: [0, 3, 2, 1, 5],
@@ -150,7 +150,7 @@ export function parseConfig(dv) {
     whammySmooth: dv.getUint8(26), whammyDeadzone: dv.getUint8(27),
     bootModes,
     cfgRev: dv.getUint8(57),
-    rgbEnabled: !!(flags & 8), rgbBootFlash: !!(flags & 16), starDpadLeft: !!(flags & 32), rgbStarPower: !!(flags & 64),
+    rgbEnabled: !!(flags & 8), rgbBootFlash: !!(flags & 16), starDpadLeft: !!(flags & 32), rgbStarPower: !!(flags & 64), btDebugLog: !!(flags & 128),
     xinputType: dv.getUint8(58), ledType: dv.getUint8(59), ledOrder: dv.getUint8(60), ledClkPin: dv.getUint8(61),
     keys: Array.from({ length: 11 }, (_, i) => dv.getUint8(62 + i)),
     hostPin: dv.getUint8(57) >= 4 ? dv.getUint8(73) : PIN_NONE,
@@ -171,7 +171,7 @@ export function serializeConfig(c) {
   dv.setUint16(16, c.whammyMin, true);
   dv.setUint16(18, c.whammyMax, true);
   dv.setUint8(20, c.tiltPin);
-  dv.setUint8(21, (c.btEnabled ? 1 : 0) | (c.tiltEnabled ? 2 : 0) | (c.combinedStrum ? 4 : 0) | (c.rgbEnabled ? 8 : 0) | (c.rgbBootFlash ? 16 : 0) | (c.starDpadLeft ? 32 : 0) | (c.rgbStarPower ? 64 : 0));
+  dv.setUint8(21, (c.btEnabled ? 1 : 0) | (c.tiltEnabled ? 2 : 0) | (c.combinedStrum ? 4 : 0) | (c.rgbEnabled ? 8 : 0) | (c.rgbBootFlash ? 16 : 0) | (c.starDpadLeft ? 32 : 0) | (c.rgbStarPower ? 64 : 0) | (c.btDebugLog ? 128 : 0));
   dv.setUint8(22, c.usbMode);
   dv.setUint8(23, c.debounceMode);
   dv.setUint16(24, c.debounce100us, true);
@@ -207,7 +207,7 @@ const BT_EVENTS = {
   8: (a, b) => (a === 0 ? 'paired' : `pairing failed, status 0x${a.toString(16)}, reason 0x${b.toString(16)}`),
   9: (a) => (a ? 'host subscribed to input' : 'host unsubscribed'),
   10: (a) => (a ? 'USB host present: Bluetooth paused' : 'no USB host: Bluetooth resumed'),
-  11: (a, b) => `pairing window open for ${b} s${a ? ', all hosts forgotten' : ''}`,
+  11: (a, b) => `pairing window open for ${b} s${a ? ', this mode\'s hosts forgotten' : ''}`,
   12: (a) => (a === 0 ? 'reconnected with stored key' : `stored key rejected, status 0x${a.toString(16)}`),
   13: (a) => `connection parameters ${a === 0 ? 'accepted' : 'rejected'} by host`,
   14: (a, b) => (a ? `host used an old legacy key (EDIV 0x${b.toString(16)})` : 'host asked for its stored key'),

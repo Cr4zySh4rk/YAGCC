@@ -50,6 +50,7 @@ enum {
 #define CFG_FLAG_RGB_BOOTFLASH  (1u << 4)   // flash the mode's fret LED for 1 s after plug-in
 #define CFG_FLAG_STAR_DPAD_LEFT (1u << 5)   // XInput: star power also presses D-pad left (Fortnite Festival overdrive)
 #define CFG_FLAG_RGB_STARPOWER  (1u << 6)   // light the frets when a game reports star power
+#define CFG_FLAG_BT_DEBUG_LOG   (1u << 7)   // Bluetooth debug logging (Setup > Bluetooth): off unless switched on
 
 // Debounce behaviour (same three flavours Santroller offers)
 enum {

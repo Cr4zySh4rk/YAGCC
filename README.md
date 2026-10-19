@@ -122,16 +122,16 @@ The **Hardware** page in the web app describes each board, the LED types, whammy
 
 **Bluetooth** (tested on a Pico W with Windows: pairing and reconnecting after power cycles in every mode; Pico 2 W built from the same code but not yet tried) needs the CYW43 radio of a genuine Pico W / Pico 2 W; the ESP8285 on clone boards is Wi-Fi only, so the toggle is disabled there. Over Bluetooth LE (HID over GATT, BTstack) the guitar presents **the same device as over USB in the running mode**: the same input report layout and bytes and the same vendor / product ids (the report map keeps only the input report; the USB output / feature reports are console handshakes) (PS3 Guitar Hero, PS3 / Wii Rock Band, Switch, keyboard, HID gamepad, PS4). XInput, original Xbox and Xbox One aren't HID devices over USB, so over Bluetooth they use the generic gamepad. Each mode is its own Bluetooth device ("YAGCC PS3 GH", "YAGCC Switch", …) with its own address, so a host never mixes up two modes' layouts. Whether a console accepts it is up to the console: most only take their own wireless controllers.
 
-* **Pair a new device** (like PS + Create on a PlayStation controller): hold **Star power** while plugging in or switching on. The guitar forgets its previous host, turns Bluetooth on, becomes discoverable for two minutes and the frets double-blink blue. Holding **Star power + Plus** for 5 s while it is running does the same. When a host connects, all frets light blue for a second.
+* **Pair a new device** (like PS + Create on a PlayStation controller): hold **Star power** while plugging in or switching on. The guitar forgets the hosts paired with the mode it starts in (the other modes keep theirs), turns Bluetooth on, becomes discoverable for two minutes and the frets double-blink blue. Holding **Star power + Plus** for 5 s while it is running does the same. When a host connects, all frets light blue for a second.
 * **Switch modes over Bluetooth**: hold **Star power + a fret for 3 s** to switch to the mode that fret selects at plug-in (the shortcuts on the Modes tab). The guitar saves the mode and restarts into it within a second or two, then stays discoverable for a minute so an already paired host can add that mode (pair each mode once; after that it reconnects by itself).
 * Outside pairing mode it still advertises (more slowly) and accepts pairing, like Santroller does, so a host that lost its key can simply pair again; pairing mode additionally forgets every old host.
 * **USB host switches Bluetooth off**: when a PC or console enumerates the guitar over USB, Bluetooth drops its host and stops advertising, so a game never gets input from both. Pairings stay saved; unplug the cable and Bluetooth comes back and the paired host reconnects. A plain charger or power bank (USB power without a host) doesn't count, so the guitar can charge while you play wirelessly.
 * Reconnection: after the link is encrypted the guitar requests a 3 s link timeout (and a 7.5–15 ms connection interval), so after a power cycle the host notices quickly and reconnects. It stays off in the PS4 / Xbox One modes only when the USB host port is set up, since both need the same hardware.
 * Pairing uses **LE Secure Connections** with the keys stored in flash (the two sectors below the settings sector), like BTstack's own HID examples; every mode keeps its own list of paired hosts.
-* **Upgrading from v0.17 or older from an older version**: the guitar gets new Bluetooth addresses and a new Bluetooth service layout, and forgets its old pairings, so pair once more. Before pairing, remove every "YAGCC …" entry in Settings → Bluetooth & devices, and also in Device Manager (View → Show hidden devices → Bluetooth): Windows can keep a hidden record of an old pairing that keeps trying a stale key.
+* **Upgrading from v0.21 or older**: the guitar gets new Bluetooth addresses (each mode now has its own identity key, so Windows accepts several modes paired side by side) and forgets its old pairings, so pair each mode once more. Before pairing, remove every "YAGCC …" entry in Settings → Bluetooth & devices, and also in Device Manager (View → Show hidden devices → Bluetooth): Windows can keep a hidden record of an old pairing that keeps trying a stale key.
 * **Bigger reports wait for the host's MTU**: a Bluetooth LE notification carries at most MTU − 3 bytes, and until the host negotiates a bigger MTU it is 23 (20 bytes). On a reconnect Windows does that only after the link is encrypted and the guitar has already been told to send, and BTstack sends an over-long notification as a PDU bigger than the MTU, which makes Windows hang up. So reports bigger than the current MTU allows (PS3 27 bytes, PS4 63) are held back until the MTU exchange; HID mode's 7 byte report always fits, which is why it reconnected and the other modes didn't.
 * **Bluetooth services** (same layout as Santroller, without a Battery service since the guitar can't measure its battery): GAP, GATT (Service Changed + Database Hash), Device Information and HID. The guitar remembers which layout each paired host last saw and sends *Service Changed* when a firmware update changes it, so Windows, which caches the layout, looks again instead of giving up. Input reports go out only once the host subscribes, and the guitar then asks for a 7.5–8.75 ms connection interval, as Santroller does.
-* **Bluetooth log**: the Setup page's Bluetooth step can show (and copy) the last 48 Bluetooth events since the guitar was switched on: advertising, connections, encryption, pairing results and disconnect reasons. After a problem, plug the guitar in without switching it off and read the log.
+* **Bluetooth debug logging** (off by default): see [Bluetooth debug logging](#bluetooth-debug-logging).
 
 ## Scope and roadmap
 
@@ -169,14 +169,9 @@ cmake -S firmware -B build-w -G Ninja -DPICO_BOARD=pico_w -DPICO_SDK_PATH=$PWD/p
 cmake --build build-w
 ```
 
-### Bluetooth test firmware
+### Bluetooth debug logging
 
-`-DYACC_BT_LOG_FLASH=ON` (Pico W / Pico 2 W) builds firmware that also keeps the Bluetooth event log in 16 KB of flash, so it survives power cycles until **Clear** is pressed on the Setup page's Bluetooth step; the log is grouped by power-on. It also records every Bluetooth GATT, pairing and L2CAP signalling message in both directions (except the guitar's own input reports), so the log shows the last thing a host asked for before it disconnected. It is meant for chasing connection problems and is not published on the Flash page.
-
-```bash
-cmake -S firmware -B build-btlog -G Ninja -DPICO_BOARD=pico_w -DYACC_BT_LOG_FLASH=ON -DPICO_SDK_PATH=$PWD/pico-sdk -DPICO_BTSTACK_PATH=$PWD/btstack
-cmake --build build-btlog
-```
+Off by default: the guitar records nothing about its Bluetooth connections. Switching on **Debug logging** on the Setup page's Bluetooth step (saved straight away) makes the Pico W / Pico 2 W keep a Bluetooth event log in 16 KB of flash, grouped by power-on and kept across power cycles until **Clear** is pressed. It also records every Bluetooth GATT, pairing and L2CAP signalling message in both directions (except the guitar's own input reports), so the log shows the last thing a host asked for before it disconnected. Switch it off again once the problem is found.
 
 ### Tests
 

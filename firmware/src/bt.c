@@ -8,7 +8,9 @@
 // sees each mode as its own device and never mixes up their report layouts.
 //
 // Pairing works like PS + Create on a PlayStation controller: hold Star power while plugging in or switching on
-// (or Star power + Plus for 5 s while running) and the guitar forgets every host and becomes discoverable.
+// (or Star power + Plus for 5 s while running) and the guitar forgets the hosts paired with the mode it starts in
+// and becomes discoverable. The other modes keep their pairings. A new mode needs no Star power: the guitar
+// always accepts pairing.
 // Pairing uses LE Secure Connections with the keys stored in flash, like BTstack's HID demos. Each mode has its
 // own bond list (the bond database is given a mode-specific tag range in the TLV store), so a host paired with
 // several modes keeps a working key for each of them.
@@ -84,6 +86,7 @@ static uint8_t s_log_head, s_log_count;
 static void flog_push(uint32_t t, uint8_t code, uint8_t a, uint16_t b);
 #endif
 static void blog(uint8_t code, uint8_t a, uint16_t b) {
+    if (!(g_cfg.flags & CFG_FLAG_BT_DEBUG_LOG)) return;   // off unless debug logging is switched on in the configurator
 #if YACC_BT_LOG_FLASH
     flog_push(to_ms_since_boot(get_absolute_time()), code, a, b);
 #endif
@@ -93,9 +96,10 @@ static void blog(uint8_t code, uint8_t a, uint16_t b) {
     if (s_log_count < LOG_N) s_log_count++;
 }
 
-// ---------------------------------------------------------------- test build only: log kept in flash
-// Built with -DYACC_BT_LOG_FLASH=1. Every event is also appended to 16 KB of flash (four sectors just below
-// the Bluetooth bond storage), so it survives power cycles until it is cleared from the configurator.
+// ---------------------------------------------------------------- debug logging: log kept in flash
+// Only while Bluetooth debug logging is switched on (Setup > Bluetooth in the configurator, off by default):
+// every event is also appended to 16 KB of flash (four sectors just below the Bluetooth bond storage), so it
+// survives power cycles until it is cleared from the configurator. With logging off nothing is recorded.
 // Flash is only written from the main loop (bt_task), never from the Bluetooth interrupt context.
 #if YACC_BT_LOG_FLASH
 #include "hardware/flash.h"
@@ -171,6 +175,7 @@ const uint8_t *bt_log_flash(uint16_t *len) { *len = FL_SIZE; return (const uint8
 // or for an ATT error: 0x1000 | error code << 8 | request opcode. Shows exactly what a host asked for last.
 #include "hci_dump.h"
 static void pdu_log(uint8_t packet_type, uint8_t in, uint8_t *p, uint16_t len) {
+    if (!(g_cfg.flags & CFG_FLAG_BT_DEBUG_LOG)) return;
     if (packet_type != HCI_ACL_DATA_PACKET || len < 9) return;
     if (((p[1] >> 4) & 3) == 1) return;                 // continuation fragment: no L2CAP header
     uint16_t cid = little_endian_read_16(p, 6);
@@ -292,13 +297,25 @@ static uint16_t att_read(hci_con_handle_t con, uint16_t handle, uint16_t offset,
 // becomes 'BM' <mode> i, so every mode keeps its own bonds.
 static const btstack_tlv_t *s_tlv;
 static void *s_tlv_ctx;
-// 'BO' since v0.18 (new addresses and GATT layout, see bt_init); the 'BM' / 'BN' bonds of v0.14-v0.17 are dropped
-#define BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'O' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
+// 'BP' since v0.22 (per-mode IRKs, see map_tag; new addresses); the 'BM' / 'BN' / 'BO' bonds of v0.14-v0.21 are dropped
+#define BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'P' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
 #define OLD_BOND_TAG(c, mode, i) (((uint32_t)'B' << 24) | ((uint32_t)(c) << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
 // per bond: the database hash the host last discovered ('SG' mode i), as Santroller's bt_gatt_changes
 #define HASH_TAG(mode, i) (((uint32_t)'S' << 24) | ((uint32_t)'G' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
+// Since v0.22 this view is BTstack's TLV instance for everything, not just the device database, so the other
+// per-host state is per mode too:
+// - 'SMIR' / 'SMER': the identity root (IR) the IRK every bond receives is derived from, and ER. With one
+//   IR every mode handed hosts the same IRK; Windows then took a newly paired mode for a device it already
+//   had and the pairing failed until the other mode's device was removed.
+// - 'BTC' i: the input report subscription BTstack restores for bond i on reconnect (bond i differs per mode)
+// - 'BTDB': the database hash BTstack keeps (falls under 'BTD' below)
+#define TAG4(a, b, c, d) (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
+#define CCC_TAG(mode, i) TAG4('C', 'C', (mode), (i))
 static uint32_t map_tag(uint32_t tag) {
     if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'D')) return BOND_TAG(g_usb_mode, tag & 0xFF);
+    if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'C')) return CCC_TAG(g_usb_mode, tag & 0xFF);
+    if (tag == TAG4('S', 'M', 'I', 'R')) return TAG4('S', 'I', g_usb_mode, 'R');
+    if (tag == TAG4('S', 'M', 'E', 'R')) return TAG4('S', 'E', g_usb_mode, 'R');
     return tag;
 }
 static int mt_get(void *c, uint32_t tag, uint8_t *buf, uint32_t size) { return s_tlv->get_tag(c, map_tag(tag), buf, size); }
@@ -306,10 +323,15 @@ static int mt_store(void *c, uint32_t tag, const uint8_t *d, uint32_t size) { re
 static void mt_delete(void *c, uint32_t tag) { s_tlv->delete_tag(c, map_tag(tag)); }
 static const btstack_tlv_t mode_tlv = { mt_get, mt_store, mt_delete };
 
-static void forget_all_modes(void) {
+// Only the running mode: every mode is its own Bluetooth device, so pairing one mode again (Star power at
+// power-on) must not cost the others their pairings. Until v0.22 this wiped every mode, and pairing each
+// new mode that way left only the last one paired.
+static void forget_this_mode(void) {
     if (!s_tlv) return;
-    for (int m = 0; m < NUM_MODES; m++)
-        for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) { s_tlv->delete_tag(s_tlv_ctx, BOND_TAG(m, i)); s_tlv->delete_tag(s_tlv_ctx, HASH_TAG(m, i)); }
+    for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) {
+        s_tlv->delete_tag(s_tlv_ctx, HASH_TAG(g_usb_mode, i));
+        s_tlv->delete_tag(s_tlv_ctx, CCC_TAG(g_usb_mode, i));
+    }
 }
 
 // ---------------------------------------------------------------- Service Changed (from Santroller's bt_gatt_changes)
@@ -389,8 +411,8 @@ static bool report_fits(void) {
 static void open_pairing(bool forget, uint32_t ms) {   // stack running; its context or under the lock
     if (forget) {
         if (s_con != HCI_CON_HANDLE_INVALID) gap_disconnect(s_con);
-        for (int i = 0; i < le_device_db_max_count(); i++) le_device_db_remove(i);   // this mode (keeps the cache right)
-        forget_all_modes();
+        for (int i = 0; i < le_device_db_max_count(); i++) le_device_db_remove(i);   // this mode's bonds (keeps the cache right)
+        forget_this_mode();
     }
     blog(L_WINDOW, forget, (uint16_t)(ms / 1000));
     s_pairing = true;
@@ -549,7 +571,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     // was once paired with; it then keeps trying that key alongside the current one and the link fails with a
     // MIC error (0x3D) on every other attempt. Fresh addresses leave any such record behind for good.
     // (v0.17 used 0xA7 here; v0.18 changed the GATT database, which hosts cache per address.)
-    addr[4] ^= 0x5C;                                 // v0.18: the GATT layout changed too, so new addresses again
+    addr[4] ^= 0x3E;                                 // v0.22: per-mode IRKs, so every mode is paired fresh
     addr[0] |= 0xC0;                                 // static random: top two bits set
 
     l2cap_init();
@@ -564,9 +586,11 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     if (s_tlv) {
         for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) {
             s_tlv->delete_tag(s_tlv_ctx, (((uint32_t)'B') << 24) | (((uint32_t)'T') << 16) | (((uint32_t)'D') << 8) | (uint32_t)i);
-            for (int m = 0; m < NUM_MODES; m++) { s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('M', m, i)); s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('N', m, i)); }
+            for (int m = 0; m < NUM_MODES; m++) { s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('M', m, i)); s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('N', m, i)); s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('O', m, i)); }
+            s_tlv->delete_tag(s_tlv_ctx, (((uint32_t)'B') << 24) | (((uint32_t)'T') << 16) | (((uint32_t)'C') << 8) | (uint32_t)i);   // shared CCCs of v0.21
         }
         le_device_db_tlv_configure(&mode_tlv, s_tlv_ctx);
+        btstack_tlv_set_instance(&mode_tlv, s_tlv_ctx);   // SM keys and the ATT server's state, per mode too
     }
     att_server_init(profile_data, att_read, NULL);
     s_gatt_service.start_handle = ATT_SERVICE_GATT_SERVICE_START_HANDLE;
