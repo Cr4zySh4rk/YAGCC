@@ -64,7 +64,7 @@ export const HARDWARE = [
   { group: 'mcu', name: 'Raspberry Pi Pico 2 (RP2350)', bus: 'Microcontroller', status: 'ok',
     points: ['Same pinout as the Pico', 'Firmware: yagcc-pico2.uf2'] },
   { group: 'mcu', name: 'Raspberry Pi Pico W / Pico 2 W', bus: 'Microcontroller', status: 'ok',
-    points: ['Works exactly like a Pico over USB', 'Bluetooth output and Wii Remote emulation are planned'] },
+    points: ['Works exactly like a Pico over USB', 'Bluetooth LE output in every mode (tested on Pico W with Windows): hold Star power at power-on to pair', 'Wii Remote emulation is planned'] },
   { group: 'mcu', name: '"Pico W" clones with an ESP8285 / ESP8266', bus: 'Microcontroller', status: 'ok',
     points: ['Use the pico_clone firmware (safer flash settings)', 'The ESP8285 is Wi-Fi only: no Bluetooth features', 'Power the whammy from 3V3(OUT), not ADC_VREF'] },
   { group: 'mcu', name: 'Waveshare RP2040-Zero / RP2040-One', bus: 'Microcontroller', status: 'ok', tag: 'Compact',
@@ -102,7 +102,9 @@ export const HARDWARE = [
   // usb host & wireless
   { group: 'usb', name: 'USB host port for console authentication', bus: '2 neighbouring GPIO (PIO USB)', status: 'exp',
     points: ['A USB-A socket wired to D+ / D−, 5 V and GND', 'Passes PS4 / PS5 and Xbox One / Series security checks to a licensed controller', 'Wireless instrument dongles are planned'] },
-  { group: 'usb', name: 'Bluetooth output & Wii Remote emulation', bus: 'CYW43 (Pico W) or USB dongle', status: 'planned', points: [] },
+  { group: 'usb', name: 'Bluetooth LE output', bus: 'CYW43 (genuine Pico W / Pico 2 W)', status: 'ok',
+    points: ['Each mode keeps its own identity and report layout over Bluetooth', 'Reconnects by itself after a power cycle', 'A USB host switches Bluetooth off; pairings are kept', 'Tested on Pico W with Windows'] },
+  { group: 'usb', name: 'Wii Remote emulation', bus: 'CYW43 (Pico W) or USB dongle', status: 'planned', points: [] },
   // power
   { group: 'power', name: 'LiPo battery, fuel gauge and sleep', bus: 'I2C / ADC', status: 'planned', points: ['Only useful together with wireless output'] },
 ];
