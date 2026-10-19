@@ -212,7 +212,8 @@ static void build_descriptor(void) {
 
 static void build_adv(bool discoverable) {
     uint8_t *a = s_adv; uint8_t name_len = (uint8_t)strlen(s_name);
-    *a++ = 2; *a++ = BLUETOOTH_DATA_TYPE_FLAGS; *a++ = discoverable ? 0x06 : 0x04;
+    *a++ = 2; *a++ = BLUETOOTH_DATA_TYPE_FLAGS; *a++ = 0x06;   // always general discoverable, like Santroller (see set_adv)
+    (void)discoverable;
     *a++ = 3; *a++ = BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS; *a++ = 0x12; *a++ = 0x18;
     *a++ = 3; *a++ = BLUETOOTH_DATA_TYPE_APPEARANCE; *a++ = (uint8_t)s_appearance; *a++ = (uint8_t)(s_appearance >> 8);
     if (name_len > 31 - 11 - 2) name_len = 31 - 11 - 2;
@@ -340,9 +341,9 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         case SM_EVENT_JUST_WORKS_REQUEST:
             blog(L_JUSTWORKS, s_pairing, 0);
-            // a new host may only bond inside a pairing window; otherwise only known hosts reconnect
-            if (s_pairing) sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
-            else sm_bonding_decline(sm_event_just_works_request_get_handle(packet));
+            // always accept (as Santroller does): a host whose key went stale can pair again instead of being
+            // locked out; "pairing mode" forgets old hosts and advertises faster
+            sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
             break;
         case SM_EVENT_PAIRING_COMPLETE:
             blog(L_PAIRED, sm_event_pairing_complete_get_status(packet), sm_event_pairing_complete_get_reason(packet));

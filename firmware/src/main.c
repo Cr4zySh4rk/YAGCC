@@ -516,9 +516,8 @@ int main(void) {
             vbus = gpio_get(PICO_VBUS_PIN);            // running from the battery alone: no sweep
 #endif
             if (bt_vbus() >= 0) vbus = bt_vbus() == 1;  // Pico W / Pico 2 W: read through the radio chip once it's on
-            // USB host present (or the first 1.5 s after power-on, while a PC would still be enumerating us):
-            // Bluetooth stays quiet so a cable and a wireless link never both feed the same game
-            bt_set_usb_active(mounted || now < 1500000 || (host_lost_at && now - host_lost_at < 1500000));
+            // Bluetooth is no longer switched off by a USB host (that broke playing wirelessly while the cable
+            // charges from a PC); instead a connected Bluetooth host takes the input and USB gets a neutral pad.
             bool bt_host = bt_state() == BT_STATE_CONNECTED;   // a Bluetooth host counts too: no sweep
             rgb_set_charging(!mounted && !bt_host && vbus && host_lost_at && now - host_lost_at > 3000000);
         }
@@ -571,12 +570,13 @@ int main(void) {
 
         pad_t st;
         read_pad(&st);
-        // Bluetooth carries the same HID report as USB in this mode, whenever no USB host is using the guitar
-        // (USB wins when both are there). XInput, OG Xbox and Xbox One aren't HID: they use the generic gamepad.
+        // Bluetooth carries the same HID report as USB in this mode. XInput, OG Xbox and Xbox One aren't HID
+        // over USB, so they use the generic gamepad. When both are connected, Bluetooth gets the input and the
+        // USB host sees a pad with nothing pressed, so a game never gets every press twice.
         if (bt_running()) {
             static uint8_t bt_last[64];
             static uint16_t bt_len;
-            static bool bt_was_usb = true;
+            static bool bt_first = true;
             static uint8_t bt_counter;
             uint8_t b[64];
             uint16_t n;
@@ -592,15 +592,17 @@ int main(void) {
             }
             const uint8_t *p = b;
             if (g_usb_mode == MODE_PS4) { p = &b[1]; n--; }      // report id travels separately over Bluetooth
-            bool usb = tud_mounted();
-            if (!usb && (bt_was_usb || n != bt_len || memcmp(p, bt_last, n) != 0)) {
+            if (bt_first || n != bt_len || memcmp(p, bt_last, n) != 0) {
+                bt_first = false;
                 memcpy(bt_last, p, n); bt_len = n;
                 if (g_usb_mode == MODE_PS4) {                   // 6 bit counter, like over USB
                     uint8_t c[64]; memcpy(c, p, n); c[6] = (uint8_t)(bt_counter << 2); bt_counter = (bt_counter + 1) & 0x3F;
                     bt_send_report(c, n);
                 } else bt_send_report(p, n);
             }
-            bt_was_usb = usb;
+            if (bt_state() == BT_STATE_CONNECTED) {      // Bluetooth host in charge: USB gets a neutral pad
+                memset(&st, 0, sizeof(st));
+            }
         }
         if (g_usb_mode == MODE_XBONE) {                 // GIP has its own sequencing, acks and auth gate
             uint8_t body[XBONE_GUITAR_PAYLOAD_LEN];
