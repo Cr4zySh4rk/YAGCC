@@ -3,6 +3,7 @@
 #define YAGCC_BTSTACK_CONFIG_H
 
 #define ENABLE_LE_PERIPHERAL
+#define ENABLE_LE_DATA_LENGTH_EXTENSION   // as Santroller; hosts may ask for longer packets
 #define ENABLE_LE_SECURE_CONNECTIONS   // stored-key pairing, what Windows / Android / iOS expect for HID
 #define ENABLE_LOG_ERROR
 #define ENABLE_PRINTF_HEXDUMP   // needed by the SDK's hci dump file (no output: stdio goes nowhere)

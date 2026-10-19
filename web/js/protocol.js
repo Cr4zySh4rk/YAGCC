@@ -212,6 +212,10 @@ const BT_EVENTS = {
   13: (a) => `connection parameters ${a === 0 ? 'accepted' : 'rejected'} by host`,
   14: (a, b) => (a ? `host used an old legacy key (EDIV 0x${b.toString(16)})` : 'host asked for its stored key'),
   15: (a, b) => `host address …:${[a, b >> 8, b & 255].map((x) => x.toString(16).padStart(2, '0')).join(':')}`,
+  16: (a, b) => (a === 0 ? `connection interval now ${(b * 1.25).toFixed(2)} ms` : `connection update failed, status 0x${a.toString(16)}`),
+  17: (a, b) => (a === 0xff ? `database changed since host ${b} last saw it: sending Service Changed` : a === 0 ? 'host confirmed Service Changed' : `Service Changed not confirmed, status 0x${a.toString(16)}`),
+  18: (a, b) => `host set MTU ${b}`,
+  19: (a, b) => `host read ${['?', 'input', 'output', 'feature'][a] || a} report ${b}`,
 };
 // Test firmware: log kept in flash, 16 byte records, grouped by power-on
 export function parseBtLogFlash(dv) {

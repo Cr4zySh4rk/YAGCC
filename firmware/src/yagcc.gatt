@@ -1,10 +1,28 @@
+// Same layout as Santroller's gamepad database: GAP, then the GATT service (Service Changed + Database
+// Hash) so a bonded host such as Windows, which caches the database, can be told when it changed, then
+// Battery (mandatory for HID over GATT), Device Information and HID.
 PRIMARY_SERVICE, GAP_SERVICE
 CHARACTERISTIC, GAP_DEVICE_NAME, DYNAMIC | READ,
 CHARACTERISTIC, GAP_APPEARANCE, DYNAMIC | READ,
 
+PRIMARY_SERVICE, GATT_SERVICE
+CHARACTERISTIC, GATT_SERVICE_CHANGED, DYNAMIC | INDICATE,
+CHARACTERISTIC, GATT_DATABASE_HASH, READ,
+
+#import <battery_service.gatt>
+
 #import <device_information_service.gatt>
 
-#import <hids.gatt>
-
-PRIMARY_SERVICE, GATT_SERVICE
-CHARACTERISTIC, GATT_DATABASE_HASH, READ,
+// HID service with exactly the reports in the Bluetooth report map: one input report, id 1 (build_descriptor in
+// bt.c drops the USB output / feature reports, which only consoles use). Windows matches every report in the
+// map against a Report characteristic, so BTstack's stock hids.gatt (output id 2, feature id 3, boot keyboard
+// and mouse) doesn't fit a gamepad map.
+PRIMARY_SERVICE, ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_PROTOCOL_MODE, DYNAMIC | READ | WRITE_WITHOUT_RESPONSE,
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_REPORT, DYNAMIC | READ | WRITE | NOTIFY | ENCRYPTION_KEY_SIZE_16,
+// report id 1, type Input (1)
+REPORT_REFERENCE, READ, 1, 1
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_REPORT_MAP, DYNAMIC | READ,
+// bcdHID 1.11, country 0, flags: normally connectable (2)
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_HID_INFORMATION, READ, 11 01 00 02
+CHARACTERISTIC, ORG_BLUETOOTH_CHARACTERISTIC_HID_CONTROL_POINT, DYNAMIC | WRITE_WITHOUT_RESPONSE,

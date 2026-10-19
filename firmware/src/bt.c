@@ -39,6 +39,7 @@ void bt_log_flash_clear(void) {}
 #include "btstack.h"
 #include "ble/gatt-service/device_information_service_server.h"
 #include "ble/gatt-service/hids_device.h"
+#include "ble/gatt-service/battery_service_server.h"
 #include "yagcc.h"                       // GATT database generated from yagcc.gatt
 #include "btstack_tlv.h"
 #include "ble/le_device_db_tlv.h"
@@ -72,11 +73,11 @@ static char s_name[24];
 static uint16_t s_appearance;
 static uint8_t s_adv[31];
 static uint8_t s_adv_len;
-static btstack_packet_callback_registration_t s_hci_cb, s_sm_cb;
+static btstack_packet_callback_registration_t s_hci_cb, s_sm_cb, s_l2cap_cb;
 
 // ---------------------------------------------------------------- event log (read over USB by the configurator)
 enum { L_BOOT = 1, L_WORKING, L_ADV, L_CONNECT, L_ENCRYPT, L_DISCONNECT, L_JUSTWORKS, L_PAIRED, L_SUBSCRIBE,
-       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS, L_LTK, L_PEER };
+       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS, L_LTK, L_PEER, L_CONNUPD, L_SVCCHG, L_MTU, L_READ };
 #define LOG_N 48
 static struct { uint32_t t; uint8_t code, a; uint16_t b; } s_log[LOG_N];
 static uint8_t s_log_head, s_log_count;
@@ -188,26 +189,44 @@ static const char *mode_short(uint8_t m) {
     }
 }
 
-// HID over GATT ties the input report characteristic to report id 1. USB descriptors without report ids get
-// "Report ID 1" right after the top-level Collection (Application); the report bytes stay the same.
+// Bluetooth report map: the USB one with only its input reports, all with report id 1.
+// - Output and feature reports are dropped (with the local items that belong to them): over USB they carry
+//   console handshakes and LEDs; over Bluetooth every report in the map needs its own GATT characteristic
+//   and Windows rejects the HID service when one is missing (PS4 mode alone has 40+ feature reports).
+// - Maps without report ids get "Report ID 1" right after the top-level Collection (Application); the input
+//   report bytes stay exactly the same as over USB.
 static void build_descriptor(void) {
     uint16_t n;
     const uint8_t *d = usb_hid_report_desc(&n);
+    static uint8_t tmp[MAX_DESC];
+    uint16_t o = 0;
+    uint16_t loc_pos[32]; uint8_t loc_len[32]; int nloc = 0;   // local items since the last main item
     bool has_ids = false;
-    for (uint16_t i = 0; i < n;) {                  // walk the short items
-        uint8_t p = d[i], sz = (p & 3) == 3 ? 4 : (p & 3);
-        if ((p & 0xFC) == 0x84) has_ids = true;     // Report ID item
-        i += 1 + sz;
-    }
-    if (has_ids || n + 2 > MAX_DESC) { memcpy(s_desc, d, n < MAX_DESC ? n : MAX_DESC); s_desc_len = n; return; }
-    uint16_t o = 0; bool done = false;
     for (uint16_t i = 0; i < n;) {
-        uint8_t p = d[i], sz = (p & 3) == 3 ? 4 : (p & 3);
-        memcpy(&s_desc[o], &d[i], 1 + sz); o += 1 + sz;
-        if (!done && p == 0xA1 && sz == 1 && d[i + 1] == 0x01) { s_desc[o++] = 0x85; s_desc[o++] = 0x01; done = true; }
+        uint8_t p = d[i], sz = (p & 3) == 3 ? 4 : (p & 3), kind = p & 0x0C;
+        if (i + 1 + sz > n || o + 1 + sz > MAX_DESC) break;
+        if (kind == 0x00 && ((p & 0xFC) == 0x90 || (p & 0xFC) == 0xB0)) {
+            for (int k = nloc - 1; k >= 0; k--) {     // drop its locals (usages), last first so positions hold
+                memmove(&tmp[loc_pos[k]], &tmp[loc_pos[k] + loc_len[k]], o - loc_pos[k] - loc_len[k]);
+                o -= loc_len[k];
+            }
+            nloc = 0; i += 1 + sz; continue;
+        }
+        if (kind == 0x08 && nloc < 32) { loc_pos[nloc] = o; loc_len[nloc] = (uint8_t)(1 + sz); nloc++; }
+        if (kind == 0x00) nloc = 0;
+        if ((p & 0xFC) == 0x84) has_ids = true;
+        memcpy(&tmp[o], &d[i], 1 + sz); o += 1 + sz;
         i += 1 + sz;
     }
-    s_desc_len = o;
+    if (has_ids || o + 2 > MAX_DESC) { memcpy(s_desc, tmp, o); s_desc_len = o; return; }
+    uint16_t q = 0; bool done = false;
+    for (uint16_t i = 0; i < o;) {
+        uint8_t p = tmp[i], sz = (p & 3) == 3 ? 4 : (p & 3);
+        memcpy(&s_desc[q], &tmp[i], 1 + sz); q += 1 + sz;
+        if (!done && p == 0xA1 && sz == 1 && tmp[i + 1] == 0x01) { s_desc[q++] = 0x85; s_desc[q++] = 0x01; done = true; }
+        i += 1 + sz;
+    }
+    s_desc_len = q;
 }
 
 static void build_adv(bool discoverable) {
@@ -250,9 +269,11 @@ static uint16_t att_read(hci_con_handle_t con, uint16_t handle, uint16_t offset,
 // becomes 'BM' <mode> i, so every mode keeps its own bonds.
 static const btstack_tlv_t *s_tlv;
 static void *s_tlv_ctx;
-// 'BN' since v0.17 (new addresses, see bt_init); the 'BM' bonds of v0.14-v0.16 are dropped
-#define BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'N' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
-#define OLD_BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'M' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
+// 'BO' since v0.18 (new addresses and GATT layout, see bt_init); the 'BM' / 'BN' bonds of v0.14-v0.17 are dropped
+#define BOND_TAG(mode, i) (((uint32_t)'B' << 24) | ((uint32_t)'O' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
+#define OLD_BOND_TAG(c, mode, i) (((uint32_t)'B' << 24) | ((uint32_t)(c) << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
+// per bond: the database hash the host last discovered ('SG' mode i), as Santroller's bt_gatt_changes
+#define HASH_TAG(mode, i) (((uint32_t)'S' << 24) | ((uint32_t)'G' << 16) | ((uint32_t)(mode) << 8) | (uint32_t)(i))
 static uint32_t map_tag(uint32_t tag) {
     if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'D')) return BOND_TAG(g_usb_mode, tag & 0xFF);
     return tag;
@@ -265,7 +286,71 @@ static const btstack_tlv_t mode_tlv = { mt_get, mt_store, mt_delete };
 static void forget_all_modes(void) {
     if (!s_tlv) return;
     for (int m = 0; m < NUM_MODES; m++)
-        for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) s_tlv->delete_tag(s_tlv_ctx, BOND_TAG(m, i));
+        for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) { s_tlv->delete_tag(s_tlv_ctx, BOND_TAG(m, i)); s_tlv->delete_tag(s_tlv_ctx, HASH_TAG(m, i)); }
+}
+
+// ---------------------------------------------------------------- Service Changed (from Santroller's bt_gatt_changes)
+// Hosts cache a bonded device's GATT layout. Store the database hash each host last discovered, and when a
+// bonded host comes back to a different database (a firmware update), indicate Service Changed so it
+// discovers again instead of talking to stale handles.
+static hci_con_handle_t s_sc_handle = HCI_CON_HANDLE_INVALID;
+static int s_sc_index = -1;
+static uint16_t s_sc_cccd;
+static btstack_context_callback_registration_t s_sc_reg;
+static att_service_handler_t s_gatt_service;
+// Fingerprint of the database (this BTstack has no gatt_server_get_database_hash): FNV-1a over the compiled
+// attribute table plus the HID report map, the parts a host caches.
+static bool db_hash(uint8_t *h) {
+    uint32_t x = 2166136261u;
+    for (size_t i = 0; i < sizeof(profile_data); i++) { x ^= profile_data[i]; x *= 16777619u; }
+    for (uint16_t i = 0; i < s_desc_len; i++) { x ^= s_desc[i]; x *= 16777619u; }
+    memcpy(h, &x, 4);
+    return true;
+}
+static void hash_remember(int index) {
+    uint8_t h[4], old[4];
+    if (!s_tlv || index < 0 || !db_hash(h)) return;
+    if (s_tlv->get_tag(s_tlv_ctx, HASH_TAG(g_usb_mode, index), old, 4) == 4 && memcmp(old, h, 4) == 0) return;
+    s_tlv->store_tag(s_tlv_ctx, HASH_TAG(g_usb_mode, index), h, 4);
+}
+static void send_service_changed(void *ctx) {
+    (void)ctx;
+    if (s_sc_handle == HCI_CON_HANDLE_INVALID) return;
+    uint8_t range[4];
+    little_endian_store_16(range, 0, 0x0001);
+    little_endian_store_16(range, 2, 0xFFFF);
+    att_server_indicate(s_sc_handle, ATT_CHARACTERISTIC_GATT_SERVICE_CHANGED_01_VALUE_HANDLE, range, sizeof(range));
+}
+static void check_host(hci_con_handle_t h) {
+    if (s_sc_handle == h) return;
+    int index = sm_le_device_index(h);
+    uint8_t cur[4], old[4];
+    if (!s_tlv || index < 0 || !db_hash(cur)) return;
+    if (s_tlv->get_tag(s_tlv_ctx, HASH_TAG(g_usb_mode, index), old, 4) == 4 && memcmp(old, cur, 4) == 0) return;
+    blog(L_SVCCHG, 0xFF, (uint16_t)index);          // sending
+    s_sc_handle = h; s_sc_index = index;
+    s_sc_reg.callback = &send_service_changed; s_sc_reg.context = NULL;
+    att_server_request_to_send_indication(&s_sc_reg, h);
+}
+static uint16_t gatt_read(hci_con_handle_t con, uint16_t handle, uint16_t offset, uint8_t *buf, uint16_t size) {
+    (void)con;
+    if (handle == ATT_CHARACTERISTIC_GATT_SERVICE_CHANGED_01_CLIENT_CONFIGURATION_HANDLE)
+        return att_read_callback_handle_little_endian_16(s_sc_cccd, offset, buf, size);
+    return 0;
+}
+static int gatt_write(hci_con_handle_t con, uint16_t handle, uint16_t mode, uint16_t offset, uint8_t *buf, uint16_t size) {
+    (void)con;
+    if (mode == ATT_TRANSACTION_MODE_NONE && handle == ATT_CHARACTERISTIC_GATT_SERVICE_CHANGED_01_CLIENT_CONFIGURATION_HANDLE && offset == 0 && size == 2)
+        s_sc_cccd = little_endian_read_16(buf, 0);
+    return 0;
+}
+
+// Hosts (Windows among them) read the input report when they start the device: answer with the current one
+static void get_report(hci_con_handle_t con, hid_report_type_t type, uint16_t id, uint16_t max, uint8_t *out) {
+    (void)con; (void)id;
+    blog(L_READ, (uint8_t)type, (uint16_t)id);
+    memset(out, 0, max);
+    if (type == HID_REPORT_TYPE_INPUT) memcpy(out, s_report, s_report_len < max ? s_report_len : max);
 }
 
 // ---------------------------------------------------------------- pairing
@@ -297,9 +382,6 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         case HCI_EVENT_ENCRYPTION_CHANGE:
         case HCI_EVENT_ENCRYPTION_CHANGE_V2: {
-            // A bonded host that reconnects (after the guitar was off) does not subscribe to input reports again:
-            // the spec says the subscription belongs to the bond, so the host expects us to remember it.
-            // BTstack's HID service keeps it in RAM only, so treat an encrypted link as subscribed.
             bool v2 = hci_event_packet_get_type(packet) == HCI_EVENT_ENCRYPTION_CHANGE_V2;
             blog(L_ENCRYPT, v2 ? hci_event_encryption_change_v2_get_encryption_enabled(packet) : hci_event_encryption_change_get_encryption_enabled(packet),
                  v2 ? hci_event_encryption_change_v2_get_status(packet) : hci_event_encryption_change_get_status(packet));
@@ -307,19 +389,11 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                             : hci_event_encryption_change_get_encryption_enabled(packet);
             hci_con_handle_t h = v2 ? hci_event_encryption_change_v2_get_connection_handle(packet)
                                     : hci_event_encryption_change_get_connection_handle(packet);
-            if (on) {
-                // short supervision timeout: when the guitar is switched off the host notices within 3 s and is
-                // ready to take the reconnection, instead of holding a dead link for up to 30 s. 7.5-15 ms
-                // interval for low input latency.
-                gap_request_connection_parameter_update(h, 6, 12, 0, 300);
-            }
-            if (on && !s_connected) {
-                s_con = h;
-                s_connected = true;
-                s_pairing = false;
-                rgb_set_bt(RGB_BT_CONNECTED);
-                if (s_report_len) hids_device_request_can_send_now_event(s_con);
-            }
+            // v0.18: like Santroller, nothing is sent until the host subscribes to input reports (Windows
+            // writes the subscription again on every reconnect, the log shows), and connection parameters are
+            // requested only then.
+            uint8_t st = v2 ? hci_event_encryption_change_v2_get_status(packet) : hci_event_encryption_change_get_status(packet);
+            if (on && st == ERROR_CODE_SUCCESS) check_host(h);
             break;
         }
         case HCI_EVENT_LE_META:
@@ -329,6 +403,9 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                 bd_addr_t pa;
                 hci_subevent_le_connection_complete_get_peer_address(packet, pa);
                 blog(L_PEER, pa[3], (uint16_t)((pa[4] << 8) | pa[5]));   // last three bytes: tells two hosts apart
+            } else if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_CONNECTION_UPDATE_COMPLETE) {
+                blog(L_CONNUPD, hci_subevent_le_connection_update_complete_get_status(packet),
+                     hci_subevent_le_connection_update_complete_get_conn_interval(packet));
             } else if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_LONG_TERM_KEY_REQUEST) {
                 // the host starts encryption with a stored key. EDIV / Rand are zero for a Secure Connections key
                 // (the only kind this firmware makes); non-zero means the host holds an old legacy key.
@@ -339,6 +416,8 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
             blog(L_DISCONNECT, hci_event_disconnection_complete_get_reason(packet), 0);
+            if (hci_event_disconnection_complete_get_connection_handle(packet) == s_sc_handle) { s_sc_handle = HCI_CON_HANDLE_INVALID; s_sc_index = -1; }
+            s_sc_cccd = 0;
             s_con = HCI_CON_HANDLE_INVALID;
             s_connected = false;
             set_adv(s_pairing);
@@ -346,6 +425,20 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         case SM_EVENT_REENCRYPTION_COMPLETE:
             blog(L_REENCRYPT, sm_event_reencryption_complete_get_status(packet), 0);
+            if (sm_event_reencryption_complete_get_status(packet) == ERROR_CODE_SUCCESS)
+                check_host(sm_event_reencryption_complete_get_handle(packet));
+            break;
+        case ATT_EVENT_HANDLE_VALUE_INDICATION_COMPLETE:
+            if (att_event_handle_value_indication_complete_get_conn_handle(packet) == s_sc_handle &&
+                att_event_handle_value_indication_complete_get_attribute_handle(packet) == ATT_CHARACTERISTIC_GATT_SERVICE_CHANGED_01_VALUE_HANDLE) {
+                uint8_t st = att_event_handle_value_indication_complete_get_status(packet);
+                blog(L_SVCCHG, st, (uint16_t)s_sc_index);
+                if (st == ERROR_CODE_SUCCESS) hash_remember(s_sc_index);
+                s_sc_handle = HCI_CON_HANDLE_INVALID; s_sc_index = -1;
+            }
+            break;
+        case ATT_EVENT_MTU_EXCHANGE_COMPLETE:
+            blog(L_MTU, 0, att_event_mtu_exchange_complete_get_MTU(packet));
             break;
         case L2CAP_EVENT_CONNECTION_PARAMETER_UPDATE_RESPONSE:
             blog(L_PARAMS, (uint8_t)little_endian_read_16(packet, 4), 0);
@@ -358,7 +451,10 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         case SM_EVENT_PAIRING_COMPLETE:
             blog(L_PAIRED, sm_event_pairing_complete_get_status(packet), sm_event_pairing_complete_get_reason(packet));
-            if (sm_event_pairing_complete_get_status(packet) == ERROR_CODE_SUCCESS) s_pairing = false;
+            if (sm_event_pairing_complete_get_status(packet) == ERROR_CODE_SUCCESS) {
+                s_pairing = false;
+                hash_remember(sm_le_device_index(sm_event_pairing_complete_get_handle(packet)));   // a new bond discovers everything
+            }
             break;
         case HCI_EVENT_HIDS_META:
             switch (hci_event_hids_meta_get_subevent_code(packet)) {
@@ -367,6 +463,8 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                     s_connected = hids_subevent_input_report_enable_get_enable(packet) != 0;
                     blog(L_SUBSCRIBE, s_connected, 0);
                     if (s_connected) {
+                        // as Santroller: 7.5-8.75 ms, no latency, 1 s supervision timeout
+                        gap_request_connection_parameter_update(s_con, 6, 7, 0, 100);
                         s_pairing = false;
                         rgb_set_bt(RGB_BT_CONNECTED);
                         if (s_report_len) hids_device_request_can_send_now_event(s_con);
@@ -412,7 +510,8 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     // v0.17: new addresses. Windows can keep a hidden, stale record (with an old legacy key) for an address it
     // was once paired with; it then keeps trying that key alongside the current one and the link fails with a
     // MIC error (0x3D) on every other attempt. Fresh addresses leave any such record behind for good.
-    addr[4] ^= 0xA7;
+    // (v0.17 used 0xA7 here; v0.18 changed the GATT database, which hosts cache per address.)
+    addr[4] ^= 0x5C;                                 // v0.18: the GATT layout changed too, so new addresses again
     addr[0] |= 0xC0;                                 // static random: top two bits set
 
     l2cap_init();
@@ -427,11 +526,17 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     if (s_tlv) {
         for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) {
             s_tlv->delete_tag(s_tlv_ctx, (((uint32_t)'B') << 24) | (((uint32_t)'T') << 16) | (((uint32_t)'D') << 8) | (uint32_t)i);
-            for (int m = 0; m < NUM_MODES; m++) s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG(m, i));
+            for (int m = 0; m < NUM_MODES; m++) { s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('M', m, i)); s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('N', m, i)); }
         }
         le_device_db_tlv_configure(&mode_tlv, s_tlv_ctx);
     }
     att_server_init(profile_data, att_read, NULL);
+    s_gatt_service.start_handle = ATT_SERVICE_GATT_SERVICE_START_HANDLE;
+    s_gatt_service.end_handle = ATT_SERVICE_GATT_SERVICE_END_HANDLE;
+    s_gatt_service.read_callback = &gatt_read;
+    s_gatt_service.write_callback = &gatt_write;
+    att_server_register_service_handler(&s_gatt_service);
+    battery_service_server_init(100);
     device_information_service_server_init();
     device_information_service_server_set_manufacturer_name("YAGCC");
     device_information_service_server_set_model_number(s_name);
@@ -445,6 +550,10 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     s_sm_cb.callback = &packet_handler;
     sm_add_event_handler(&s_sm_cb);
     hids_device_register_packet_handler(packet_handler);
+    hids_device_register_get_report_callback(get_report);
+    att_server_register_packet_handler(packet_handler);       // MTU, indication results
+    s_l2cap_cb.callback = &packet_handler;                    // connection parameter update responses
+    l2cap_add_event_handler(&s_l2cap_cb);
     hci_power_control(HCI_POWER_ON);
     if (pair || open_window) rgb_set_bt(RGB_BT_PAIRING);
 }
