@@ -14,11 +14,15 @@ const diff8 = (x, y) => (x - y + 256) & 0xff;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FRET_COLORS = ['#22c55e', '#ef4444', '#facc15', '#3b82f6', '#fb923c'];
 const MODE_USE = {   // one line per mode: where you'd use it
-  0: 'Windows, Xbox 360, Clone Hero, YARG', 3: 'Rock Band on PS3, RPCS3, Rock Band 4 on PS4 / PS5', 1: 'Guitar Hero on PS3, PS2, RPCS3',
+  0: 'Windows, Xbox 360, Clone Hero, YARG (not macOS)', 3: 'Rock Band on PS3, RPCS3, Rock Band 4 on PS4 / PS5', 1: 'Guitar Hero on PS3, PS2, RPCS3',
   2: 'macOS, Linux, Android, emulators', 4: 'Fortnite Festival on PlayStation, Xbox, PC', 5: 'Nintendo Switch, Fortnite Festival',
   6: 'Rock Band on Wii and Wii U', 7: 'Original Xbox (needs an adapter cable)',
   8: 'Rock Band 4 on PS4 / PS5 (needs a controller on the host port)', 9: 'Rock Band 4 on Xbox One / Series (needs a controller on the host port)',
 };
+
+// macOS has no driver for Xbox 360 (XInput) controllers, so nothing on a Mac sees XInput mode
+const IS_MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || '') && !/iphone|ipad/i.test(navigator.userAgent);
+const MAC_XINPUT_TIP = 'macOS has no driver for Xbox 360 controllers, so games on a Mac (Clone Hero, YARG) can\u2019t see XInput mode. Use <b>HID gamepad</b> (hold yellow while plugging in) or <b>PS3 Guitar Hero</b> (hold blue).';
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -168,6 +172,8 @@ async function connect(device, { navigate = false } = {}) {
     buildUi();
     updatePill();
     toast('Controller connected', 'ok');
+    if (IS_MAC && state.info.mode === 0 && !state.info.setupSession)
+      toast('XInput mode doesn\u2019t work on a Mac: games can\u2019t see it. Use HID mode (hold yellow at plug-in) or PS3 Guitar Hero (hold blue).', 'bad');
     checkFirmware();
     if (navigate) showView('setup');
   } catch (e) {
@@ -811,6 +817,8 @@ function buildModes() {
       <span class="radio"></span><div><b>${m.name.replace(/ \(experimental\)$/, '')}</b>${m.host ? ' <span class="tag exp">Experimental</span>' : ''}<div class="dim">${MODE_USE[m.id] || ''}</div></div>
       ${modeTag(m.id)}</div>`).join('');
   $('#setupNote').hidden = !setup;
+  $('#macNote').hidden = !IS_MAC;
+  $('#macNote').innerHTML = IS_MAC ? `<b>On a Mac:</b> ${MAC_XINPUT_TIP}` : '';
   $('#setupNote').innerHTML = setup ? `The guitar is in a one-off <b>setup session</b> (XInput with configuration), which is why it can talk to this page. Unplug it and plug it back in to return to <b>${modeName(c.usbMode).replace(/ \(experimental\)$/, '')}</b>.` : '';
   buildHostPort();
   const pick = (row) => { c.usbMode = +row.dataset.mode; buildModes(); $(`#modeCards [data-mode="${c.usbMode}"]`)?.focus(); };
