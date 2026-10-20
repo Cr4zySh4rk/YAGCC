@@ -50,7 +50,43 @@ bool config_validate(const yacc_config_t *c) {
     for (int i = 0; i < NUM_FRETS; i++) if (c->led_map[i] >= MAX_LEDS) return false;
     if (c->no_fret_leds > 1 || c->strum_leds > MAX_STRUM_LEDS) return false;
     for (int i = 0; i < c->strum_leds; i++) if (strum_led_pos(c, i) >= MAX_LEDS) return false;
+    for (int i = 0; i < NUM_ATILT; i++) {
+        const atilt_cfg_t *a = &c->atilt[i];
+        if (a->ch != PIN_NONE && a->ch >= NUM_ATILT_SRC) return false;
+        if (a->target > ATILT_STAR || a->invert > 1 || a->threshold < 1 || a->threshold > 99) return false;
+        if (a->min > 4095 || a->max > 4095) return false;
+    }
+    if ((c->accel_sda != PIN_NONE && c->accel_sda >= NUM_DIGITAL_PINS) || (c->accel_scl != PIN_NONE && c->accel_scl >= NUM_DIGITAL_PINS)) return false;
+    if (c->accel_gate > 100 || c->accel_median > 9 || c->accel_lowpass > 100) return false;
     return true;
+}
+
+static void atilt_defaults(yacc_config_t *c) {
+    for (int i = 0; i < NUM_ATILT; i++) {
+        atilt_cfg_t *a = &c->atilt[i];
+        a->ch = PIN_NONE;
+        a->target = i ? ATILT_STAR : ATILT_WHAMMY;
+        a->invert = 0;
+        a->threshold = 50;
+        a->min = 0;
+        a->max = 4095;
+    }
+    c->accel_sda = c->accel_scl = PIN_NONE;
+    c->accel_gate = 0;               // off: on a guitar a strum hit is short, the median and low pass cover it
+    c->accel_median = 3;             // takes single sample spikes out
+    c->accel_lowpass = 20;           // 20 Hz: smooth, still well under a frame of latency
+    memset(c->reserved2, 0, sizeof(c->reserved2));
+}
+
+bool config_from_v4(const uint8_t *src, yacc_config_t *dst) {
+    uint32_t magic, crc;
+    memcpy(&magic, src, 4);
+    memcpy(&crc, src + 92, 4);
+    if (magic != YACC_CFG_MAGIC || src[4] != 4 || crc != crc32(src, 92)) return false;
+    memcpy(dst, src, 92);            // every v4 field keeps its offset
+    atilt_defaults(dst);             // the new ones start off
+    config_seal(dst);
+    return config_validate(dst);
 }
 
 // Keyboard presets (HID usage IDs). 0: Fortnite Festival lead, 1: Fortnite Festival Pro guitar
@@ -94,6 +130,7 @@ void config_defaults(yacc_config_t *c) {
     c->led_clk_pin = PIN_NONE;
     c->host_dp_pin = PIN_NONE;
     config_keyboard_preset(c, 1);          // Fortnite Festival Pro guitar keys
+    atilt_defaults(c);
     config_seal(c);
 }
 
@@ -101,6 +138,11 @@ void config_load(void) {
     const yacc_config_t *flash = (const yacc_config_t *)(XIP_BASE + CFG_OFFSET);
     yacc_config_t tmp;
     memcpy(&tmp, flash, sizeof(tmp));
+    if (!config_validate(&tmp) && tmp.magic == YACC_CFG_MAGIC && tmp.version == 4) {
+        // v4 (96 bytes, firmware up to 0.28) -> v5: the analog tilt sensors and accelerometer start off
+        yacc_config_t up;
+        if (config_from_v4((const uint8_t *)flash, &up)) tmp = up;
+    }
     if (!config_validate(&tmp) && tmp.magic == YACC_CFG_MAGIC && tmp.version == 3 &&
         *(const uint32_t *)((const uint8_t *)flash + 60) == crc32((const uint8_t *)flash, 60)) {
         // v3 (64 bytes) -> v4: keep everything, new fields get their defaults

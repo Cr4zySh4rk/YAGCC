@@ -7,6 +7,8 @@ export const BACKUP_FORMAT = 1;
 export const SECTIONS = [
   { id: 'wiring', name: 'Wiring', desc: 'Button pins, whammy calibration, tilt switch, Bluetooth, USB host port',
     keys: ['pins', 'whammyCh', 'whammyInvert', 'whammyMin', 'whammyMax', 'tiltPin', 'tiltEnabled', 'btEnabled', 'hostPin'] },
+  { id: 'tilt', name: 'Tilt sensors', desc: 'Analog tilt sensors, accelerometer pins, calibration and filters',
+    keys: ['atilt', 'accelSda', 'accelScl', 'accelGate', 'accelMedian', 'accelLowpass'] },
   { id: 'tuning', name: 'Tuning', desc: 'Debounce, shared strum lockout, whammy smoothing and dead zone',
     keys: ['debounceMode', 'debounce100us', 'combinedStrum', 'whammySmooth', 'whammyDeadzone'] },
   { id: 'lights', name: 'Lights', desc: 'LED type and pins, colours, effect, brightness, LED order',
@@ -32,6 +34,13 @@ const CHECK = {
   ledMap: (v) => Array.isArray(v) && v.length === 5 && [...v].sort().join() === '0,1,2,3,4',
   colors: (v) => Array.isArray(v) && v.length === 5 && v.every((c) => /^#[0-9a-f]{6}$/i.test(c)),
   keys: (v) => Array.isArray(v) && v.length === 11 && v.every(isByte),
+  atilt: (v) => Array.isArray(v) && v.length === 2 && v.every((s) => s && (s.src === PIN_NONE || (Number.isInteger(s.src) && s.src >= 0 && s.src < 9)) &&
+    (s.target === 0 || s.target === 1) && typeof s.invert === 'boolean' && Number.isInteger(s.threshold) && s.threshold >= 1 && s.threshold <= 99 &&
+    [s.min, s.max].every((x) => Number.isInteger(x) && x >= 0 && x <= 4095)),
+  accelSda: isPin, accelScl: isPin,
+  accelGate: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
+  accelMedian: (v) => Number.isInteger(v) && v >= 0 && v <= 9,
+  accelLowpass: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
 };
 export const LABELS = {
   pins: 'button pins', whammyCh: 'whammy pin', whammyMin: 'whammy range', whammyMax: 'whammy range', whammyInvert: 'whammy direction',
@@ -39,6 +48,7 @@ export const LABELS = {
   debounceMode: 'debounce type', debounce100us: 'debounce time', combinedStrum: 'shared strum lockout', whammySmooth: 'whammy smoothing', whammyDeadzone: 'whammy dead zone',
   rgbEnabled: 'LEDs on/off', rgbBootFlash: 'mode flash', rgbPin: 'LED data pin', rgbBrightness: 'brightness', rgbEffect: 'effect', rgbSpeed: 'effect speed',
   ledMap: 'LED order', colors: 'fret colours', ledType: 'LED type', ledOrder: 'colour order', ledClkPin: 'LED clock pin', rgbStarPower: 'star power glow',
+  atilt: 'tilt sensors', accelSda: 'accelerometer SDA pin', accelScl: 'accelerometer SCL pin', accelGate: 'gravity gate', accelMedian: 'median filter', accelLowpass: 'low pass filter',
   usbMode: 'default mode', bootModes: 'hold-a-fret modes', xinputType: 'XInput guitar type', starDpadLeft: 'star power on D-pad left', keys: 'keyboard bindings',
 };
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));

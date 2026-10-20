@@ -60,8 +60,27 @@ enum {
 };
 
 #define YACC_CFG_MAGIC   0x43434159u  // "YAGCC" little endian
-#define YACC_CFG_VERSION 4
+#define YACC_CFG_VERSION 5
 #define YACC_CFG_V3_SIZE 64
+#define YACC_CFG_V4_SIZE 96           // firmware 0.11 .. 0.28: no analog tilt sensors
+
+// Analog tilt sensors (firmware 0.29+): up to two, each on its own analog input, each either adding to the
+// whammy or pressing tilt / star power past a calibrated angle. They work alongside the whammy bar, the
+// star power button and the digital tilt switch.
+#define NUM_ATILT 2
+enum { ATILT_WHAMMY = 0, ATILT_STAR = 1 };
+// where a tilt sensor reads from: an analog input, or one axis of the I2C accelerometer
+// (or one of a LIS3DH's three auxiliary ADC inputs, for analog sensors wired to the accelerometer board)
+enum { ATILT_SRC_ADC0 = 0, ATILT_SRC_ADC1, ATILT_SRC_ADC2, ATILT_SRC_ACCEL_X, ATILT_SRC_ACCEL_Y, ATILT_SRC_ACCEL_Z,
+       ATILT_SRC_LIS_ADC1, ATILT_SRC_LIS_ADC2, ATILT_SRC_LIS_ADC3, NUM_ATILT_SRC };
+typedef struct __attribute__((packed)) {
+    uint8_t  ch;          // ATILT_SRC_* or PIN_NONE = not fitted
+    uint8_t  target;      // ATILT_*
+    uint8_t  invert;      // 1 = the reading falls as the guitar tilts up
+    uint8_t  threshold;   // star power: percent of the calibrated range where tilt presses (1..99)
+    uint16_t min;         // 12-bit reading at one end of the calibration (accelerometer axes: 2048 = 0 g, 1024 per g)
+    uint16_t max;         // the other end (min < max; `invert` says which end is the rest position)
+} atilt_cfg_t;
 
 #define NUM_LEDS 5          // fret LEDs
 #define MAX_STRUM_LEDS 8    // strum bar LEDs (one per side, the four corners, or four along each side)
@@ -90,7 +109,7 @@ enum { XI_GUITAR_HERO = 0, XI_ROCK_BAND = 1 };
 enum { KEY_GREEN = 0, KEY_RED, KEY_YELLOW, KEY_BLUE, KEY_ORANGE, KEY_STRUM_UP, KEY_STRUM_DOWN,
        KEY_STAR, KEY_PLUS, KEY_TILT, KEY_WHAMMY, NUM_KEYS };
 
-// 96 bytes on the wire and in flash. Keep in sync with web/js/protocol.js
+// 128 bytes on the wire and in flash (96 up to config version 4). Keep in sync with web/js/protocol.js
 typedef struct __attribute__((packed)) {
     uint32_t magic;               // 0
     uint8_t  version;             // 4
@@ -129,10 +148,22 @@ typedef struct __attribute__((packed)) {
     uint8_t  strum_map2[4];       // 84..87  position in the chain of strum LEDs 5..8 (v0.26)
     uint8_t  strum_roles2;        // 88      roles of strum LEDs 5..8
     uint8_t  reserved[3];         // 89..91
-    uint32_t crc;                 // 92      crc32 of bytes 0..91
+    atilt_cfg_t atilt[NUM_ATILT]; // 92..107 analog tilt sensors (config version 5)
+    uint8_t  accel_sda;           // 108     I2C accelerometer SDA GPIO (even) or PIN_NONE
+    uint8_t  accel_scl;           // 109     SCL GPIO (the odd pin of the same I2C block)
+    // accelerometer sample filters (Santroller's), each off at 0
+    uint8_t  accel_gate;          // 110     drop samples more than this far from 1 g, in hundredths of g (0..100)
+    uint8_t  accel_median;        // 111     median of this many samples (0 = off, 3..9)
+    uint8_t  accel_lowpass;       // 112     2nd order Butterworth low pass cutoff in Hz (0 = off, 1..100)
+    uint8_t  reserved2[11];       // 113..123
+    uint32_t crc;                 // 124     crc32 of bytes 0..123
 } yacc_config_t;
 
-_Static_assert(sizeof(yacc_config_t) == 96, "config size");
+_Static_assert(sizeof(yacc_config_t) == 128, "config size");
+_Static_assert(sizeof(atilt_cfg_t) == 8, "analog tilt config size");
+
+// Upgrade a version 4 (96 byte) config to the current layout; false if src isn't a valid v4 config
+bool config_from_v4(const uint8_t *src, yacc_config_t *dst);
 
 extern yacc_config_t g_cfg;
 

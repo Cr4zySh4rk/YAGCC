@@ -158,11 +158,47 @@ export function defaultConfig() {
     rgbEnabled: false, rgbBootFlash: true, rgbPin: PIN_NONE, rgbBrightness: 40, rgbEffect: 3, rgbSpeed: 5,
     ledMap: [0, 1, 2, 3, 4], colors: FRET_DEFAULT_COLORS.slice(),
     noFretLeds: false, strumLeds: 0, strumMap: [200, 201, 202, 203, 204, 205, 206, 207], strumColor: '#ffffff', strumRoles: [0, 0, 0, 0, 0, 0, 0, 0],
+    cfgVersion: CFG_VERSION, ...defaultTiltSensors(),
   };
 }
 
-export const CFG_SIZE = 96;
-export const CFG_VERSION = 4;
+// Analog tilt sensors and the I2C accelerometer (firmware 0.29+, config version 5)
+export const NUM_ATILT = 2;
+export const ATILT_TARGET = { WHAMMY: 0, STAR: 1 };
+// sensor sources: 0..2 analog inputs GP26..28, 3..5 accelerometer axes, 6..8 a LIS3DH's aux ADC inputs
+export const ATILT_SOURCES = [
+  { id: 0, name: 'GP26 (analog)', kind: 'adc' }, { id: 1, name: 'GP27 (analog)', kind: 'adc' }, { id: 2, name: 'GP28 (analog)', kind: 'adc' },
+  { id: 3, name: 'Accelerometer X', kind: 'accel' }, { id: 4, name: 'Accelerometer Y', kind: 'accel' }, { id: 5, name: 'Accelerometer Z', kind: 'accel' },
+  { id: 6, name: 'LIS3DH ADC 1', kind: 'lis' }, { id: 7, name: 'LIS3DH ADC 2', kind: 'lis' }, { id: 8, name: 'LIS3DH ADC 3', kind: 'lis' },
+];
+export const ACCEL_TYPES = ['none found', 'LIS3DH', 'ADXL345', 'MPU-6050', 'SC7A20', 'LIS3DSH'];
+export function defaultTiltSensors() {
+  return {
+    atilt: [0, 1].map((i) => ({ src: PIN_NONE, target: i ? 1 : 0, invert: false, threshold: 50, min: 0, max: 4095 })),
+    accelSda: PIN_NONE, accelScl: PIN_NONE, accelGate: 0, accelMedian: 3, accelLowpass: 20,
+  };
+}
+// I2C pins: SDA on an even GPIO, SCL on the odd one of the same I2C block (GP4/GP5, GP2/GP3, ...)
+export const i2cPinsOk = (sda, scl) => sda < NUM_DIGITAL_PINS && scl < NUM_DIGITAL_PINS && !(sda & 1) && (scl & 1) && ((sda >> 1) & 1) === ((scl >> 1) & 1);
+// 12-bit reading of a source from a status poll, or null
+export function tiltSourceRaw(status, src) {
+  if (!status || src === PIN_NONE) return null;
+  if (src < 3) return status.adc[src];
+  const v = status.accelRaw?.[src - 3];
+  return v === undefined || v === 0xffff ? null : v;
+}
+// Same maths as firmware input_atilt(): 0 (rest) .. 1 (tilted), or null when not reading
+export function tiltValue(raw, s) {
+  if (raw == null || s.src === PIN_NONE) return null;
+  const range = s.max - s.min;
+  if (range < 8) return null;
+  const v = Math.min(Math.max(raw - s.min, 0), range) / range;
+  return s.invert ? 1 - v : v;
+}
+
+export const CFG_SIZE = 128;      // config version 5 (firmware 0.29+); older firmware sends 96 bytes (version 4)
+export const CFG_SIZE_V4 = 96;
+export const CFG_VERSION = 5;
 
 export function parseConfig(dv) {
   if (dv.getUint32(0, true) !== 0x43434159) throw new Error('Bad config magic');
@@ -195,14 +231,25 @@ export function parseConfig(dv) {
     strumMap: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (i >= Math.min(8, dv.getUint8(75)) ? 200 + i : i < 4 ? dv.getUint8(76 + i) : dv.getUint8(84 + i - 4))),
     strumColor: (dv.getUint8(80) | dv.getUint8(81) | dv.getUint8(82)) ? rgbToHex(dv.getUint8(80), dv.getUint8(81), dv.getUint8(82)) : '#ffffff',
     strumRoles: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (dv.getUint8(i < 4 ? 83 : 88) >> (2 * (i & 3))) & 3),
+    cfgVersion: dv.getUint8(4),
+    // tilt sensors (version 5): 2 x 8 bytes at 92, then accelerometer pins and filters at 108
+    ...(dv.byteLength >= CFG_SIZE && dv.getUint8(4) >= 5 ? {
+      atilt: [0, 1].map((i) => {
+        const o = 92 + i * 8;
+        return { src: dv.getUint8(o), target: dv.getUint8(o + 1), invert: !!dv.getUint8(o + 2), threshold: dv.getUint8(o + 3), min: dv.getUint16(o + 4, true), max: dv.getUint16(o + 6, true) };
+      }),
+      accelSda: dv.getUint8(108), accelScl: dv.getUint8(109), accelGate: dv.getUint8(110), accelMedian: dv.getUint8(111), accelLowpass: dv.getUint8(112),
+    } : defaultTiltSensors()),
   };
 }
 
+// Written in the layout the controller sent (version 4 / 96 bytes for firmware before 0.29)
 export function serializeConfig(c) {
-  const buf = new ArrayBuffer(CFG_SIZE);
+  const v5 = (c.cfgVersion ?? CFG_VERSION) >= 5;
+  const buf = new ArrayBuffer(v5 ? CFG_SIZE : CFG_SIZE_V4);
   const dv = new DataView(buf);
   dv.setUint32(0, 0x43434159, true);
-  dv.setUint8(4, CFG_VERSION);
+  dv.setUint8(4, v5 ? 5 : 4);
   c.pins.forEach((p, i) => dv.setUint8(5 + i, p));
   dv.setUint8(14, c.whammyCh);
   dv.setUint8(15, c.whammyInvert ? 1 : 0);
@@ -236,7 +283,16 @@ export function serializeConfig(c) {
   const roles = c.strumRoles || [];
   dv.setUint8(83, roles.slice(0, 4).reduce((v, role, i) => v | ((role & 3) << (2 * i)), 0));
   dv.setUint8(88, roles.slice(4, 8).reduce((v, role, i) => v | ((role & 3) << (2 * i)), 0));
-  dv.setUint32(92, crc32(new Uint8Array(buf, 0, 92)), true);
+  if (!v5) { dv.setUint32(92, crc32(new Uint8Array(buf, 0, 92)), true); return buf; }
+  (c.atilt || defaultTiltSensors().atilt).forEach((s, i) => {
+    const o = 92 + i * 8;
+    dv.setUint8(o, s.src); dv.setUint8(o + 1, s.target ? 1 : 0); dv.setUint8(o + 2, s.invert ? 1 : 0);
+    dv.setUint8(o + 3, Math.max(1, Math.min(99, s.threshold | 0)));
+    dv.setUint16(o + 4, Math.max(0, Math.min(4095, s.min | 0)), true); dv.setUint16(o + 6, Math.max(0, Math.min(4095, s.max | 0)), true);
+  });
+  dv.setUint8(108, c.accelSda ?? PIN_NONE); dv.setUint8(109, c.accelScl ?? PIN_NONE);
+  dv.setUint8(110, Math.min(100, c.accelGate | 0)); dv.setUint8(111, Math.min(9, c.accelMedian | 0)); dv.setUint8(112, Math.min(100, c.accelLowpass | 0));
+  dv.setUint32(124, crc32(new Uint8Array(buf, 0, 124)), true);
   return buf;
 }
 
@@ -318,7 +374,10 @@ export function parseStatus(dv) {
   const counts = [];
   for (let i = 0; i < NUM_DIGITAL_PINS; i++) counts.push(dv.getUint8(10 + i));
   const flags = dv.getUint8(10 + NUM_DIGITAL_PINS);
-  return { t: performance.now(), mask, adc, counts, btState: flags & 3, saveOk: !!(flags & 4), savePending: !!(flags & 8) };
+  const o = 11 + NUM_DIGITAL_PINS;   // firmware 0.29+: accelerometer type, then X, Y, Z, LIS3DH ADC 1..3 (0xffff = none)
+  const accelType = dv.byteLength > o ? dv.getUint8(o) : 0;
+  const accelRaw = dv.byteLength >= o + 13 ? [0, 1, 2, 3, 4, 5].map((i) => dv.getUint16(o + 1 + i * 2, true)) : [0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff];
+  return { t: performance.now(), mask, adc, counts, btState: flags & 3, saveOk: !!(flags & 4), savePending: !!(flags & 8), accelType, accelRaw };
 }
 
 // Same maths as firmware input_whammy(): returns 0..1

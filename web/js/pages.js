@@ -80,8 +80,10 @@ export const HARDWARE = [
     points: ['Wiper to GP26/27/28, ends to 3V3(OUT) and GND', 'Two-sweep auto calibration, or capture rest / full by hand', 'Smoothing, dead zone and invert'] },
   { group: 'input', name: 'Tilt switch (ball or mercury)', bus: 'Digital GPIO', status: 'ok',
     points: ['Registered by tilting up twice', 'At least 20 ms lockout so a rolling ball can\'t chatter'] },
-  { group: 'input', name: 'I2C accelerometers (ADXL345, LIS3DH, MPU6050)', bus: 'I2C', status: 'planned',
-    points: ['Analog tilt with an adjustable threshold'] },
+  { group: 'input', name: 'Analog tilt sensors', bus: 'ADC (GP26–28)', status: 'ok',
+    points: ['Up to two, each on the whammy or star power', 'Calibrated rest and tilted positions, adjustable star power angle'] },
+  { group: 'input', name: 'I2C accelerometers (LIS3DH, SC7A20, LIS3DSH, ADXL345, MPU-6050)', bus: 'I2C', status: 'ok',
+    points: ['Found automatically on the SDA / SCL pins you pick', 'Any axis on the whammy or star power', 'Low pass, median and gravity gate filters', 'LIS3DH aux ADC inputs usable as analog sensors'] },
   { group: 'input', name: 'MPR121 capacitive touch (World Tour slider)', bus: 'I2C', status: 'planned', points: ['Touch slider as tap frets'] },
   { group: 'input', name: 'CD4051 / CD4067 multiplexers, key matrices, ADS1115', bus: 'GPIO / I2C', status: 'planned', points: ['More inputs from fewer pins'] },
   // necks & adapters

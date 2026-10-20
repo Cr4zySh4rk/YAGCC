@@ -21,4 +21,6 @@ bool input_tilt(void);
 
 uint16_t input_adc(uint8_t ch);      // filtered raw 12-bit
 int16_t input_whammy(void);          // calibrated 0..32767
+int32_t input_atilt_raw(uint8_t src); // 12-bit reading of a tilt sensor source (ATILT_SRC_*), -1 = none
+int32_t input_atilt(int i);          // tilt sensor i calibrated 0 (rest) .. 32767 (tilted), -1 = off
 #endif

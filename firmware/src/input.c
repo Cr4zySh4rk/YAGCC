@@ -4,6 +4,7 @@
 #include "hardware/adc.h"
 #include "rgb.h"
 #include "host/usb_host.h"
+#include "accel.h"
 
 // ---- detection grade pin state (fixed debounce, used for pin discovery) ----
 #define DETECT_DEBOUNCE_US 3000
@@ -72,7 +73,7 @@ static inline bool deb_step(deb_t *d, bool raw, uint32_t now, uint32_t lockout, 
 
 static bool raw_for_slot(uint32_t all, int s) {
     uint8_t pin = (s == SLOT_TILT) ? g_cfg.tilt_pin : g_cfg.pins[s];
-    if (pin >= NUM_DIGITAL_PINS) return false;
+    if (pin >= NUM_DIGITAL_PINS || accel_pin(pin)) return false;
     return !((all >> pin) & 1);       // active low
 }
 
@@ -85,7 +86,7 @@ void input_poll(void) {
 
     // detection grade
     for (int p = 0; p < NUM_DIGITAL_PINS; p++) {
-        if (rgb_active_pin(p) || usb_host_pin(p)) { level[p] = 1; differing[p] = false; continue; }   // LED / USB host lines, not buttons
+        if (rgb_active_pin(p) || usb_host_pin(p) || accel_pin(p)) { level[p] = 1; differing[p] = false; continue; }   // LED / USB host lines, not buttons
         uint8_t raw = (all >> p) & 1;
         if (raw != level[p]) {
             if (!differing[p]) { differing[p] = true; since[p] = now; }
@@ -171,4 +172,28 @@ int16_t input_whammy(void) {
     if (g_cfg.whammy_invert) n = 32767 - n;
     if (n < (32767 * (int32_t)g_cfg.whammy_deadzone) / 100) n = 0;
     return (int16_t)n;
+}
+
+// 12-bit reading of a tilt sensor source: analog input or accelerometer axis. -1 = not available.
+int32_t input_atilt_raw(uint8_t src) {
+    if (src < NUM_ADC_CH) return adc_val[src];
+    if (src >= ATILT_SRC_ACCEL_X && src <= ATILT_SRC_ACCEL_Z) return accel_raw12(src - ATILT_SRC_ACCEL_X);
+    if (src >= ATILT_SRC_LIS_ADC1 && src <= ATILT_SRC_LIS_ADC3) return accel_adc12(src - ATILT_SRC_LIS_ADC1);
+    return -1;
+}
+
+// Tilt sensor i, calibrated: 0 at rest .. 32767 fully tilted. -1 when not fitted or not reading.
+int32_t input_atilt(int i) {
+    if (i < 0 || i >= NUM_ATILT) return -1;
+    const atilt_cfg_t *a = &g_cfg.atilt[i];
+    if (a->ch == PIN_NONE) return -1;
+    int32_t raw = input_atilt_raw(a->ch);
+    if (raw < 0) return -1;
+    int32_t lo = a->min, hi = a->max, range = hi - lo;
+    if (range < 8) return -1;                    // not calibrated
+    int32_t v = raw - lo;
+    if (v < 0) v = 0;
+    if (v > range) v = range;
+    int32_t n = (v * 32767) / range;
+    return a->invert ? 32767 - n : n;
 }

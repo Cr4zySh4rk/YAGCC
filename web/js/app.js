@@ -2,6 +2,7 @@ import {
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
+  ATILT_SOURCES, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
 } from './protocol.js?v=dev';
 import { YaccDevice, webusbSupported } from './usb.js?v=dev';
 import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
@@ -56,7 +57,8 @@ $('#nav').addEventListener('click', (e) => { const b = e.target.closest('button'
 
 const funcName = (i) => FUNC_LABEL[FUNCS[i]];
 const hostPins = (c = state.cfg) => (c.hostPin !== undefined && c.hostPin !== PIN_NONE ? [c.hostPin, c.hostPin + 1] : []);
-const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins()].filter((p) => p !== PIN_NONE);
+const accelPins = (c = state.cfg) => (c.accelSda !== undefined && c.accelSda !== PIN_NONE ? [c.accelSda, c.accelScl] : []);
+const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(), ...accelPins()].filter((p) => p !== PIN_NONE);
 const isConfigured = (cfg) => cfg.pins.some((p) => p !== PIN_NONE);
 
 let pushTimer = 0;
@@ -91,8 +93,10 @@ function updateViewer(v, s) {
     v.g.setMapped(name, cfg.pins[i] !== PIN_NONE);
     v.g.setPressed(name, isPressed(s, cfg.pins[i]));
   });
-  v.g.setWhammy(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0);
-  v.g.setTilt(cfg.tiltEnabled && isPressed(s, cfg.tiltPin));
+  // tilt sensors add to the whammy (the larger wins) or press tilt, as in the firmware
+  const ts = tiltStates(s);
+  v.g.setWhammy(Math.max(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0, ...ts.map((t) => (t.whammy ? t.value : 0))));
+  v.g.setTilt((cfg.tiltEnabled && isPressed(s, cfg.tiltPin)) || ts.some((t) => t.star));
   if (v.pinsEl) {
     const used = new Set(assignedPins());
     [...v.pinsEl.children].forEach((d, p) => {
@@ -211,6 +215,7 @@ async function autoConnect(navigate) {
 function onStatus(s) {
   state.status = s;
   if (state.view === 'lights') updateLedPreview(s);
+  if (state.view === 'tune') updateTilt(s);
   for (const v of viewers) if (v.container.offsetParent !== null) updateViewer(v, s);
   tickStep(s);
 }
@@ -630,6 +635,147 @@ function buildTune() {
     state.cfg = await state.dev.getConfig(); state.step = 0; buildUi(); toast('Reset to defaults', 'ok');
   };
   refresh();
+  buildTilt();
+}
+
+// ------------------------------------------------------------------ tilt sensors (firmware 0.29+)
+// Live state of the two sensors, with the firmware's star power hysteresis (4 %)
+const tiltOn = [false, false];
+function tiltStates(s) {
+  const c = state.cfg;
+  if (!c?.atilt || (c.cfgVersion ?? 0) < 5) return [];
+  return c.atilt.map((t, i) => {
+    const raw = tiltSourceRaw(s, t.src);
+    const value = tiltValue(raw, t);
+    if (value == null) { tiltOn[i] = false; return { raw, value: null, whammy: false, star: false }; }
+    if (t.target === 1) {
+      const on = t.threshold / 100, off = on - 0.04;
+      tiltOn[i] = tiltOn[i] ? value > off : value >= on;
+    } else tiltOn[i] = false;
+    const v = t.target === 0 && value < c.whammyDeadzone / 100 ? 0 : value;
+    return { raw, value: v, whammy: t.target === 0, star: tiltOn[i] };
+  });
+}
+
+function buildTilt() {
+  const c = state.cfg, body = $('#tiltBody');
+  if (!body) return;
+  if ((c.cfgVersion ?? 0) < 5) {
+    body.innerHTML = '<p class="notice small">Tilt sensors need firmware 0.29 or newer. Update the firmware on the Flash page.</p>';
+    return;
+  }
+  const own = new Set(accelPins());
+  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins()].filter((p) => p !== PIN_NONE && !own.has(p)));
+  const pairs = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !(p & 1) && i2cPinsOk(p, p + 1) && !taken.has(p) && !taken.has(p + 1));
+  const accelOn = c.accelSda !== PIN_NONE && i2cPinsOk(c.accelSda, c.accelScl);
+  const srcOpts = (i) => {
+    const other = c.atilt[1 - i].src;
+    return '<option value="255">Off</option>' + ATILT_SOURCES.map((s) => {
+      const busy = (s.kind === 'adc' && s.id === c.whammyCh) || (s.id === other && other !== PIN_NONE);
+      const needs = s.kind !== 'adc' && !accelOn;
+      if (needs && c.atilt[i].src !== s.id) return '';
+      const note = s.id === c.whammyCh ? ' (whammy bar)' : s.id === other ? ' (other sensor)' : s.kind === 'lis' ? ' (LIS3DH only)' : '';
+      return `<option value="${s.id}" ${busy ? 'disabled' : ''}>${s.name}${note}</option>`;
+    }).join('');
+  };
+  const restOf = (t) => (t.invert ? t.max : t.min), tiltOf = (t) => (t.invert ? t.min : t.max);
+  body.innerHTML = `
+    <div class="tilt-accel">
+      <div class="opt first"><div><h3>Accelerometer</h3><p class="dim">I²C module: SDA on the even pin, SCL on the next one, VCC to 3V3(OUT), GND to GND.</p></div>
+        <select id="accPins"><option value="255">None</option>${pairs.map((p) => `<option value="${p}">SDA GP${p}, SCL GP${p + 1}</option>`).join('')}</select></div>
+      ${accelOn ? `
+      <div class="tilt-readout" style="margin-top:8px"><span>Chip: <b id="accType">looking…</b></span><span class="dim">1 g = 1024 counts, 2048 = level</span></div>
+      <div class="tilt-axes">${['X', 'Y', 'Z'].map((a, i) => `<div>${a} <span id="accV${i}">–</span><div class="bar"><i id="accB${i}"></i></div></div>`).join('')}</div>
+      <div class="cols" style="margin-top:6px">
+        <div>
+          <div class="slider-row"><label for="accLp">Low pass</label><output class="val" id="accLpV"></output><input type="range" id="accLp" min="0" max="50" step="1"></div>
+          <div class="slider-row"><label for="accMed">Median</label><output class="val" id="accMedV"></output><input type="range" id="accMed" min="0" max="4" step="1"></div>
+        </div>
+        <div>
+          <div class="slider-row"><label for="accGate">Gravity gate</label><output class="val" id="accGateV"></output><input type="range" id="accGate" min="0" max="50" step="1"></div>
+          <p class="dim small">Low pass smooths the reading, the median drops single spikes, and the gravity gate ignores moments when the guitar is being shaken (a hard strum) instead of tilted. Each is off at 0, as in Santroller.</p>
+        </div>
+      </div>` : ''}
+    </div>
+    <div class="cols tilt-sensors">${c.atilt.map((t, i) => `
+      <div class="tilt-card" data-i="${i}">
+        <div class="head"><h3>Sensor ${i + 1}</h3><span class="tilt-state" id="tSt${i}">off</span></div>
+        <div class="opt first"><div><p class="dim">Reads from</p></div><select data-k="src">${srcOpts(i)}</select></div>
+        ${t.src !== PIN_NONE ? `
+        <div class="seg" role="group" aria-label="Sensor ${i + 1} use"><button data-k="target" data-v="0" class="${t.target === 0 ? 'on' : ''}">Whammy</button><button data-k="target" data-v="1" class="${t.target === 1 ? 'on' : ''}">Star power</button></div>
+        <div class="tilt-meter"><div class="bar" id="tBar${i}"><i></i></div>${t.target === 1 ? `<span class="thr" style="left:${t.threshold}%"></span>` : ''}</div>
+        <div class="tilt-readout"><span>reading <b id="tRaw${i}">–</b></span><span>rest ${restOf(t)} · tilted ${tiltOf(t)}</span></div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">
+          <button class="btn small" data-cap="rest">Set rest (guitar level)</button><button class="btn small" data-cap="tilt">Set tilted (neck up)</button></div>
+        ${t.target === 1 ? `<div class="slider-row"><label>Star power at</label><output class="val">${t.threshold} %</output><input type="range" data-k="threshold" min="5" max="95" step="1" value="${t.threshold}"></div>`
+          : '<p class="dim small" style="margin-top:8px">Adds to the whammy bar: whichever is further wins. The whammy dead zone above applies.</p>'}` : ''}
+      </div>`).join('')}
+    </div>`;
+  const live = () => { $('#tuneState').textContent = 'Live changes, not saved yet.'; pushCfg(); };
+  const sel = $('#accPins');
+  sel.value = String(accelOn ? c.accelSda : PIN_NONE);
+  sel.onchange = () => {
+    const p = +sel.value;
+    c.accelSda = p; c.accelScl = p === PIN_NONE ? PIN_NONE : p + 1;
+    if (p === PIN_NONE) c.atilt.forEach((t) => { if (t.src >= 3) t.src = PIN_NONE; });
+    live(); buildTilt();
+  };
+  if (accelOn) {
+    const lp = $('#accLp'), md = $('#accMed'), gt = $('#accGate');
+    const MED = [0, 3, 5, 7, 9];
+    const show = () => {
+      $('#accLpV').textContent = c.accelLowpass ? c.accelLowpass + ' Hz' : 'off';
+      $('#accMedV').textContent = c.accelMedian ? c.accelMedian + ' samples' : 'off';
+      $('#accGateV').textContent = c.accelGate ? '±' + (c.accelGate / 100).toFixed(2) + ' g' : 'off';
+    };
+    lp.value = c.accelLowpass; md.value = Math.max(0, MED.indexOf(c.accelMedian)); gt.value = c.accelGate;
+    lp.oninput = () => { c.accelLowpass = +lp.value; show(); live(); };
+    md.oninput = () => { c.accelMedian = MED[+md.value]; show(); live(); };
+    gt.oninput = () => { c.accelGate = +gt.value; show(); live(); };
+    show();
+  }
+  body.querySelectorAll('.tilt-card').forEach((card) => {
+    const i = +card.dataset.i, t = c.atilt[i];
+    const s = card.querySelector('select[data-k="src"]');
+    s.value = String(t.src);
+    s.onchange = () => { t.src = +s.value; live(); buildTilt(); };
+    card.querySelectorAll('button[data-k="target"]').forEach((b) => (b.onclick = () => { t.target = +b.dataset.v; live(); buildTilt(); }));
+    const th = card.querySelector('input[data-k="threshold"]');
+    if (th) th.oninput = () => { t.threshold = +th.value; th.previousElementSibling.textContent = t.threshold + ' %'; card.querySelector('.thr').style.left = t.threshold + '%'; live(); };
+    card.querySelectorAll('[data-cap]').forEach((b) => (b.onclick = () => {
+      const raw = tiltSourceRaw(state.status, t.src);
+      if (raw == null) { toast('No reading from this sensor yet. Check the wiring' + (t.src >= 3 ? ' and that the accelerometer was found.' : '.'), 'bad'); return; }
+      let rest = restOf(t), tilted = tiltOf(t);
+      if (b.dataset.cap === 'rest') rest = raw; else tilted = raw;
+      Object.assign(t, { min: Math.min(rest, tilted), max: Math.max(rest, tilted), invert: rest > tilted });
+      if (t.max - t.min < 8) toast('Rest and tilted read almost the same. Tilt further before setting the other end.', 'bad');
+      live(); buildTilt();
+    }));
+  });
+  if (state.status) updateTilt(state.status);
+}
+
+function updateTilt(s) {
+  const c = state.cfg;
+  if (!c?.atilt || (c.cfgVersion ?? 0) < 5 || !$('#tiltBody')) return;
+  const ty = $('#accType');
+  if (ty) {
+    ty.textContent = s.accelType ? ACCEL_TYPES[s.accelType] || 'unknown' : 'none found, check the wiring';
+    for (let i = 0; i < 3; i++) {
+      const v = s.accelRaw[i], ok = v !== 0xffff;
+      $('#accV' + i).textContent = ok ? ((v - 2048) / 1024).toFixed(2) + ' g' : '–';
+      $('#accB' + i).style.width = ok ? (v / 40.95).toFixed(1) + '%' : '0';
+    }
+  }
+  tiltStates(s).forEach((t, i) => {
+    const st = $('#tSt' + i), bar = $('#tBar' + i), raw = $('#tRaw' + i);
+    if (!st) return;
+    const src = c.atilt[i].src;
+    st.textContent = src === PIN_NONE ? 'off' : t.value == null ? (t.raw == null ? 'no reading' : 'calibrate') : t.whammy ? 'whammy ' + Math.round(t.value * 100) + ' %' : t.star ? 'STAR POWER' : 'level';
+    st.classList.toggle('on', !!t.star || (t.whammy && t.value > 0));
+    if (raw) raw.textContent = t.raw ?? '–';
+    if (bar) { bar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; bar.classList.toggle('on', !!t.star); }
+  });
 }
 
 // ------------------------------------------------------------------ backup & restore
@@ -863,7 +1009,7 @@ function buildHostPort() {
   const c = state.cfg;
   if (c.hostPin === undefined) c.hostPin = PIN_NONE;
   const own = new Set(hostPins());
-  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin].filter((p) => p !== PIN_NONE && !own.has(p)));
+  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...accelPins(c)].filter((p) => p !== PIN_NONE && !own.has(p)));
   const free = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !taken.has(p) && !taken.has(p + 1));
   const sel = $('#hostPin');
   sel.innerHTML = '<option value="255">Off (no host port)</option>' +

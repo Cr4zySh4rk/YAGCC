@@ -24,6 +24,7 @@ Flash the board, plug it in, and the web app walks you through mapping every but
 * **Many controller modes**: Xbox 360 (XInput), PS3 Guitar Hero and Rock Band, Wii Rock Band, Nintendo Switch, generic HID, keyboard (Fortnite Festival), original Xbox, and PS4 / PS5 and Xbox One / Series with console authentication passed through to a licensed controller *(experimental)*. Pick a mode by holding a fret at plug-in.
 * **Bluetooth LE** on the Pico W / Pico 2 W, presenting the same controller as the USB mode, with automatic reconnects.
 * **Whammy calibration**, smoothing, dead zone and per-input debounce, all live.
+* **Tilt sensors**: a digital tilt switch, up to two analog tilt sensors and an I²C accelerometer (LIS3DH, SC7A20, LIS3DSH, ADXL345, MPU-6050, detected automatically), each working the whammy or star power, all at the same time as the whammy bar and star power button.
 * **RGB lighting**: WS2812, SK6812 RGBW and APA102 LEDs under the frets and on the strum bar (up to 13), colours, reactive effects and star power glow.
 * **No toolchain needed**: firmware downloads and in-browser flashing, update notifications, backup and restore of all settings.
 
@@ -38,7 +39,7 @@ An earlier 5-minute walkthrough with voice-over (from v0.4; the setup flow is th
 4. **Whammy** – move the bar through two full sweeps; YAGCC finds the analog pin, calibrates min/max, detects direction and shows a live meter. Live readings of GP26–28 are shown, with a manual *Use pin* / *Capture rest* / *Capture full* fallback.
 5. **RGB** – say whether you wired LEDs under the frets and / or on the strum bar (0–8 strum LEDs, wired before or after the frets), give the data pin, and teach YAGCC the chain order by pressing the fret above each lit LED, or strumming for a strum LED.
 6. **Add-ons** – Bluetooth toggle (Pico W / Pico 2 W only) and an optional tilt switch (a plain digital switch such as a mercury ball switch; tilt up twice within 5 s to register it as a star-power shortcut).
-7. **Tune** – debounce time (presets or slider), combined-strum debounce, whammy smoothing, dead-zone and direction, all live.
+7. **Tune** – debounce time (presets or slider), combined-strum debounce, whammy smoothing, dead-zone and direction, and the **tilt sensors**, all live.
 8. **Lights** – optional RGB LEDs under the frets and on the strum bar (WS2812, SK6812 RGBW or APA102; colours, reactive effects, brightness, LED layout and order, star power glow).
 9. **Modes** – choose what the controller pretends to be, the XInput guitar type and the Fortnite Festival key bindings.
 10. **Hardware / Compatibility** – reference pages listing supported boards and parts, and what works with which game and console.
@@ -96,6 +97,20 @@ See the **Compatibility** page in the web app for a game-by-game / console-by-co
 * Buttons: any of **GP0–GP22**, switched to **GND** (internal pull-ups are enabled).
 * Whammy potentiometer: wiper to **GP26, GP27 or GP28** (ADC0–2), one end to **3V3(OUT) (pin 36)**, the other to GND/AGND. Don't power it from ADC_VREF (pin 35): on many clone boards that pin isn't fed, and the bar then barely moves the reading.
 * Tilt switch: any of GP0–GP22 to GND (a mercury ball switch is fine).
+* Analog tilt sensor: output to a free one of GP26–GP28, powered from 3V3(OUT) and GND, like the whammy pot.
+* Accelerometer module (I²C): SDA to an even GPIO and SCL to the next one (GP4 / GP5, GP0 / GP1, …), VCC to 3V3(OUT), GND to GND.
+
+### Tilt sensors
+
+Set up on the **Tune** page (firmware 0.29+). Besides the digital tilt switch from Setup there are two sensor slots, and each one reads from:
+
+* an analog input (**GP26–GP28**, any not used by the whammy bar),
+* one axis (**X, Y or Z**) of an I²C accelerometer: LIS3DH, SC7A20, LIS3DSH, ADXL345 or MPU-6050 and its clones, found automatically at either of its addresses, or
+* one of a **LIS3DH's three auxiliary ADC inputs**, for analog sensors wired to the accelerometer board.
+
+Each slot either **adds to the whammy** (the whammy bar and the sensor work together; whichever is pushed further wins, and the whammy dead zone applies) or **presses star power / tilt** once the guitar tilts past a threshold you set (with a little hysteresis so it doesn't flicker). Calibrate with *Set rest* (guitar level) and *Set tilted* (neck up); the direction is worked out from the two. So a guitar can have a whammy bar, a star power button, a tilt sensor on the whammy and another on star power, all at once.
+
+The accelerometer readings go through the same filters Santroller uses, each off at 0: a 2nd order Butterworth **low pass** (default 20 Hz), a **median** of 3–9 samples (default 3) that drops single spikes, and a **gravity gate** that holds the last reading while the guitar is being shaken (a hard strum) rather than tilted. The chip is polled with its data-ready flag so each sample is used once, and it is found again if it's unplugged.
 * LED data line (WS2812 / SK6812): any free GP0–GP22. APA102 / DotStar also needs a clock pin (any free GP0–GP22).
 
 ## RGB lighting

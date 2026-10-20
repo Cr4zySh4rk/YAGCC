@@ -13,11 +13,13 @@
 #include "input.h"
 #include "bt.h"
 #include "rgb.h"
+#include "accel.h"
 #include "host/usb_host.h"
 #include "host/xbone.h"
 
 // ---------------------------------------------------------------- state shared with USB callbacks
 static yacc_config_t cfg_rx;
+static uint16_t cfg_rx_len;
 static uint8_t tx_buf[64];
 static volatile bool save_pending;
 static volatile bool save_ok = true;
@@ -45,6 +47,13 @@ static uint16_t build_status(void) {
     }
     memcpy(p, input_press_counts(), NUM_DIGITAL_PINS); p += NUM_DIGITAL_PINS;
     *p++ = (bt_state() & 0x03) | (save_ok ? 0x04 : 0) | (save_pending ? 0x08 : 0);
+    // firmware 0.29+: accelerometer found (ACCEL_*) and its readings (12-bit like the analog inputs), for calibration
+    *p++ = accel_type();
+    for (int i = 0; i < 6; i++) {    // X, Y, Z, then the LIS3DH aux ADC inputs 1..3 (0xFFFF = none)
+        int32_t r = i < 3 ? accel_raw12(i) : accel_adc12(i - 3);
+        uint16_t v = r < 0 ? 0xFFFF : (uint16_t)r;
+        memcpy(p, &v, 2); p += 2;
+    }
     return (uint16_t)(p - tx_buf);
 }
 
@@ -78,6 +87,16 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
 
     // OUT data stage finished: apply what we received
     if (stage == CONTROL_STAGE_ACK) {
+        if (req->bRequest == VREQ_SETCFG && cfg_rx_len == YACC_CFG_V4_SIZE) {
+            // a configurator from before 0.29 sends the 96 byte layout: keep this guitar's tilt sensor settings
+            yacc_config_t up;
+            if (config_from_v4((const uint8_t *)&cfg_rx, &up)) {
+                memcpy(up.atilt, g_cfg.atilt, sizeof(up.atilt));
+                up.accel_sda = g_cfg.accel_sda; up.accel_scl = g_cfg.accel_scl;
+                config_seal(&up);
+                cfg_rx = up;
+            }
+        }
         if (req->bRequest == VREQ_SETCFG && config_validate(&cfg_rx)) {
             g_cfg = cfg_rx;
             // an older configurator leaves the host port byte at zero: keep the port off
@@ -112,8 +131,10 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             config_seal(&g_cfg);
             return reply(rhport, req, &g_cfg, sizeof(g_cfg));
         case VREQ_SETCFG:
-            if (req->wLength != sizeof(cfg_rx)) return false;
-            return tud_control_xfer(rhport, req, &cfg_rx, sizeof(cfg_rx));
+            if (req->wLength != sizeof(cfg_rx) && req->wLength != YACC_CFG_V4_SIZE) return false;
+            cfg_rx_len = req->wLength;
+            memset(&cfg_rx, 0, sizeof(cfg_rx));
+            return tud_control_xfer(rhport, req, &cfg_rx, cfg_rx_len);
         case VREQ_SAVE:
             save_pending = true;
             return tud_control_status(rhport, req);
@@ -166,8 +187,24 @@ static void read_pad(pad_t *s) {
     s->plus = input_func(F_PLUS);
     s->star = input_func(F_STAR);
     s->tilt = (g_cfg.flags & CFG_FLAG_TILT_ENABLED) && g_cfg.tilt_pin != PIN_NONE && input_tilt();
-    if (s->tilt) s->star = true;
     s->whammy = input_whammy();
+    // analog tilt sensors / accelerometer axes: each adds to the whammy (the larger wins, so the bar and a
+    // tilt-whammy can be used together) or presses tilt past its threshold, with 4 % hysteresis
+    static bool atilt_on[NUM_ATILT];
+    for (int i = 0; i < NUM_ATILT; i++) {
+        int32_t v = input_atilt(i);
+        if (v < 0) { atilt_on[i] = false; continue; }
+        const atilt_cfg_t *a = &g_cfg.atilt[i];
+        if (a->target == ATILT_WHAMMY) {
+            if (v < (32767 * (int32_t)g_cfg.whammy_deadzone) / 100) v = 0;
+            if (v > s->whammy) s->whammy = (int16_t)v;
+        } else {
+            int32_t on = (32767 * (int32_t)a->threshold) / 100, off = on - 32767 * 4 / 100;
+            atilt_on[i] = atilt_on[i] ? v > off : v >= on;
+            if (atilt_on[i]) s->tilt = true;
+        }
+    }
+    if (s->tilt) s->star = true;
 }
 
 // ---------------------------------------------------------------- game feedback (rumble channel)
@@ -555,6 +592,7 @@ int main(void) {
         if (needs_host(g_usb_mode)) usb_host_task();
         bt_task();
         input_poll();
+        accel_task();
         uint64_t now = time_us_64();
         // USB power but no host talking to us for 3 s (a phone charger or power bank charging the battery through
         // the Pico's USB port): tell the LEDs to show the charging sweep. Back to normal the moment a host appears.
