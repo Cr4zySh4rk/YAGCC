@@ -58,9 +58,13 @@ bool config_validate(const yacc_config_t *c) {
     }
     if ((c->accel_sda != PIN_NONE && c->accel_sda >= NUM_DIGITAL_PINS) || (c->accel_scl != PIN_NONE && c->accel_scl >= NUM_DIGITAL_PINS)) return false;
     if (c->accel_gate > 100 || c->accel_median > 9 || c->accel_lowpass > 100) return false;
-    if (c->xinput_opts > 1) return false;
+    if (c->xinput_opts > 3) return false;
+    const uint8_t ext[7] = {c->ps2_att, c->ps2_cmd, c->ps2_dat, c->ps2_clk, c->ps2_ack, c->wii_sda, c->wii_scl};
+    for (int i = 0; i < 7; i++) if (ext[i] != PIN_NONE && ext[i] >= NUM_DIGITAL_PINS) return false;
     if ((c->rumble_pin != PIN_NONE && c->rumble_pin >= NUM_DIGITAL_PINS) || c->rumble_flags > 7 ||
         c->rumble_strength < 10 || c->rumble_strength > 100) return false;
+    if (c->fret_leds < 1 || c->fret_leds > 2) return false;
+    for (int i = 0; i < NUM_FRETS; i++) if (c->led_map2[i] >= MAX_LEDS) return false;
     return true;
 }
 
@@ -82,16 +86,29 @@ static void atilt_defaults(yacc_config_t *c) {
     c->rumble_pin = PIN_NONE;
     c->rumble_flags = RUMBLE_FLAG_GAME | RUMBLE_FLAG_STAR;
     c->rumble_strength = 80;
-    memset(c->reserved2, 0, sizeof(c->reserved2));
+    c->ps2_att = c->ps2_cmd = c->ps2_dat = c->ps2_clk = c->ps2_ack = PIN_NONE;
+    c->wii_sda = c->wii_scl = PIN_NONE;
 }
 
-bool config_from_v4(const uint8_t *src, yacc_config_t *dst) {
+static void v6_defaults(yacc_config_t *c) {
+    c->fret_leds = 1;
+    for (int i = 0; i < NUM_FRETS; i++) c->led_map2[i] = (uint8_t)(NUM_FRETS + i);
+    memset(c->reserved3, 0, sizeof(c->reserved3));
+}
+
+// Every field keeps its offset from one version to the next; the ones a version didn't have get their defaults
+bool config_from_old(const uint8_t *src, uint16_t len, yacc_config_t *dst) {
     uint32_t magic, crc;
     memcpy(&magic, src, 4);
-    memcpy(&crc, src + 92, 4);
-    if (magic != YACC_CFG_MAGIC || src[4] != 4 || crc != crc32(src, 92)) return false;
-    memcpy(dst, src, 92);            // every v4 field keeps its offset
-    atilt_defaults(dst);             // the new ones start off
+    uint8_t ver = src[4];
+    uint16_t body = ver == 4 ? YACC_CFG_V4_SIZE - 4 : ver == 5 ? YACC_CFG_V5_SIZE - 4 : 0;
+    if (magic != YACC_CFG_MAGIC || !body || len < body + 4) return false;
+    memcpy(&crc, src + body, 4);
+    if (crc != crc32(src, body)) return false;
+    memset(dst, 0, sizeof(*dst));
+    memcpy(dst, src, body);
+    if (ver == 4) atilt_defaults(dst);   // the v5 fields
+    v6_defaults(dst);
     config_seal(dst);
     return config_validate(dst);
 }
@@ -138,6 +155,7 @@ void config_defaults(yacc_config_t *c) {
     c->host_dp_pin = PIN_NONE;
     config_keyboard_preset(c, 1);          // Fortnite Festival Pro guitar keys
     atilt_defaults(c);
+    v6_defaults(c);
     config_seal(c);
 }
 
@@ -145,10 +163,10 @@ void config_load(void) {
     const yacc_config_t *flash = (const yacc_config_t *)(XIP_BASE + CFG_OFFSET);
     yacc_config_t tmp;
     memcpy(&tmp, flash, sizeof(tmp));
-    if (!config_validate(&tmp) && tmp.magic == YACC_CFG_MAGIC && tmp.version == 4) {
-        // v4 (96 bytes, firmware up to 0.28) -> v5: the analog tilt sensors and accelerometer start off
+    if (!config_validate(&tmp) && tmp.magic == YACC_CFG_MAGIC && (tmp.version == 4 || tmp.version == 5)) {
+        // v4 (96 bytes, firmware up to 0.28) / v5 (128 bytes, 0.29-0.30) -> v6: the newer fields start off
         yacc_config_t up;
-        if (config_from_v4((const uint8_t *)flash, &up)) tmp = up;
+        if (config_from_old((const uint8_t *)flash, sizeof(yacc_config_t), &up)) tmp = up;
     }
     if (!config_validate(&tmp) && tmp.magic == YACC_CFG_MAGIC && tmp.version == 3 &&
         *(const uint32_t *)((const uint8_t *)flash + 60) == crc32((const uint8_t *)flash, 60)) {

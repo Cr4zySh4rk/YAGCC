@@ -1,0 +1,575 @@
+#include "wiimote_btstack.h"
+#include <stdio.h>
+#include <math.h>
+#include "btstack.h"
+
+#include "sdp_consts.h"
+#include "motion.h"
+
+#define SDP_RESPONSE_BUFFER_SIZE (HCI_ACL_PAYLOAD_SIZE-L2CAP_HEADER_SIZE)
+
+bd_addr_t wii_baddr;
+static uint8_t hid_service_buffer[700];
+static uint8_t pnp_service_buffer[200];
+static const char hid_device_name[] = "Nintendo RVL-CNT-01";
+static uint16_t hid_cid;
+static struct wiimote_state wiimote;
+static uint8_t buf[256];
+static int len;
+static btstack_timer_source_t loop_wii;
+static btstack_timer_source_t led_state;
+void (*callback_led_func[2])();
+int state = -1;
+//convert_data
+static const double pointer_margin = 0.5;
+float pointer_x = 0.5;
+float pointer_y = 0.5;
+volatile WiimoteReport *input_report;
+
+static void l2cap_sdp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
+static void input_update_wiimote();
+static void get_data_wii(uint16_t cid, hid_report_type_t report_type, uint16_t report_id, int report_size, uint8_t * report);
+
+// Set once the stack reaches HCI_STATE_WORKING; enable_wiimote_discovery() is then
+// run from hci_packet_handler as soon as a command slot is free.
+static int set_iac_lap = 0;
+
+// Address of a previously-bonded console to actively reconnect to once the stack is up.
+static bd_addr_t pending_reconnect_addr;
+static bool has_pending_reconnect = false;
+static void (*connection_established_callback)(const uint8_t *mac) = NULL;
+
+void wiimote_emulator_set_reconnect_address(const uint8_t *mac)
+{
+    memcpy(pending_reconnect_addr, mac, sizeof(pending_reconnect_addr));
+    has_pending_reconnect = true;
+}
+
+void wiimote_emulator_set_connection_callback(void (*callback)(const uint8_t *mac))
+{
+    connection_established_callback = callback;
+}
+
+static void enable_wiimote_discovery(void)
+{
+    // Advertise both GIAC and LIAC - the Wii console's Sync button does a Limited
+    // Inquiry (LIAC), while a normal Bluetooth scan uses General Inquiry (GIAC).
+    hci_send_cmd(&hci_write_current_iac_lap_two_iacs, 2, GAP_IAC_GENERAL_INQUIRY, GAP_IAC_LIMITED_INQUIRY);
+
+    // Set device discoverable now, to emit a write scan enable after IAC LAP is set
+    gap_connectable_control(1);
+    gap_discoverable_control(1);
+
+    // It's weird but this fix the lag on sticks
+    gap_set_default_link_policy_settings(LM_LINK_POLICY_ENABLE_SNIFF_MODE);
+
+    hid_device_init(1, sizeof(wiimote_report_descriptor), wiimote_report_descriptor);
+    hid_device_register_report_data_callback(&get_data_wii);
+
+    if (has_pending_reconnect) {
+        has_pending_reconnect = false;
+        memcpy(wii_baddr, pending_reconnect_addr, sizeof(wii_baddr));
+        // Actively seek out the last-known host, like a real Wiimote does on power-on.
+        hid_device_connect(wii_baddr, &hid_cid);
+    }
+}
+
+
+static btstack_packet_callback_registration_t hci_event_callback_registration;
+
+static uint16_t sdp_server_l2cap_cid;
+static uint16_t sdp_server_response_size;
+static uint8_t sdp_response_index;
+static uint8_t sdp_response_buffer[SDP_RESPONSE_BUFFER_SIZE];
+static uint32_t hid_service_handle;
+static uint32_t pnp_service_handle;
+
+
+static void send_data(){
+    input_update_wiimote();
+    process_report(&wiimote, buf, len);
+    if (input_report)
+    {
+        input_report->extension_format = wiimote.sys.register_a4[0xfe];
+        input_report->euphoria_led = wiimote.sys.register_a4[0xfb];
+        input_report->player_led = (wiimote.sys.led_1 ? 0x01 : 0) |
+                                   (wiimote.sys.led_2 ? 0x02 : 0) |
+                                   (wiimote.sys.led_3 ? 0x04 : 0) |
+                                   (wiimote.sys.led_4 ? 0x08 : 0);
+        input_report->rumble = wiimote.sys.rumble;
+    }
+    len = generate_report(&wiimote, buf);
+    if (len > 0){
+        hid_device_send_interrupt_message(hid_cid, &buf[0], len);
+    }
+}
+
+
+static void get_data_wii(uint16_t cid, hid_report_type_t report_type, uint16_t report_id, int report_size, uint8_t * report){
+
+    UNUSED(cid);
+
+    if(report_type == HID_REPORT_TYPE_OUTPUT){
+        buf[0] = 0xA2;
+        buf[1] = report_id;
+        memcpy(&buf[2], report, report_size);
+        len = report_size + 2;
+    }
+
+}
+
+void task_wiimote(struct btstack_timer_source *ts){
+
+    hid_device_request_can_send_now_event(hid_cid);
+
+    // Restart timer
+    btstack_run_loop_set_timer(ts, 1);
+    btstack_run_loop_add_timer(ts);
+
+}
+
+static void wiimote_emulator_reset(void)
+{
+    printf("Resetting...\n");
+
+    if (sdp_server_l2cap_cid) {
+        l2cap_disconnect(sdp_server_l2cap_cid);
+        sdp_server_l2cap_cid = 0;
+    }
+
+    // Reset buffer data
+    memset(buf, 0, sizeof(buf));
+    len = 0;
+}
+
+
+static void sdp_respond(void)
+{
+    if (!sdp_server_response_size || !sdp_server_l2cap_cid) {
+        return;
+    }
+            
+    // update state before sending packet
+    uint16_t size = sdp_server_response_size;
+    sdp_server_response_size = 0;
+    l2cap_send(sdp_server_l2cap_cid, sdp_response_buffer, size);
+
+}
+
+static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t* packet, uint16_t size)
+{
+    UNUSED(channel);
+    UNUSED(size);
+
+    uint8_t status;
+    // We only care about HCI packets
+    if (packet_type != HCI_EVENT_PACKET) {
+        return;
+    }
+
+    // printf("hci_packet_handler %x\n", hci_event_packet_get_type(packet));
+
+    switch(hci_event_packet_get_type(packet)) {
+        case BTSTACK_EVENT_STATE:
+            // Wait for the stack to enter the initializing state, before setting the IAC LAP
+            if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
+                set_iac_lap = 1;
+            }
+            break;
+        case HCI_EVENT_COMMAND_COMPLETE:
+            // Check IAC LAP result
+            if (hci_event_command_complete_get_command_opcode(packet) == hci_write_current_iac_lap_two_iacs.opcode) {
+            }
+            if (hci_event_command_complete_get_command_opcode(packet) == HCI_OPCODE_HCI_WRITE_SCAN_ENABLE) {
+            }
+            if (hci_event_command_complete_get_command_opcode(packet) == hci_pin_code_request_reply.opcode) {
+            }
+            if (hci_event_command_complete_get_command_opcode(packet) == hci_link_key_request_negative_reply.opcode) {
+            }
+            break;
+            case HCI_EVENT_PIN_CODE_REQUEST:
+                uint8_t pin_code[6];
+                hci_event_pin_code_request_get_bd_addr(packet, wii_baddr);
+                reverse_bd_addr(wii_baddr, pin_code);
+                    gap_pin_code_response_binary(wii_baddr, pin_code, sizeof(pin_code));
+                    break;
+            case HCI_EVENT_AUTHENTICATION_COMPLETE:
+                break;
+        case HCI_EVENT_LINK_KEY_REQUEST:
+            hci_event_link_key_request_get_bd_addr(packet, wii_baddr);
+            break;
+        case HCI_EVENT_IO_CAPABILITY_REQUEST:
+            hci_event_io_capability_request_get_bd_addr(packet, wii_baddr);
+            break;
+        case HCI_EVENT_USER_CONFIRMATION_REQUEST:
+            hci_event_user_confirmation_request_get_bd_addr(packet, wii_baddr);
+            break;
+        case HCI_EVENT_SIMPLE_PAIRING_COMPLETE:
+            hci_event_simple_pairing_complete_get_bd_addr(packet, wii_baddr);
+            break;
+        case L2CAP_EVENT_CHANNEL_OPENED: {
+            uint16_t cid = l2cap_event_channel_opened_get_local_cid(packet);
+            uint8_t status = l2cap_event_channel_opened_get_status(packet);
+
+            if (status == ERROR_CODE_SUCCESS) {
+            } else {
+                    if (status == L2CAP_CONNECTION_RESPONSE_RESULT_REFUSED_SECURITY) {
+                    // Assume remote has forgotten link key, delete it and try again
+                    printf("Dropping link key due to L2CAP_CONNECTION_RESPONSE_RESULT_REFUSED_SECURITY\n");
+                    bd_addr_t addr;
+                    l2cap_event_channel_opened_get_address(packet, addr);
+                    gap_drop_link_key_for_bd_addr(addr);
+                    gap_disconnect(l2cap_event_channel_opened_get_handle(packet));
+                } else {
+                    printf("L2CAP connection failed (cid %d, status 0x%02x)\n", (int)cid, (int)status);
+                }
+            }
+        }
+        break;
+        case HCI_EVENT_HID_META:
+                switch (hci_event_hid_meta_get_subevent_code(packet)){
+                    case HID_SUBEVENT_CONNECTION_OPENED:
+                        status = hid_subevent_connection_opened_get_status(packet);
+                        if (status != ERROR_CODE_SUCCESS) {
+                            // outgoing connection failed
+                            printf("Connection failed, status 0x%x\n", status);
+                            hid_cid = 0;
+                            return;
+                        }
+                        hid_cid = hid_subevent_connection_opened_get_hid_cid(packet);
+                        hid_subevent_connection_opened_get_bd_addr(packet, wii_baddr);
+                        printf("Connected to ");
+                        printf_hexdump(wii_baddr, sizeof(wii_baddr));
+                        if (connection_established_callback) {
+                            connection_established_callback(wii_baddr);
+                        }
+                        // Remove timer led
+                        btstack_run_loop_remove_timer(&led_state);
+                        // Set the led on
+                        (*callback_led_func[1])();
+                        // Run wiimote process
+                        btstack_run_loop_set_timer(&loop_wii, 1);
+                        btstack_run_loop_add_timer(&loop_wii);
+                        break;
+                    case HID_SUBEVENT_CONNECTION_CLOSED:
+                        printf("HID Disconnected\n");
+                        hid_cid = 0;
+                        // Stop wiimote process
+                        btstack_run_loop_remove_timer(&loop_wii);
+                        // Start led timer
+                        btstack_run_loop_set_timer(&led_state, 100);
+                        btstack_run_loop_add_timer(&led_state);
+                        hid_device_connect(wii_baddr, &hid_cid);
+                        break;
+                    case HID_SUBEVENT_CAN_SEND_NOW:
+                        send_data();
+                        break;
+                    default:
+                        break;
+                }
+            break;
+        default:
+            break;
+    }
+
+    // Write IAC LAP when ready
+    if (set_iac_lap && hci_can_send_command_packet_now()) {
+        set_iac_lap = 0;
+        enable_wiimote_discovery();
+    }
+}
+
+static void l2cap_sdp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size)
+{
+    // printf("sdp_packet_handler %x\n", packet_type);
+
+    switch (packet_type) {
+        case L2CAP_DATA_PACKET: {
+            //printf("SDP Request: type %u, transaction id %u, len %u, mtu %u\n", pdu_id, transaction_id, param_len, remote_mtu);
+
+            switch (sdp_response_index) {
+                    case 0:
+                        sdp_server_response_size = sizeof(resp0);
+                        memcpy(sdp_response_buffer, resp0, sizeof(resp0));
+                        break;               
+                    case 1:
+                        sdp_server_response_size = sizeof(resp1);
+                        memcpy(sdp_response_buffer, resp1, sizeof(resp1));
+                        break;
+                    case 2:
+                        sdp_server_response_size = sizeof(resp2);
+                        memcpy(sdp_response_buffer, resp2, sizeof(resp2));
+                        break;
+                    case 3:
+                        sdp_server_response_size = sizeof(resp3);
+                        memcpy(sdp_response_buffer, resp3, sizeof(resp3));
+                        break;
+                    case 4:
+                        sdp_server_response_size = sizeof(resp4);
+                        memcpy(sdp_response_buffer, resp4, sizeof(resp4));
+                        break;
+                    default:
+                        sdp_server_response_size = 0;
+                        break;
+            }
+
+            if (!sdp_server_response_size) {
+                break;
+            }
+
+            sdp_response_buffer[2] = packet[1];
+            sdp_response_buffer[3] = packet[2];
+            sdp_response_index++;
+
+            l2cap_request_can_send_now_event(sdp_server_l2cap_cid);
+            break;
+        }
+
+        case HCI_EVENT_PACKET:
+            switch (hci_event_packet_get_type(packet)) {
+                case L2CAP_EVENT_INCOMING_CONNECTION:
+                    if (sdp_server_l2cap_cid) {
+                        // Just reject other incoming connections
+                        l2cap_decline_connection(channel);
+                        break;
+                    }
+
+                    // Accept connection
+                    sdp_server_l2cap_cid = channel;
+                    sdp_server_response_size = 0;
+                    sdp_response_index = 0;
+                    l2cap_accept_connection(sdp_server_l2cap_cid);
+                    break;
+                case L2CAP_EVENT_CHANNEL_OPENED:
+                    if (packet[2]) {
+                        wiimote_emulator_reset();
+                    }
+                    break;
+                case L2CAP_EVENT_CAN_SEND_NOW:
+                    sdp_respond();
+                    break;
+                case L2CAP_EVENT_CHANNEL_CLOSED:
+                    if (channel == sdp_server_l2cap_cid) {
+                        wiimote_emulator_reset();
+                        sdp_response_index = 0;
+                    }
+                    break;
+                default:
+                    break;
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+
+static void led_handler(struct btstack_timer_source *ts)
+{
+    // Invert the led
+    static uint8_t led_on = 0;
+    led_on = !led_on;
+    (*callback_led_func[led_on])();
+
+    // Restart timer
+    btstack_run_loop_set_timer(ts, 100);
+    btstack_run_loop_add_timer(ts);
+}
+
+
+void wiimote_emulator_update_report(void *report){
+    // Single aligned pointer store - atomic with respect to the CAN_SEND_NOW IRQ.
+    input_report = report;
+}
+
+void wiimote_emulator(void *report){
+
+    printf("Init Wiimote Emulator\n");
+
+    // Data from gamepad
+    input_report = report;
+
+    // Disable SSP
+    gap_ssp_set_enable(0);
+
+    // Set device connectable
+    gap_connectable_control(1);
+
+    // Set device non discoverable for now, we'll set this after setting IAC LAP
+    gap_discoverable_control(0);
+
+    // Set device bondable
+    gap_set_bondable_mode(1);
+
+    // Set local name
+    gap_set_local_name("Nintendo RVL-CNT-01");
+
+    // Set class
+    gap_set_class_of_device(0x002504);
+
+    // Register HCI callback to set IAC LAP once HCI is working
+    // and to catch the connection handle
+    hci_event_callback_registration.callback = &hci_packet_handler;
+    hci_add_event_handler(&hci_event_callback_registration);
+
+    // If the stack already reached HCI_STATE_WORKING before this instance was created
+    // (e.g. BT power-on happened before profile/instance assignment), the BTSTACK_EVENT_STATE
+    // transition already fired and hci_packet_handler will never see it - catch up here so
+    // the device still becomes discoverable/connectable instead of staying invisible forever.
+    if (hci_get_state() == HCI_STATE_WORKING) {
+        if (hci_can_send_command_packet_now()) {
+            enable_wiimote_discovery();
+        } else {
+            set_iac_lap = 1;
+        }
+    }
+
+    sdp_init();
+    memset(hid_service_buffer, 0, sizeof(hid_service_buffer));
+
+    hid_sdp_record_t hid_sdp_record = {
+        0x2504, 33, 1, 1, 1, 0, 0, 0xFFFF, 0xFFFF, 3200,
+        wiimote_report_descriptor, sizeof(wiimote_report_descriptor), hid_device_name
+    };
+    hid_service_handle = sdp_create_service_record_handle();
+    hid_create_sdp_record(hid_service_buffer, hid_service_handle, &hid_sdp_record);
+    btstack_assert(de_get_len(hid_service_buffer) <= sizeof(hid_service_buffer));
+    sdp_register_service(hid_service_buffer);
+
+    pnp_service_handle = sdp_create_service_record_handle();
+    device_id_create_sdp_record(pnp_service_buffer, pnp_service_handle,
+                                DEVICE_ID_VENDOR_ID_SOURCE_BLUETOOTH,
+                                BLUETOOTH_COMPANY_ID_BLUEKITCHEN_GMBH, 1, 1);
+    btstack_assert(de_get_len(pnp_service_buffer) <= sizeof(pnp_service_buffer));
+    sdp_register_service(pnp_service_buffer);
+    hid_device_register_packet_handler(&hci_packet_handler);
+
+    // Init wiimote structure
+    wiimote_init(&wiimote);
+    
+    //No extension for default
+    reset_input_ir(wiimote.usr.ir_object);
+    wiimote.usr.connected_extension_type = NoExtension;
+
+    // Loop control to send report
+    loop_wii.process = &task_wiimote;
+}
+
+void wiimote_emulator_shutdown(void)
+{
+    btstack_run_loop_remove_timer(&loop_wii);
+    btstack_run_loop_remove_timer(&led_state);
+
+    if (hid_cid)
+    {
+        hid_device_disconnect(hid_cid);
+        hid_cid = 0;
+    }
+
+    hid_device_register_report_data_callback(NULL);
+    hid_device_register_packet_handler(NULL);
+    hci_remove_event_handler(&hci_event_callback_registration);
+    l2cap_unregister_service(BLUETOOTH_PSM_SDP);
+    if (hid_service_handle)
+    {
+        sdp_unregister_service(hid_service_handle);
+        hid_service_handle = 0;
+    }
+    if (pnp_service_handle)
+    {
+        sdp_unregister_service(pnp_service_handle);
+        pnp_service_handle = 0;
+    }
+    sdp_deinit();
+    hid_device_deinit();
+    wiimote_destroy(&wiimote);
+    sdp_server_l2cap_cid = 0;
+    sdp_server_response_size = 0;
+}
+
+
+static void input_update_wiimote(){
+
+    wiimote.usr.connected_extension_type = input_report->extension_type;
+    wiimote.sys.extension_stream_valid = input_report->extension_size > 0;
+    wiimote.sys.extension_stream_size = input_report->extension_size;
+    if (wiimote.sys.extension_stream_valid)
+    {
+        uint8_t size = input_report->extension_size;
+        if (size > 32)
+            size = 32;
+        for (uint8_t i = 0; i < size; i++)
+            wiimote.sys.register_a4[0x08 + i] = input_report->extension_data[i];
+    }
+
+    if(input_report->reset_ir){
+        reset_input_ir(wiimote.usr.ir_object);
+        // Change the extension too
+        wiimote.usr.connected_extension_type = input_report->extension_type;
+        input_report->reset_ir = 0;
+    }
+
+    switch(input_report->mode){
+        case NO_EXTENSION:{
+            float pointer_delta_x = 0, pointer_delta_y = 0;
+            struct wiimote_buttons wiimote_report = input_report->wiimote;
+
+            memcpy(&wiimote.usr, &wiimote_report, 14);
+
+            pointer_delta_x += (input_report->wiimote.ir_x / 127.0) * 0.008;
+            pointer_delta_y += (input_report->wiimote.ir_y / 127.0) * 0.008;
+
+            pointer_x = fmax(-pointer_margin, fmin(1.0 + pointer_margin, pointer_x + pointer_delta_x));
+            pointer_y = fmax(-pointer_margin, fmin(1.0 + pointer_margin, pointer_y + pointer_delta_y));
+
+            set_motion_state(&wiimote, pointer_x, pointer_y);
+        }
+            break;
+        case WIIMOTE_AND_NUNCHUCK:{
+            // Wiimote
+            float pointer_delta_x = 0, pointer_delta_y = 0;
+            struct wiimote_buttons wiimote_report = input_report->wiimote;
+            memcpy(&wiimote.usr, &wiimote_report, 14);
+
+            pointer_delta_x += (input_report->wiimote.ir_x / 127.0) * 0.008;
+            pointer_delta_y += (input_report->wiimote.ir_y / 127.0) * 0.008;
+
+            pointer_x = fmax(-pointer_margin, fmin(1.0 + pointer_margin, pointer_x + pointer_delta_x));
+            pointer_y = fmax(-pointer_margin, fmin(1.0 + pointer_margin, pointer_y + pointer_delta_y));
+
+            set_motion_state(&wiimote, pointer_x, pointer_y);
+
+            if(input_report->fake_motion || input_report->center_accel){
+                wiimote.usr.accel_x = input_report->wiimote.accel_x;
+                wiimote.usr.accel_y = input_report->wiimote.accel_y;
+                wiimote.usr.accel_z = input_report->wiimote.accel_z;
+
+                if(input_report->center_accel){
+                    input_report->center_accel = 0;
+                }
+            }
+        }
+            break;
+        case CLASSIC_CONTROLLER:
+            struct wiimote_buttons wiimote_report = input_report->wiimote;
+            memcpy(&wiimote.usr, &wiimote_report, 14);
+            break;
+        default:
+            break;
+    }
+    
+}
+
+
+void wiimote_emulator_set_led(void (*led_on)(), void (*led_off)()){
+    callback_led_func[0] = led_off;
+    callback_led_func[1] = led_on;
+
+    led_state.process = &led_handler;
+    btstack_run_loop_set_timer(&led_state, 100);
+    btstack_run_loop_add_timer(&led_state); 
+}
+
+bool wiimote_emulator_connected(void) {
+    return hid_cid != 0;
+}

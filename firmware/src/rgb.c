@@ -42,7 +42,7 @@ static uint32_t last_frame, boot_t0;
 static int boot_fret = -1;
 static int test_led = -1;
 static uint32_t test_until;
-static uint8_t fade[MAX_LEDS];        // per light (frets 0..4, strum LEDs 5..12)
+static uint8_t fade[NUM_LEDS + MAX_STRUM_LEDS];   // per light (frets 0..4, strum LEDs 5..12; a fret's two LEDs share one)
 
 // WS2812s are linear: a screen colour like #EF4444 (a clear red on a monitor) comes out pink and
 // #FB923C (orange) comes out a washed-out peach, because the "small" channels are still far too bright.
@@ -177,9 +177,13 @@ typedef struct {
 static int build_lights(light_t *l, int *chain) {
     int n = 0, len = 0;
     if (!g_cfg.no_fret_leds)
-        for (int f = 0; f < NUM_FRETS; f++)
+        for (int f = 0; f < NUM_FRETS; f++) {
             l[n++] = (light_t){ g_cfg.led_map[f], g_cfg.colors[f][0], g_cfg.colors[f][1], g_cfg.colors[f][2],
                                 (uint8_t)f, (int8_t)f, input_func(f) };
+            if (g_cfg.fret_leds == 2)       // the fret's second LED: same colour and effect state
+                l[n++] = (light_t){ g_cfg.led_map2[f], g_cfg.colors[f][0], g_cfg.colors[f][1], g_cfg.colors[f][2],
+                                    (uint8_t)f, (int8_t)f, input_func(f) };
+        }
     bool white = !g_cfg.strum_color[0] && !g_cfg.strum_color[1] && !g_cfg.strum_color[2];
     bool up = input_func(F_STRUM_UP), dn = input_func(F_STRUM_DOWN);
     for (int i = 0; i < g_cfg.strum_leds && i < MAX_STRUM_LEDS; i++) {

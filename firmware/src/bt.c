@@ -26,6 +26,8 @@ uint8_t bt_state(void) { return BT_STATE_OFF; }
 bool bt_running(void) { return false; }
 void bt_send_report(const uint8_t *r, uint16_t len) { (void)r; (void)len; }
 void bt_set_usb_active(bool active) { (void)active; }
+bool bt_wiimote(void) { return false; }
+void bt_wii_report(const uint8_t *ext, uint8_t len) { (void)ext; (void)len; }
 int bt_vbus(void) { return -1; }
 uint16_t bt_log_read(uint8_t *out, uint16_t max) { (void)out; (void)max; return 0; }
 const uint8_t *bt_log_flash(uint16_t *len) { *len = 0; return 0; }
@@ -46,6 +48,9 @@ void bt_log_flash_clear(void) {}
 #include "ble/le_device_db_tlv.h"
 #include "config.h"
 #include "rgb.h"
+#include "rumble.h"
+#include "wiimote.h"
+#include "wiimote_btstack.h"
 
 // from usb_common.h / usb_descriptors.c (that header pulls in TinyUSB, whose HID types clash with BTstack's)
 extern uint8_t g_usb_mode;
@@ -544,6 +549,50 @@ static void l2cap_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint1
         blog(L_PARAMS, (uint8_t)little_endian_read_16(packet, 4), 0);
 }
 
+// ---------------------------------------------------------------- Wii Remote emulation (Bluetooth Classic)
+// The Pico W becomes a Wii Remote ("Nintendo RVL-CNT-01") with a Guitar Hero guitar plugged in, using Santroller's
+// port of the WiimoteEmulator (lib/wii_remote_emulation). Press SYNC on the Wii, the guitar answers the inquiry,
+// pairs with the Wii's legacy PIN, and remembers the Wii so it reconnects by itself next time, like a real one.
+#define WII_HOST_TAG ((((uint32_t)'W') << 24) | (((uint32_t)'I') << 16) | (((uint32_t)'I') << 8) | (uint32_t)'M')
+static bool s_wiimote;
+static WiimoteReport s_wii;
+static bool s_wii_connected_shown;
+static void wii_led(void) {}
+static void wii_connected(const uint8_t *mac) {
+    if (s_tlv) s_tlv->store_tag(s_tlv_ctx, WII_HOST_TAG, mac, 6);
+}
+static void wii_init(void) {
+    s_wiimote = true;
+    blog(L_BOOT, 0x80, MODE_NONE);
+    l2cap_init();
+    sm_init();
+    btstack_tlv_get_instance(&s_tlv, &s_tlv_ctx);
+    uint8_t mac[6];
+    if (s_tlv && s_tlv->get_tag(s_tlv_ctx, WII_HOST_TAG, mac, 6) == 6) wiimote_emulator_set_reconnect_address(mac);
+    wiimote_emulator_set_connection_callback(&wii_connected);
+    memset(&s_wii, 0, sizeof(s_wii));
+    s_wii.mode = CLASSIC_CONTROLLER;
+    s_wii.extension_type = WIIMOTE_EXTENSION_GUITAR;
+    s_wii.extension_format = 1;
+    s_wii.extension_size = 6;
+    const uint8_t idle[6] = {32, 32, 0x0F, 0x00, 0xFF, 0xFF};   // stick centred, touch bar off, nothing pressed
+    memcpy(s_wii.extension_data, idle, 6);
+    wiimote_emulator(&s_wii);
+    wiimote_emulator_set_led(wii_led, wii_led);
+    hci_power_control(HCI_POWER_ON);
+    rgb_set_bt(RGB_BT_PAIRING);
+}
+bool bt_wiimote(void) { return s_wiimote; }
+void bt_wii_report(const uint8_t *ext, uint8_t len) {
+    if (!s_wiimote) return;
+    if (len > sizeof(s_wii.extension_data)) len = sizeof(s_wii.extension_data);
+    async_context_t *ctx = cyw43_arch_async_context();
+    async_context_acquire_lock_blocking(ctx);     // the report is read from the stack's context
+    memcpy(s_wii.extension_data, ext, len);
+    s_wii.extension_size = len;
+    async_context_release_lock(ctx);
+}
+
 // ---------------------------------------------------------------- API
 bool bt_supported(void) { return true; }
 bool bt_running(void) { return s_running; }
@@ -556,6 +605,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     s_mode = g_usb_mode;
     if (cyw43_arch_init()) return;
     s_running = true;
+    if (g_cfg.xinput_opts & XOPT_WIIMOTE) { wii_init(); return; }   // a Wii Remote instead of a BLE gamepad
     blog(L_BOOT, (uint8_t)(pair | (open_window << 1)), s_mode);
     s_want_pair = pair;
     s_want_window = open_window && !pair;
@@ -627,6 +677,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
 }
 
 void bt_start_pairing(void) {
+    if (s_wiimote) return;                       // a Wii Remote is always findable by the Wii's SYNC button
     if (!s_running) { bt_init(true, true, false); return; }
     async_context_t *ctx = cyw43_arch_async_context();
     async_context_acquire_lock_blocking(ctx);
@@ -638,6 +689,12 @@ void bt_task(void) {
 #if YACC_BT_LOG_FLASH
     flog_flush();
 #endif
+    if (s_wiimote) {
+        bool c = wiimote_emulator_connected();
+        if (c != s_wii_connected_shown) { s_wii_connected_shown = c; rgb_set_bt(c ? RGB_BT_CONNECTED : RGB_BT_PAIRING); }
+        if (c && s_wii.rumble) rumble_game(255, 255); else if (c) rumble_game(0, 0);
+        return;
+    }
     if (!s_running || !s_pairing) return;
     if ((int32_t)(to_ms_since_boot(get_absolute_time()) - s_pair_until) <= 0) return;
     async_context_t *ctx = cyw43_arch_async_context();     // nobody paired in time: stop being discoverable
@@ -649,11 +706,12 @@ void bt_task(void) {
 }
 
 uint8_t bt_state(void) {
+    if (s_wiimote) return wiimote_emulator_connected() ? BT_STATE_CONNECTED : BT_STATE_PAIRING;
     return s_connected ? BT_STATE_CONNECTED : s_pairing ? BT_STATE_PAIRING : BT_STATE_OFF;
 }
 
 void bt_send_report(const uint8_t *r, uint16_t len) {
-    if (!s_running) return;
+    if (!s_running || s_wiimote) return;
     if (len > MAX_REPORT) len = MAX_REPORT;
     async_context_t *ctx = cyw43_arch_async_context();
     async_context_acquire_lock_blocking(ctx);
@@ -664,7 +722,7 @@ void bt_send_report(const uint8_t *r, uint16_t len) {
 }
 
 void bt_set_usb_active(bool active) {
-    if (!s_running || active == s_paused) return;
+    if (!s_running || s_wiimote || active == s_paused) return;
     async_context_t *ctx = cyw43_arch_async_context();
     async_context_acquire_lock_blocking(ctx);
     s_paused = active;

@@ -15,6 +15,8 @@
 #include "rgb.h"
 #include "accel.h"
 #include "rumble.h"
+#include "ps2_out.h"
+#include "wii_out.h"
 #include "auto_detect.h"
 #include "host/ps5_auth.h"
 #include "host/usb_host.h"
@@ -58,6 +60,9 @@ static uint16_t build_status(void) {
         uint16_t v = r < 0 ? 0xFFFF : (uint16_t)r;
         memcpy(p, &v, 2); p += 2;
     }
+    // firmware 0.31+: 1 = a PS2 is polling the controller port, 2 = a Wii Remote reads the extension port,
+    // 4 = a Wii is connected to the Wii Remote emulation
+    *p++ = (ps2_out_active() ? 1 : 0) | (wii_out_active() ? 2 : 0) | (bt_wiimote() && bt_state() == BT_STATE_CONNECTED ? 4 : 0);
     return (uint16_t)(p - tx_buf);
 }
 
@@ -93,12 +98,12 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
 
     // OUT data stage finished: apply what we received
     if (stage == CONTROL_STAGE_ACK) {
-        if (req->bRequest == VREQ_SETCFG && cfg_rx_len == YACC_CFG_V4_SIZE) {
-            // a configurator from before 0.29 sends the 96 byte layout: keep this guitar's tilt sensor settings
+        if (req->bRequest == VREQ_SETCFG && cfg_rx_len < sizeof(yacc_config_t)) {
+            // an older configurator sends an older layout: keep this guitar's settings it doesn't know about
             yacc_config_t up;
-            if (config_from_v4((const uint8_t *)&cfg_rx, &up)) {
-                memcpy((uint8_t *)&up + YACC_CFG_V4_SIZE - 4, (const uint8_t *)&g_cfg + YACC_CFG_V4_SIZE - 4,
-                       sizeof(up) - YACC_CFG_V4_SIZE);   // every field past the v4 layout (offset 92 up to the crc)
+            if (config_from_old((const uint8_t *)&cfg_rx, cfg_rx_len, &up)) {
+                memcpy((uint8_t *)&up + cfg_rx_len - 4, (const uint8_t *)&g_cfg + cfg_rx_len - 4,
+                       sizeof(up) - cfg_rx_len);   // every field past its layout, up to the crc
                 config_seal(&up);
                 cfg_rx = up;
             }
@@ -138,7 +143,7 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             config_seal(&g_cfg);
             return reply(rhport, req, &g_cfg, sizeof(g_cfg));
         case VREQ_SETCFG:
-            if (req->wLength != sizeof(cfg_rx) && req->wLength != YACC_CFG_V4_SIZE) return false;
+            if (req->wLength != sizeof(cfg_rx) && req->wLength != YACC_CFG_V5_SIZE && req->wLength != YACC_CFG_V4_SIZE) return false;
             cfg_rx_len = req->wLength;
             memset(&cfg_rx, 0, sizeof(cfg_rx));
             return tud_control_xfer(rhport, req, &cfg_rx, cfg_rx_len);
@@ -446,6 +451,52 @@ static uint16_t build_ps4(const pad_t *s, uint8_t *out) {
     out[46] = (uint8_t)((s->green ? 0x01 : 0) | (s->red ? 0x02 : 0) | (s->yellow ? 0x04 : 0) |
                         (s->blue ? 0x08 : 0) | (s->orange ? 0x10 : 0));
     return PS4_GUITAR_REPORT_LEN;
+}
+
+// ---- PS2 Guitar Hero guitar on the controller port (Santroller's PS2GuitarHeroGuitar_Data_t, active high;
+// the PSX layer puts it on the wire). The frets are the shoulder / face buttons like a real GH guitar, strum on
+// the D-pad (with the guitar's D-pad left identifier held), whammy on the left stick, star power on select.
+static void build_ps2(const pad_t *s, uint8_t *out) {
+    static const uint8_t dpad[16] = {0x80, 0x23, 0xaa, 0x20, 0x58, 0x1c, 0x4b, 0x1a, 0xec, 0x23, 0xa1, 0x20, 0x55, 0x1b, 0x49, 0x1a};
+    uint8_t b0 = 0x80;                                  // D-pad left: "this is a guitar"
+    if (s->star)       b0 |= 0x01;                      // select
+    if (s->plus)       b0 |= 0x08;                      // start
+    if (s->strum_up)   b0 |= 0x10;
+    if (s->strum_down) b0 |= 0x40;
+    uint8_t b1 = 0;
+    if (s->tilt)   b1 |= 0x01;                          // L2
+    if (s->green)  b1 |= 0x02;                          // R2
+    if (s->yellow) b1 |= 0x10;                          // triangle
+    if (s->red)    b1 |= 0x20;                          // circle
+    if (s->blue)   b1 |= 0x40;                          // cross
+    if (s->orange) b1 |= 0x80;                          // square
+    out[0] = b0;
+    out[1] = b1;
+    out[2] = dpad[(s->strum_up ? 1 : 0) | (s->strum_down ? 2 : 0)];   // the guitar's D-pad lives on the right stick
+    out[3] = 0;
+    out[4] = 0;                                         // touch slider
+    out[5] = (uint8_t)(0x7F - (s->whammy >> 8));        // whammy, 0x7F = rest
+}
+
+// ---- Wii Guitar Hero guitar extension, data format 3 (Santroller's WiiGuitarDataFormat3_t). Buttons are
+// active low; strum on the D-pad, star power on minus, whammy 5 bits with 0 at rest
+static void build_wii_ext(const pad_t *s, uint8_t *out) {
+    uint8_t lo = 0, hi = 0;
+    if (s->plus)       lo |= 0x04;                      // plus
+    if (s->star)       lo |= 0x10;                      // minus = star power
+    if (s->strum_down) lo |= 0x40;
+    if (s->strum_up)   hi |= 0x01;
+    if (s->yellow)     hi |= 0x08;
+    if (s->green)      hi |= 0x10;
+    if (s->blue)       hi |= 0x20;
+    if (s->red)        hi |= 0x40;
+    if (s->orange)     hi |= 0x80;
+    out[0] = 32;                                        // stick centred (6 bits)
+    out[1] = 32;
+    out[2] = 0x0F;                                      // touch bar: not touched
+    out[3] = (uint8_t)(s->whammy >> 10);                // 0..31
+    out[4] = (uint8_t)~lo;
+    out[5] = (uint8_t)~hi;
 }
 
 // ---- PS5 Rock Band guitar, 64 byte report (Santroller's PS5RockBandGuitar_Data_t). It goes to the P5General,
@@ -777,9 +828,21 @@ int main(void) {
 
         pad_t st;
         read_pad(&st);
+        uint8_t wii_ext[WII_EXT_REPORT_LEN];               // the Wii guitar extension: wired, or over Bluetooth
+        build_wii_ext(&st, wii_ext);
+        {   // PS2 controller port: answers only while a console polls it (needs PIO1, so not with the host port)
+            uint8_t p2[PS2_REPORT_LEN];
+            build_ps2(&st, p2);
+            ps2_out_task(p2, !(needs_host(g_usb_mode) && g_cfg.host_dp_pin != PIN_NONE));
+            wii_out_task(wii_ext);
+        }
+        if (bt_wiimote()) {
+            static uint8_t last_ext[WII_EXT_REPORT_LEN];
+            if (memcmp(last_ext, wii_ext, sizeof(last_ext)) != 0) { memcpy(last_ext, wii_ext, sizeof(last_ext)); bt_wii_report(wii_ext, sizeof(wii_ext)); }
+        }
         // Bluetooth carries the same HID report as USB in this mode. XInput, OG Xbox and Xbox One aren't HID
         // over USB, so they use the generic gamepad. Bluetooth is off while a USB host is connected.
-        if (bt_running() && !tud_mounted()) {
+        if (bt_running() && !bt_wiimote() && !tud_mounted()) {
             static uint8_t bt_last[64];
             static uint16_t bt_len;
             static bool bt_first = true;

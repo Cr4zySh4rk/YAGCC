@@ -63,8 +63,9 @@ $('#nav').addEventListener('click', (e) => { const b = e.target.closest('button'
 
 const funcName = (i) => FUNC_LABEL[FUNCS[i]];
 const hostPins = (c = state.cfg) => (c.hostPin !== undefined && c.hostPin !== PIN_NONE ? [c.hostPin, c.hostPin + 1] : []);
+const portPins = (c = state.cfg) => [...(c.ps2Pins || []), c.wiiSda ?? PIN_NONE, c.wiiScl ?? PIN_NONE].filter((p) => p !== PIN_NONE);
 const accelPins = (c = state.cfg) => (c.accelSda !== undefined && c.accelSda !== PIN_NONE ? [c.accelSda, c.accelScl] : []);
-const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(), ...accelPins(), state.cfg.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE);
+const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(), ...accelPins(), state.cfg.rumblePin ?? PIN_NONE, ...portPins()].filter((p) => p !== PIN_NONE);
 const isConfigured = (cfg) => cfg.pins.some((p) => p !== PIN_NONE);
 
 let pushTimer = 0;
@@ -222,6 +223,7 @@ function onStatus(s) {
   state.status = s;
   if (state.view === 'lights') updateLedPreview(s);
   if (state.view === 'tune') updateTilt(s);
+  if (state.view === 'modes') updatePorts(s);
   for (const v of viewers) if (v.container.offsetParent !== null) updateViewer(v, s);
   tickStep(s);
 }
@@ -396,19 +398,22 @@ function renderStep() {
     stepCtx.chain = lay.chain;
     stepCtx.idx = 0;
     stepCtx.assign = [-1, -1, -1, -1, -1];     // fret -> chain position
+    stepCtx.assign2 = [-1, -1, -1, -1, -1];    // fret -> its second LED (two per fret)
     stepCtx.strumAssign = [];                  // chain positions of the strum LEDs, in the order found
     stepCtx.base = null;
     stepCtx.lockUntil = 0;
     const finish = () => {
       // LEDs that were skipped take whatever positions are left, in order
-      const taken = new Set([...stepCtx.assign.filter((p) => p >= 0), ...stepCtx.strumAssign]);
+      const taken = new Set([...stepCtx.assign.filter((p) => p >= 0), ...stepCtx.assign2.filter((p) => p >= 0), ...stepCtx.strumAssign]);
       const left = [...Array(lay.chain).keys()].filter((p) => !taken.has(p));
       if (lay.frets) c.ledMap = stepCtx.assign.map((p) => (p >= 0 ? p : left.shift()));
+      if (lay.frets && lay.per === 2) c.ledMap2 = stepCtx.assign2.map((p) => (p >= 0 ? p : left.shift()));
       for (let k = 0; k < MAX_STRUM_LEDS; k++) c.strumMap[k] = k < lay.strum ? (stepCtx.strumAssign[k] ?? left.shift()) : 200 + k;
       pushCfg();
     };
     const label = (pos) => {
-      const f = lay.frets ? c.ledMap.indexOf(pos) : -1;
+      let f = lay.frets ? c.ledMap.indexOf(pos) : -1;
+      if (f < 0 && lay.frets && lay.per === 2) f = (c.ledMap2 || []).indexOf(pos);
       if (f >= 0) return `<b style="color:${c.colors[f]}">${funcName(f)}</b>`;
       const k = c.strumMap.slice(0, lay.strum).indexOf(pos);
       return k >= 0 ? `<b>Strum ${k + 1}</b>` : '<b>?</b>';
@@ -425,11 +430,11 @@ function renderStep() {
         return;
       }
       const dots = [...Array(lay.chain).keys()].map((i) => {
-        const f = stepCtx.assign.indexOf(i), sk = stepCtx.strumAssign.indexOf(i);
+        const f = stepCtx.assign.indexOf(i) >= 0 ? stepCtx.assign.indexOf(i) : stepCtx.assign2.indexOf(i), sk = stepCtx.strumAssign.indexOf(i);
         return `<i class="${i === stepCtx.idx ? 'lit' : f >= 0 || sk >= 0 ? 'done' : ''}" style="--c:${f >= 0 ? c.colors[f] : '#fff'}"></i>`;
       }).join('');
-      const what = lay.frets && lay.strum ? 'Press the fret above it, or strum if it is on the strum bar.'
-        : lay.frets ? 'Press the fret above it.' : 'Strum once.';
+      const what = (lay.frets && lay.strum ? 'Press the fret above it, or strum if it is on the strum bar.'
+        : lay.frets ? 'Press the fret above it.' : 'Strum once.') + (lay.frets && lay.per === 2 ? ' Each fret has two LEDs, so you press every fret twice in all.' : '');
       const noPins = lay.frets ? c.pins.slice(0, NUM_FRETS).every((p) => p === PIN_NONE) : (c.pins[5] === PIN_NONE && c.pins[6] === PIN_NONE);
       card.innerHTML = head + `<div class="led-test">${dots}</div>
         <div class="result"><span class="pulse"></span><span>${!lay.chain ? 'No LEDs are set up. Go back and choose fret and / or strum LEDs.' : noPins ? 'The frets / strum bar are not assigned yet. Go back and map them first.' : `LED ${stepCtx.idx + 1} of ${lay.chain} is lit white. ${what}`}</span></div>
@@ -581,8 +586,10 @@ function tickStep(s) {
     }
     if (!lay.frets) return;
     for (let f = 0; f < NUM_FRETS; f++) {
-      if (stepCtx.assign[f] >= 0 || !hit(state.cfg.pins[f])) continue;
-      stepCtx.assign[f] = stepCtx.idx;
+      if (!hit(state.cfg.pins[f])) continue;
+      if (stepCtx.assign[f] < 0) stepCtx.assign[f] = stepCtx.idx;
+      else if (lay.per === 2 && stepCtx.assign2[f] < 0) stepCtx.assign2[f] = stepCtx.idx;
+      else continue;
       next();
       break;
     }
@@ -643,6 +650,54 @@ function buildTune() {
   refresh();
   buildTilt();
   buildRumble();
+}
+
+// ------------------------------------------------------------------ console ports and Wii Remote (firmware 0.31+)
+function buildPorts() {
+  const c = state.cfg, body = $('#portsBody');
+  if (!body) return;
+  const fw31 = (c.cfgVersion ?? 0) >= 5 && (state.info.major > 0 || state.info.minor >= 31);
+  $('#portsPanel').hidden = false;
+  if (!fw31) { body.innerHTML = '<p class="notice small">Needs firmware 0.31 or newer. Update the firmware on the Flash page.</p>'; return; }
+  const others = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), ...accelPins(), c.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE));
+  const PS2 = ['ATT', 'CMD', 'DAT', 'CLK', 'ACK'];
+  const ps2 = c.ps2Pins || [255, 255, 255, 255, 255];
+  const pinSel = (id, val, exclude) => `<select id="${id}"><option value="255">Not wired</option>${[...Array(NUM_DIGITAL_PINS).keys()]
+    .filter((p) => !others.has(p) && (!exclude.has(p) || p === val)).map((p) => `<option value="${p}" ${p === val ? 'selected' : ''}>GP${p}</option>`).join('')}</select>`;
+  const ps2Used = new Set([...ps2, c.wiiSda, c.wiiScl].filter((p) => p !== PIN_NONE));
+  const accelBlock = c.accelSda !== PIN_NONE && c.accelSda !== undefined ? (c.accelSda >> 1) & 1 : -1;
+  const wiiPairs = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !(p & 1) && ((p >> 1) & 1) !== accelBlock &&
+    ((!others.has(p) && !others.has(p + 1) && !ps2.includes(p) && !ps2.includes(p + 1)) || p === c.wiiSda));
+  const ps2On = ps2.every((p) => p !== PIN_NONE), wiiOn = c.wiiSda !== PIN_NONE;
+  const wiimote = !!(c.xinputOpts & 2);
+  body.innerHTML = `
+    <div class="cols">
+      <div class="tilt-card">
+        <div class="head"><h3>PS2 controller port</h3><span class="tilt-state" id="pPs2">${ps2On ? 'waiting' : 'off'}</span></div>
+        <p class="dim small">A PS2 Guitar Hero guitar for Guitar Hero 1, 2, III and 80s on a stock PS2 (or a PS1). Cut a PS2 extension cable and wire its lines to five free pins; power the board from the cable's 3.6 V (pin 5) through a diode to VSYS. Not with the USB host port (both need PIO1).</p>
+        <div class="ps2-grid">${PS2.map((n, i) => `<label>${n}${pinSel('ps2' + i, ps2[i], ps2Used)}</label>`).join('')}</div>
+      </div>
+      <div class="tilt-card">
+        <div class="head"><h3>Wii extension</h3><span class="tilt-state" id="pWii">${wiiOn ? 'waiting' : 'off'}</span></div>
+        <p class="dim small">The guitar acts as a Guitar Hero guitar <b>extension</b>: plug a Wii Remote's extension cable in, like the original Wii guitars. SDA and SCL of the extension plug to the pins below, its 3.3 V detect line to 3V3, GND to GND.</p>
+        <label class="field-label">SDA / SCL</label>
+        <select id="wiiPins"><option value="255">Not wired</option>${wiiPairs.map((p) => `<option value="${p}" ${p === c.wiiSda ? 'selected' : ''}>SDA GP${p}, SCL GP${p + 1}</option>`).join('')}</select>
+      </div>
+    </div>
+    ${state.info.btSupported ? `
+    <div class="opt" style="margin-top:12px"><div><h3>Wii Remote over Bluetooth <span class="tilt-state" id="pWm">${wiimote ? 'waiting' : 'off'}</span></h3>
+      <p class="dim">The Pico W becomes a Wii Remote with a Guitar Hero guitar plugged in: Guitar Hero, Band Hero and DJ Hero on a stock Wii or Wii U, no Wii Remote needed. Press SYNC on the console; after that it reconnects by itself. Replaces the Bluetooth LE gamepad while on.</p></div>
+      <label class="switch"><input type="checkbox" id="wmOn" ${wiimote ? 'checked' : ''}><i></i></label></div>` : ''}`;
+  PS2.forEach((n, i) => { $('#ps2' + i).onchange = (e) => { c.ps2Pins = [...ps2]; c.ps2Pins[i] = +e.target.value; buildPorts(); }; });
+  $('#wiiPins').onchange = (e) => { const p = +e.target.value; c.wiiSda = p; c.wiiScl = p === PIN_NONE ? PIN_NONE : p + 1; buildPorts(); };
+  const wm = $('#wmOn');
+  if (wm) wm.onchange = () => { c.xinputOpts = (c.xinputOpts & ~2) | (wm.checked ? 2 : 0); if (wm.checked) c.btEnabled = true; buildPorts(); };
+}
+function updatePorts(s) {
+  const set = (id, on, txt) => { const el = $(id); if (el && el.textContent !== 'off') { el.textContent = on ? txt : 'waiting'; el.classList.toggle('on', on); } };
+  set('#pPs2', !!(s.ports & 1), 'PS2 connected');
+  set('#pWii', !!(s.ports & 2), 'Wii Remote connected');
+  set('#pWm', !!(s.ports & 4), 'Wii connected');
 }
 
 // ------------------------------------------------------------------ rumble (firmware 0.30+)
@@ -883,14 +938,19 @@ function updateLedPreview(s) {
 function brightNote(c) {
   const m = maxBrightness(c);
   if (m === 255) return '';
-  return `<p class="dim small">Brightness is limited to ${m} with ${c.noFretLeds ? 'strum LEDs only' : 'fret and strum LEDs together'}, to keep the current the LED chain draws in check.</p>`;
+  const two = c.fretLeds === 2 && !c.noFretLeds;
+  const what = c.noFretLeds ? 'strum LEDs only' : !c.strumLeds ? 'two LEDs under each fret' : two ? 'two LEDs per fret and strum LEDs' : 'fret and strum LEDs together';
+  return `<p class="dim small">Brightness is limited to ${m} with ${what}, to keep the current the LED chain draws in check.</p>`;
 }
 // LED layout controls (setup wizard and Lights page): fret LEDs on / off, how many strum LEDs, wiring order
 const STRUM_COUNTS = ['None', '1', '2 (1 per side)', '3', '4 (corners)', '5', '6', '7', '8 (4 per side)'];
 function ledLayoutControls(c, pfx = 'lay') {
   const l = ledLayout(c);
-  return `<div class="opt"><div><h3>Fret LEDs</h3><p class="dim">One LED under each of the five frets.</p></div>
+  const v6 = (c.cfgVersion ?? 0) >= 6;
+  return `<div class="opt"><div><h3>Fret LEDs</h3><p class="dim">LEDs under the five frets.</p></div>
       <label class="switch"><input type="checkbox" id="${pfx}Frets" ${l.frets ? 'checked' : ''}><i></i></label></div>
+    ${l.frets && v6 ? `<div class="opt"><div><h3>LEDs per fret</h3><p class="dim">Two under each fret light together, in the fret's colour.</p></div>
+      <select id="${pfx}Per"><option value="1" ${l.per === 1 ? 'selected' : ''}>One</option><option value="2" ${l.per === 2 ? 'selected' : ''}>Two</option></select></div>` : ''}
     <div class="opt"><div><h3>Strum bar LEDs</h3><p class="dim">LEDs on the strum bar, on the same chain. They light up when you strum.</p></div>
       <select id="${pfx}Strum">${STRUM_COUNTS.map((t, n) => `<option value="${n}" ${n === l.strum ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
     ${l.frets && l.strum ? `<div class="opt"><div><h3>Wiring order</h3><p class="dim">Which LEDs come first on the chain, starting from the data pin.</p></div>
@@ -898,16 +958,18 @@ function ledLayoutControls(c, pfx = 'lay') {
     ${!l.frets && !l.strum ? '<p class="dim small">Choose fret LEDs, strum LEDs or both.</p>' : ''}`;
 }
 function wireLedLayout(c, changed, pfx = 'lay') {
-  const set = (patch) => { const l = ledLayout(c); applyLedLayout(c, { frets: l.frets, strum: l.strum, strumFirst: l.strumFirst, ...patch }); changed(); };
+  const set = (patch) => { const l = ledLayout(c); applyLedLayout(c, { frets: l.frets, strum: l.strum, strumFirst: l.strumFirst, per: l.per, ...patch }); changed(); };
   $(`#${pfx}Frets`)?.addEventListener('change', (e) => set({ frets: e.target.checked }));
   $(`#${pfx}Strum`)?.addEventListener('change', (e) => set({ strum: +e.target.value }));
   $(`#${pfx}Order`)?.addEventListener('change', (e) => set({ strumFirst: e.target.value === '1' }));
+  $(`#${pfx}Per`)?.addEventListener('change', (e) => set({ per: +e.target.value }));
 }
 // chain position -> what sits there
 function chainLabels(c) {
   const l = ledLayout(c);
   return [...Array(l.chain).keys()].map((p) => {
-    const f = l.frets ? c.ledMap.indexOf(p) : -1;
+    let f = l.frets ? c.ledMap.indexOf(p) : -1;
+    if (f < 0 && l.frets && l.per === 2) f = (c.ledMap2 || []).indexOf(p);
     if (f >= 0) return { fret: f, color: c.colors[f], name: funcName(f) };
     const k = c.strumMap.slice(0, l.strum).indexOf(p);
     return { strum: k, color: c.strumColor || '#ffffff', name: `Strum ${k + 1}` };
@@ -1026,6 +1088,7 @@ function buildModes() {
   $('#rxRow').hidden = (c.cfgVersion ?? 0) < 5 || !(state.info.major > 0 || state.info.minor >= 30);
   $('#xiRx').checked = !(c.xinputOpts & 1);
   $('#xiRx').onchange = (e) => { c.xinputOpts = (c.xinputOpts & ~1) | (e.target.checked ? 0 : 1); };
+  buildPorts();
 
   // keyboard bindings
   const keyOpts = (sel) => Object.entries(KEYS).sort((x, y) => (+x[0] === 0 ? -1 : +y[0] === 0 ? 1 : 0))

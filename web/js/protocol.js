@@ -58,9 +58,9 @@ export const DEBOUNCE_MODES = [
   { id: 2, name: 'Classic', desc: 'Any change must be stable for the debounce time (adds latency both ways).' },
 ];
 
-export const NUM_LEDS = 5;            // fret LEDs
+export const NUM_LEDS = 5;            // frets with LEDs (one or two LEDs each)
 export const MAX_STRUM_LEDS = 8;      // strum bar LEDs
-export const MAX_LEDS = NUM_LEDS + MAX_STRUM_LEDS;
+export const MAX_LEDS = 2 * NUM_LEDS + MAX_STRUM_LEDS;
 export const STRUM_ROLES = [
   { id: 0, name: 'Up and down' },
   { id: 1, name: 'Strum up' },
@@ -68,23 +68,30 @@ export const STRUM_ROLES = [
 ];
 // LED layout helpers. Fret LEDs keep their order relative to each other; strum LEDs go before or after them.
 export function ledLayout(c) {
-  const frets = !c.noFretLeds, n = c.strumLeds || 0;
+  const frets = !c.noFretLeds, n = c.strumLeds || 0, per = c.fretLeds === 2 ? 2 : 1;
   const fretOrder = [0, 1, 2, 3, 4].sort((a, b) => c.ledMap[a] - c.ledMap[b]);
-  const firstFret = frets ? Math.min(...c.ledMap) : 99, firstStrum = n ? Math.min(...c.strumMap.slice(0, n)) : 99;
-  return { frets, strum: n, strumFirst: firstStrum < firstFret, fretOrder, chain: (frets ? NUM_LEDS : 0) + n };
+  const fretPos = per === 2 ? [...c.ledMap, ...(c.ledMap2 || [])] : c.ledMap;
+  const firstFret = frets ? Math.min(...fretPos) : 99, firstStrum = n ? Math.min(...c.strumMap.slice(0, n)) : 99;
+  return { frets, per, strum: n, strumFirst: firstStrum < firstFret, fretOrder, chain: (frets ? NUM_LEDS * per : 0) + n };
 }
 // brightness ceiling for the layout, same as the firmware's led_max_brightness
 export function maxBrightness(c) {
-  if (!c.strumLeds) return 255;
-  return c.noFretLeds ? 200 : 150;
+  const two = c.fretLeds === 2 && !c.noFretLeds;
+  if (!c.strumLeds) return two ? 160 : 255;
+  if (c.noFretLeds) return 200;
+  return two ? 110 : 150;
 }
-export function applyLedLayout(c, { frets, strum, strumFirst }) {
+// per: LEDs under each fret. With two, the default order is each fret's pair side by side (G G R R ...); the LED
+// order step teaches any other wiring (two rows, a snake ...)
+export function applyLedLayout(c, { frets, strum, strumFirst, per = c.fretLeds === 2 ? 2 : 1 }) {
   const fretOrder = [0, 1, 2, 3, 4].sort((a, b) => c.ledMap[a] - c.ledMap[b]);
   const strumOrder = [...Array(MAX_STRUM_LEDS).keys()].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
   c.noFretLeds = !frets;
   c.strumLeds = strum;
-  const fBase = frets && strumFirst ? strum : 0, sBase = frets && !strumFirst ? NUM_LEDS : 0;
-  fretOrder.forEach((f, k) => { c.ledMap[f] = frets ? fBase + k : k; });
+  c.fretLeds = per;
+  const fBase = frets && strumFirst ? strum : 0, sBase = frets && !strumFirst ? NUM_LEDS * per : 0;
+  fretOrder.forEach((f, k) => { c.ledMap[f] = frets ? fBase + k * per : k; });
+  c.ledMap2 = [0, 1, 2, 3, 4].map((f) => (per === 2 && frets ? c.ledMap[f] + 1 : NUM_LEDS + f));
   // unused strum slots are parked past the chain (the firmware ignores slots beyond strumLeds) so they keep sorting last
   strumOrder.forEach((s, k) => { c.strumMap[s] = k < strum ? sBase + k : 200 + k; });
   c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
@@ -181,6 +188,8 @@ export function defaultTiltSensors() {
     atilt: [0, 1].map((i) => ({ src: PIN_NONE, target: i ? 1 : 0, invert: false, threshold: 50, min: 0, max: 4095 })),
     accelSda: PIN_NONE, accelScl: PIN_NONE, accelGate: 0, accelMedian: 3, accelLowpass: 20, xinputOpts: 0,
     rumblePin: PIN_NONE, rumbleFlags: 3, rumbleStrength: 80,
+    ps2Pins: [PIN_NONE, PIN_NONE, PIN_NONE, PIN_NONE, PIN_NONE], wiiSda: PIN_NONE, wiiScl: PIN_NONE,
+    fretLeds: 1, ledMap2: [5, 6, 7, 8, 9],
   };
 }
 // I2C pins: SDA on an even GPIO, SCL on the odd one of the same I2C block (GP4/GP5, GP2/GP3, ...)
@@ -201,9 +210,10 @@ export function tiltValue(raw, s) {
   return s.invert ? 1 - v : v;
 }
 
-export const CFG_SIZE = 128;      // config version 5 (firmware 0.29+); older firmware sends 96 bytes (version 4)
+export const CFG_SIZE = 160;      // config version 6 (firmware 0.31+); 0.29-0.30 send 128 bytes (v5), older 96 (v4)
+export const CFG_SIZE_V5 = 128;
 export const CFG_SIZE_V4 = 96;
-export const CFG_VERSION = 5;
+export const CFG_VERSION = 6;
 
 export function parseConfig(dv) {
   if (dv.getUint32(0, true) !== 0x43434159) throw new Error('Bad config magic');
@@ -238,7 +248,11 @@ export function parseConfig(dv) {
     strumRoles: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (dv.getUint8(i < 4 ? 83 : 88) >> (2 * (i & 3))) & 3),
     cfgVersion: dv.getUint8(4),
     // tilt sensors (version 5): 2 x 8 bytes at 92, then accelerometer pins and filters at 108
-    ...(dv.byteLength >= CFG_SIZE && dv.getUint8(4) >= 5 ? {
+    // two LEDs per fret (version 6): count at 124, second positions at 125..129
+    ...(dv.byteLength >= CFG_SIZE && dv.getUint8(4) >= 6 ? {
+      fretLeds: dv.getUint8(124) === 2 ? 2 : 1, ledMap2: [0, 1, 2, 3, 4].map((i) => dv.getUint8(125 + i)),
+    } : { fretLeds: 1, ledMap2: [5, 6, 7, 8, 9] }),
+    ...(dv.byteLength >= CFG_SIZE_V5 && dv.getUint8(4) >= 5 ? {
       atilt: [0, 1].map((i) => {
         const o = 92 + i * 8;
         return { src: dv.getUint8(o), target: dv.getUint8(o + 1), invert: !!dv.getUint8(o + 2), threshold: dv.getUint8(o + 3), min: dv.getUint16(o + 4, true), max: dv.getUint16(o + 6, true) };
@@ -246,17 +260,19 @@ export function parseConfig(dv) {
       accelSda: dv.getUint8(108), accelScl: dv.getUint8(109), accelGate: dv.getUint8(110), accelMedian: dv.getUint8(111), accelLowpass: dv.getUint8(112),
       xinputOpts: dv.getUint8(113),
       rumblePin: dv.getUint8(114), rumbleFlags: dv.getUint8(115), rumbleStrength: dv.getUint8(116) || 80,
+      ps2Pins: [117, 118, 119, 120, 121].map((o) => dv.getUint8(o)), wiiSda: dv.getUint8(122), wiiScl: dv.getUint8(123),
     } : defaultTiltSensors()),
   };
 }
 
 // Written in the layout the controller sent (version 4 / 96 bytes for firmware before 0.29)
 export function serializeConfig(c) {
-  const v5 = (c.cfgVersion ?? CFG_VERSION) >= 5;
-  const buf = new ArrayBuffer(v5 ? CFG_SIZE : CFG_SIZE_V4);
+  const ver = Math.min(CFG_VERSION, c.cfgVersion ?? CFG_VERSION);
+  const v5 = ver >= 5, v6 = ver >= 6;
+  const buf = new ArrayBuffer(v6 ? CFG_SIZE : v5 ? CFG_SIZE_V5 : CFG_SIZE_V4);
   const dv = new DataView(buf);
   dv.setUint32(0, 0x43434159, true);
-  dv.setUint8(4, v5 ? 5 : 4);
+  dv.setUint8(4, v6 ? 6 : v5 ? 5 : 4);
   c.pins.forEach((p, i) => dv.setUint8(5 + i, p));
   dv.setUint8(14, c.whammyCh);
   dv.setUint8(15, c.whammyInvert ? 1 : 0);
@@ -299,10 +315,15 @@ export function serializeConfig(c) {
   });
   dv.setUint8(108, c.accelSda ?? PIN_NONE); dv.setUint8(109, c.accelScl ?? PIN_NONE);
   dv.setUint8(110, Math.min(100, c.accelGate | 0)); dv.setUint8(111, Math.min(9, c.accelMedian | 0)); dv.setUint8(112, Math.min(100, c.accelLowpass | 0));
-  dv.setUint8(113, (c.xinputOpts | 0) & 1);
+  dv.setUint8(113, (c.xinputOpts | 0) & 3);
   dv.setUint8(114, c.rumblePin ?? PIN_NONE); dv.setUint8(115, (c.rumbleFlags ?? 3) & 7);
   dv.setUint8(116, Math.max(10, Math.min(100, c.rumbleStrength ?? 80)));
-  dv.setUint32(124, crc32(new Uint8Array(buf, 0, 124)), true);
+  (c.ps2Pins || []).forEach((p, i) => dv.setUint8(117 + i, p ?? PIN_NONE));
+  dv.setUint8(122, c.wiiSda ?? PIN_NONE); dv.setUint8(123, c.wiiScl ?? PIN_NONE);
+  if (!v6) { dv.setUint32(124, crc32(new Uint8Array(buf, 0, 124)), true); return buf; }
+  dv.setUint8(124, c.fretLeds === 2 ? 2 : 1);
+  (c.ledMap2 || [5, 6, 7, 8, 9]).forEach((p, i) => dv.setUint8(125 + i, Math.min(p, MAX_LEDS - 1)));
+  dv.setUint32(156, crc32(new Uint8Array(buf, 0, 156)), true);
   return buf;
 }
 
@@ -388,7 +409,8 @@ export function parseStatus(dv) {
   const o = 11 + NUM_DIGITAL_PINS;   // firmware 0.29+: accelerometer type, then X, Y, Z, LIS3DH ADC 1..3 (0xffff = none)
   const accelType = dv.byteLength > o ? dv.getUint8(o) : 0;
   const accelRaw = dv.byteLength >= o + 13 ? [0, 1, 2, 3, 4, 5].map((i) => dv.getUint16(o + 1 + i * 2, true)) : [0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff];
-  return { t: performance.now(), mask, adc, counts, btState: flags & 3, saveOk: !!(flags & 4), savePending: !!(flags & 8), accelType, accelRaw };
+  const ports = dv.byteLength > o + 13 ? dv.getUint8(o + 13) : 0;   // firmware 0.31+: 1 PS2 polling, 2 Wii Remote on the extension, 4 Wii connected over Bluetooth
+  return { t: performance.now(), mask, adc, counts, btState: flags & 3, saveOk: !!(flags & 4), savePending: !!(flags & 8), accelType, accelRaw, ports };
 }
 
 // Same maths as firmware input_whammy(): returns 0..1

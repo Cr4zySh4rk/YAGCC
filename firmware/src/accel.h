@@ -4,6 +4,9 @@
 #define YACC_ACCEL_H_
 #include <stdint.h>
 #include <stdbool.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 enum { ACCEL_NONE = 0, ACCEL_LIS3DH, ACCEL_ADXL345, ACCEL_MPU6050, ACCEL_SC7A20, ACCEL_LIS3DSH };
 
@@ -17,4 +20,7 @@ int32_t accel_raw12(int axis);
 int32_t accel_adc12(int ch);
 bool accel_pins_ok(uint8_t sda, uint8_t scl);   // SDA even, SCL odd, same I2C block
 
+#ifdef __cplusplus
+}
+#endif
 #endif

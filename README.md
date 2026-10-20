@@ -24,10 +24,11 @@ Flash the board, plug it in, and the web app walks you through mapping every but
 * **Auto mode**: plug into anything and the guitar works out whether it's on Windows, macOS, Linux, a PS2, PS3, PS4, PS5, Xbox 360, Xbox One, Wii or Switch (Santroller's console detection) and becomes the right controller.
 * **Many controller modes**: Xbox 360 (XInput), PS3 Guitar Hero and Rock Band, Wii Rock Band, Nintendo Switch, generic HID, keyboard (Fortnite Festival), original Xbox, and PS4, PS5 and Xbox One / Series with console authentication passed through to a licensed controller or dongle *(experimental)*. Pick a mode by holding a fret at plug-in.
 * **Rumble**: a vibration motor that follows game rumble and can buzz on star power and missed notes.
+* **Console ports and Wii Remote** *(experimental)*: wire the guitar straight into a **PS2 controller port** or a **Wii Remote's extension plug**, or let a Pico W be a **Wii Remote** with a guitar plugged in, for Guitar Hero on stock consoles (Santroller's emulation).
 * **Bluetooth LE** on the Pico W / Pico 2 W, presenting the same controller as the USB mode, with automatic reconnects.
 * **Whammy calibration**, smoothing, dead zone and per-input debounce, all live.
 * **Tilt sensors**: a digital tilt switch, up to two analog tilt sensors and an I²C accelerometer (LIS3DH, SC7A20, LIS3DSH, ADXL345, MPU-6050, detected automatically), each working the whammy or star power, all at the same time as the whammy bar and star power button.
-* **RGB lighting**: WS2812, SK6812 RGBW and APA102 LEDs under the frets and on the strum bar (up to 13), colours, reactive effects and star power glow.
+* **RGB lighting**: WS2812, SK6812 RGBW and APA102 LEDs, one or two under each fret and up to eight on the strum bar (up to 18), colours, reactive effects and star power glow.
 * **No toolchain needed**: firmware downloads and in-browser flashing, update notifications, backup and restore of all settings.
 
 An earlier 5-minute walkthrough with voice-over (from v0.4; the setup flow is the same, newer features are missing) is **[here](https://cr4zysh4rk.github.io/YAGCC/demo/yagcc-demo.mp4)**. No real guitar was used in either; a simulated controller feeds the configurator the same data the firmware sends.
@@ -123,6 +124,14 @@ See the **Compatibility** page in the web app for a game-by-game / console-by-co
 * Analog tilt sensor: output to a free one of GP26–GP28, powered from 3V3(OUT) and GND, like the whammy pot.
 * Accelerometer module (I²C): SDA to an even GPIO and SCL to the next one (GP4 / GP5, GP0 / GP1, …), VCC to 3V3(OUT), GND to GND.
 
+### Console ports and Wii Remote (experimental)
+
+Modes page, firmware 0.31+. Ported from Santroller; they work next to whatever USB mode is running and stay quiet until a console talks to them. Not yet tested on a console with YAGCC.
+
+* **PS2 controller port** – a PS2 / PS1 sees a Guitar Hero guitar on its controller port (Guitar Hero 1, 2, III, 80s, Aerosmith on a stock console). Cut a PS2 extension cable and wire **ATT, CMD, DAT, CLK and ACK** to five free GPIOs (any), and GND to GND; power the board from the cable's 3.6 V (pin 5) through a diode to VSYS. Uses PIO1, so not together with the USB host port. Frets are the shoulder / face buttons like a real PS2 guitar, strum on the D-pad, star power on Select, whammy on the stick; the console's rumble drives the rumble motor.
+* **Wii extension** – the guitar acts as the **Guitar Hero guitar extension** a Wii Remote plugs into, like the original Wii guitars: SDA / SCL of the extension plug to an even / odd GPIO pair (not the accelerometer's I²C block), the plug's detect line to 3V3, GND to GND. Star power is Minus.
+* **Wii Remote over Bluetooth** (genuine Pico W / Pico 2 W) – the guitar *is* a Wii Remote ("Nintendo RVL-CNT-01") with a Guitar Hero guitar plugged in: Guitar Hero, Band Hero and DJ Hero on a stock Wii or Wii U, with no Wii Remote. Turn it on, press **SYNC** on the console and the guitar pairs with the Wii's legacy PIN; it remembers the console and reconnects by itself when switched on, like a real one. It replaces the Bluetooth LE gamepad while on (the firmware now carries Bluetooth Classic for it).
+
 ### Rumble
 
 Tune page, firmware 0.30+. A small vibration motor (coin / ERM) on any free GPIO, switched by an NPN transistor (base through ~1 kΩ) or a logic-level MOSFET, with a flyback diode across the motor; never drive it straight from the pin. The pin runs 20 kHz PWM, scaled by a strength setting. It can:
@@ -149,8 +158,8 @@ The accelerometer readings go through the same filters Santroller uses, each off
   * **WS2812 / WS2812B / NeoPixel** (one data pin, PIO-driven) with selectable colour order (GRB, RGB, BRG, …)
   * **SK6812 RGBW** (one data pin; the shared white part of a colour moves to the white LED)
   * **APA102 / SK9822 / DotStar** (data + clock pins)
-* **Brightness**, capped by the LED layout so the chain's current stays reasonable (each LED at full white draws up to ~60 mA): up to **255** with the five fret LEDs only, **200** with strum LEDs only, **150** with fret and strum LEDs together. The firmware enforces the cap too, so a restored backup or an older configurator can't exceed it.
-* **LED layout**: one chain of up to 13 LEDs – the five fret LEDs, up to eight **strum bar LEDs** (one per side, the four corners, or four along each side), or both, with the strum LEDs wired before or after the frets (or strum LEDs only). Strum LEDs have their own colour and each follows strum up, strum down or both (quick setups: all both, first half up / second half down, alternating), and they get every effect, the star power glow, the Bluetooth pairing blink and the charging sweep (which runs on from the green fret to the strum bar). With no fret LEDs, the strum LEDs flash the mode colour at plug-in.
+* **Brightness**, capped by the LED layout so the chain's current stays reasonable (each LED at full white draws up to ~60 mA): up to **255** with one LED per fret only, **160** with two per fret, **200** with strum LEDs only, **150** with one per fret plus strum LEDs, and **110** with two per fret plus strum LEDs. The firmware enforces the cap too, so a restored backup or an older configurator can't exceed it.
+* **LED layout**: one chain of up to 18 LEDs – one or **two LEDs under each fret** (both in the fret's colour; side by side by default, any order through the LED order step, which then asks for each fret twice), up to eight **strum bar LEDs** (one per side, the four corners, or four along each side), or both, with the strum LEDs wired before or after the frets (or strum LEDs only). Strum LEDs have their own colour and each follows strum up, strum down or both (quick setups: all both, first half up / second half down, alternating), and they get every effect, the star power glow, the Bluetooth pairing blink and the charging sweep (which runs on from the green fret to the strum bar). With no fret LEDs, the strum LEDs flash the mode colour at plug-in.
 * Per-fret **colours** with presets (gamma-corrected on the LEDs, so the red and orange you pick on screen come out red and orange, not pink and peach), and an **LED order wizard**: each LED lights white in turn and you press the fret above it (or strum, for a strum LED).
 * **Effects**: static, dim on press, off on press, brighten on press, flash & fade, breathing, rainbow (speed adjustable).
 * **Mode indicator**: after plug-in the fret LED that selects the running mode (green = XInput, red = PS3 Rock Band, yellow = HID, blue = PS3 Guitar Hero, orange = Switch by default) flashes for one second.

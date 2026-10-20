@@ -21,6 +21,9 @@ bool bt_running(void);
 void bt_send_report(const uint8_t *report, uint16_t len);
 // A USB host is (not) using the guitar: Bluetooth drops its host and stops advertising while one is (bonds kept)
 void bt_set_usb_active(bool active);
+// Wii Remote emulation (config option XOPT_WIIMOTE, Bluetooth Classic): the guitar extension's 6 data bytes
+bool bt_wiimote(void);
+void bt_wii_report(const uint8_t *ext, uint8_t len);
 // Pico W / Pico 2 W read USB power through the radio chip: 1 / 0, or -1 when unknown
 int bt_vbus(void);
 // Bluetooth event log (last 48 events, 8 bytes each: u32 ms, u8 code, u8 a, u16 b), oldest first

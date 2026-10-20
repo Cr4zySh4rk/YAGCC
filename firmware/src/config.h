@@ -62,14 +62,16 @@ enum {
 };
 
 #define YACC_CFG_MAGIC   0x43434159u  // "YAGCC" little endian
-#define YACC_CFG_VERSION 5
+#define YACC_CFG_VERSION 6
 #define YACC_CFG_V3_SIZE 64
 #define YACC_CFG_V4_SIZE 96           // firmware 0.11 .. 0.28: no analog tilt sensors
+#define YACC_CFG_V5_SIZE 128          // firmware 0.29 .. 0.30: one LED per fret
 
 // Analog tilt sensors (firmware 0.29+): up to two, each on its own analog input, each either adding to the
 // whammy or pressing tilt / star power past a calibrated angle. They work alongside the whammy bar, the
 // star power button and the digital tilt switch.
-#define XOPT_NO_RECEIVER (1u << 0)
+#define XOPT_NO_RECEIVER (1u << 0)   // XInput: never present as a wireless receiver slot on Windows
+#define XOPT_WIIMOTE     (1u << 1)   // Pico W: act as a Wii Remote with a guitar extension over Bluetooth (classic)
 #define RUMBLE_FLAG_GAME (1u << 0)   // follow the rumble games send
 #define RUMBLE_FLAG_STAR (1u << 1)   // buzz when star power / overdrive starts (games that report it)
 #define RUMBLE_FLAG_MISS (1u << 2)   // short buzz on a missed note (games that report it)   // XInput: never present as a wireless receiver slot on Windows
@@ -89,9 +91,10 @@ typedef struct __attribute__((packed)) {
     uint16_t max;         // the other end (min < max; `invert` says which end is the rest position)
 } atilt_cfg_t;
 
-#define NUM_LEDS 5          // fret LEDs
+#define NUM_LEDS 5          // frets with LEDs
+#define MAX_FRET_LEDS (2 * NUM_LEDS)   // one or two LEDs under each fret (firmware 0.31)
 #define MAX_STRUM_LEDS 8    // strum bar LEDs (one per side, the four corners, or four along each side)
-#define MAX_LEDS (NUM_LEDS + MAX_STRUM_LEDS)   // longest chain: positions 0..12
+#define MAX_LEDS (MAX_FRET_LEDS + MAX_STRUM_LEDS)   // longest chain: positions 0..17
 // what a strum LED reacts to (2 bits per LED in strum_roles)
 enum { STRUM_ROLE_BOTH = 0, STRUM_ROLE_UP = 1, STRUM_ROLE_DOWN = 2 };
 // What the fret LEDs do
@@ -166,23 +169,45 @@ typedef struct __attribute__((packed)) {
     uint8_t  rumble_pin;          // 114     vibration motor GPIO (PWM, through a transistor) or PIN_NONE
     uint8_t  rumble_flags;        // 115     RUMBLE_FLAG_*
     uint8_t  rumble_strength;     // 116     percent of full power at the strongest rumble (10..100)
-    uint8_t  reserved2[7];        // 117..123
-    uint32_t crc;                 // 124     crc32 of bytes 0..123
+    // PS2 controller port output (firmware 0.31): GPIOs wired to the port's ATT, CMD, DAT, CLK and ACK lines
+    uint8_t  ps2_att;             // 117     PIN_NONE = off
+    uint8_t  ps2_cmd;             // 118
+    uint8_t  ps2_dat;             // 119
+    uint8_t  ps2_clk;             // 120
+    uint8_t  ps2_ack;             // 121
+    // Wii extension output (firmware 0.31): I2C to a Wii Remote's extension port, the guitar acts as a
+    // Guitar Hero guitar extension
+    uint8_t  wii_sda;             // 122     PIN_NONE = off
+    uint8_t  wii_scl;             // 123
+    // config version 6 (firmware 0.31)
+    uint8_t  fret_leds;           // 124     LEDs under each fret: 1 or 2
+    uint8_t  led_map2[NUM_FRETS]; // 125..129 chain position of each fret's second LED (fret_leds = 2)
+    uint8_t  reserved3[26];       // 130..155
+    uint32_t crc;                 // 156     crc32 of bytes 0..155
 } yacc_config_t;
 
-_Static_assert(sizeof(yacc_config_t) == 128, "config size");
+#ifdef __cplusplus
+static_assert(sizeof(yacc_config_t) == 160, "config size");
+static_assert(sizeof(atilt_cfg_t) == 8, "analog tilt config size");
+#else
+_Static_assert(sizeof(yacc_config_t) == 160, "config size");
 _Static_assert(sizeof(atilt_cfg_t) == 8, "analog tilt config size");
+#endif
 
 // Upgrade a version 4 (96 byte) config to the current layout; false if src isn't a valid v4 config
-bool config_from_v4(const uint8_t *src, yacc_config_t *dst);
+bool config_from_old(const uint8_t *src, uint16_t len, yacc_config_t *dst);   // a v4 (96) or v5 (128 byte) config
 
 extern yacc_config_t g_cfg;
 
 // Brightness ceiling for the LED layout, to keep the chain's current in check: 255 with the five fret LEDs
 // only, 200 with strum LEDs only, 150 with fret and strum LEDs together
 static inline uint8_t led_max_brightness(const yacc_config_t *c) {
-    if (!c->strum_leds) return 255;
-    return c->no_fret_leds ? 200 : 150;
+    // Brightness ceiling for the LED layout, to keep the chain's current in check: 255 with five fret LEDs only,
+    // 160 with two per fret, 200 with strum LEDs only, 150 with frets and strum LEDs, 110 with two per fret and strum
+    bool two = c->fret_leds == 2 && !c->no_fret_leds;
+    if (!c->strum_leds) return two ? 160 : 255;
+    if (c->no_fret_leds) return 200;
+    return two ? 110 : 150;
 }
 
 // strum LED i (0..MAX_STRUM_LEDS-1): chain position and role, across the two halves of the config
