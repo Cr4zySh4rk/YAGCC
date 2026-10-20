@@ -58,6 +58,9 @@ bool config_validate(const yacc_config_t *c) {
     }
     if ((c->accel_sda != PIN_NONE && c->accel_sda >= NUM_DIGITAL_PINS) || (c->accel_scl != PIN_NONE && c->accel_scl >= NUM_DIGITAL_PINS)) return false;
     if (c->accel_gate > 100 || c->accel_median > 9 || c->accel_lowpass > 100) return false;
+    if (c->xinput_opts > 1) return false;
+    if ((c->rumble_pin != PIN_NONE && c->rumble_pin >= NUM_DIGITAL_PINS) || c->rumble_flags > 7 ||
+        c->rumble_strength < 10 || c->rumble_strength > 100) return false;
     return true;
 }
 
@@ -75,6 +78,10 @@ static void atilt_defaults(yacc_config_t *c) {
     c->accel_gate = 0;               // off: on a guitar a strum hit is short, the median and low pass cover it
     c->accel_median = 3;             // takes single sample spikes out
     c->accel_lowpass = 20;           // 20 Hz: smooth, still well under a frame of latency
+    c->xinput_opts = 0;              // (0.30) every field past the v4 layout starts here, so v4 upgrades get it too
+    c->rumble_pin = PIN_NONE;
+    c->rumble_flags = RUMBLE_FLAG_GAME | RUMBLE_FLAG_STAR;
+    c->rumble_strength = 80;
     memset(c->reserved2, 0, sizeof(c->reserved2));
 }
 
@@ -105,7 +112,7 @@ void config_defaults(yacc_config_t *c) {
     c->whammy_min = 0;
     c->whammy_max = 4095;
     c->tilt_pin = PIN_NONE;
-    c->usb_mode = MODE_XINPUT;
+    c->usb_mode = MODE_AUTO;           // a new guitar finds out what it is plugged into
     c->debounce_mode = DEB_RELEASE;   // legacy field, the engine no longer has modes
     c->debounce_100us = 50;           // 5 ms
     c->whammy_smooth = 2;

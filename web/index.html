@@ -167,6 +167,11 @@
         <p class="dim">Analog tilt sensors, or an I²C accelerometer (LIS3DH, ADXL345, MPU-6050, found automatically). Each sensor works the <b>whammy</b> or presses <b>star power</b> past an angle you set, alongside the whammy bar, the star power button and a tilt switch. A mercury or ball tilt switch is set up in Setup.</p>
         <div id="tiltBody"></div>
       </div>
+      <div class="panel tilt-panel" id="rumblePanel">
+        <h2>Rumble</h2>
+        <p class="dim">A small vibration motor (a coin or ERM motor) on a free pin, switched by an NPN transistor or logic-level MOSFET with a flyback diode across the motor; never straight from the pin. It follows the rumble games send (XInput, PS4, PS5, original Xbox) and can buzz when star power starts or a note is missed.</p>
+        <div id="rumbleBody"></div>
+      </div>
       <div class="panel backup-panel">
         <div class="opt first"><div><h2>Backup and restore</h2><p class="dim">Save every setting to a file, or load one back. Useful before reflashing, or to copy a setup to another guitar.</p></div>
           <div class="row"><button class="btn" id="bkSave">Download backup</button><label class="btn" for="bkFile" tabindex="0">Restore from file</label><input type="file" id="bkFile" accept=".json,application/json" hidden></div></div>
@@ -265,6 +270,8 @@
           <div class="choice-list" id="xiType"></div>
           <div class="opt"><div><h3>Star power also presses D-pad left</h3><p class="dim">Fortnite Festival on PC reads star power from there. Leave off for Clone Hero and YARG.</p></div>
             <label class="switch"><input type="checkbox" id="starLeft"><i></i></label></div>
+          <div class="opt" id="rxRow"><div><h3>Steam-friendly on Windows</h3><p class="dim">On Windows the guitar shows up as one controller of an Xbox 360 wireless receiver, which Steam handles well (a wired pad sharing its USB device with the configurator trips Steam up). A real Xbox 360 always gets the wired pad. Turn off if a Windows game misbehaves.</p></div>
+            <label class="switch"><input type="checkbox" id="xiRx"><i></i></label></div>
         </div>
         <div class="panel">
           <h2>Keyboard bindings</h2>

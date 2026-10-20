@@ -15,6 +15,8 @@ const diff8 = (x, y) => (x - y + 256) & 0xff;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FRET_COLORS = ['#22c55e', '#ef4444', '#facc15', '#3b82f6', '#fb923c'];
 const MODE_USE = {   // one line per mode: where you'd use it
+  10: 'Any console or computer: finds out which and switches itself',
+  11: 'PS5 games (needs a P5General dongle on the host port)',
   0: 'Windows, Xbox 360, Clone Hero, YARG (not macOS)', 3: 'Rock Band on PS3, RPCS3, Rock Band 4 on PS4 / PS5', 1: 'Guitar Hero on PS3, PS2, RPCS3',
   2: 'macOS, Linux, Android, emulators', 4: 'Fortnite Festival on PlayStation, Xbox, PC', 5: 'Nintendo Switch, Fortnite Festival',
   6: 'Rock Band on Wii and Wii U', 7: 'Original Xbox (needs an adapter cable)',
@@ -23,6 +25,10 @@ const MODE_USE = {   // one line per mode: where you'd use it
 
 // macOS has no driver for Xbox 360 (XInput) controllers, so nothing on a Mac sees XInput mode
 const IS_MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || '') && !/iphone|ipad/i.test(navigator.userAgent);
+// modes this firmware has (Auto needs 0.30)
+const availableModes = () => MODES.filter((m) => !m.min || (state.info && (state.info.major > 0 || state.info.minor >= m.min)));
+// HOST_* in firmware auto_detect.h
+const AUTO_HOSTS = ['', 'Windows', 'Xbox 360', 'Xbox One', 'PS3', 'PS4 / PS5', 'Switch', 'Wii', 'PS2', 'OG Xbox'];
 const MAC_XINPUT_TIP = 'macOS has no driver for Xbox 360 controllers. In <b>XInput</b> mode the guitar notices this and switches itself to the <b>HID gamepad</b> a few seconds after plugging in, so Clone Hero and YARG still see it (firmware 0.28 or newer).';
 
 const store = {
@@ -58,7 +64,7 @@ $('#nav').addEventListener('click', (e) => { const b = e.target.closest('button'
 const funcName = (i) => FUNC_LABEL[FUNCS[i]];
 const hostPins = (c = state.cfg) => (c.hostPin !== undefined && c.hostPin !== PIN_NONE ? [c.hostPin, c.hostPin + 1] : []);
 const accelPins = (c = state.cfg) => (c.accelSda !== undefined && c.accelSda !== PIN_NONE ? [c.accelSda, c.accelScl] : []);
-const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(), ...accelPins()].filter((p) => p !== PIN_NONE);
+const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(), ...accelPins(), state.cfg.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE);
 const isConfigured = (cfg) => cfg.pins.some((p) => p !== PIN_NONE);
 
 let pushTimer = 0;
@@ -142,7 +148,7 @@ function updatePill() {
   if (state.dev && state.info) {
     pill.classList.add('on');
     const m = MODES.find((x) => x.id === state.info.mode);
-    $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? 'Board'}</span><span class="seg-item">${state.info.setupSession ? 'Setup' : state.info.xinputFallback ? 'XInput → HID' : m ? m.short : '?'}</span><span class="seg-item mono${state.fwOutdated ? ' old' : ''}" title="${state.fwOutdated ? 'A newer firmware is available' : 'Firmware version'}">v${state.info.major}.${state.info.minor}</span>`;
+    $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? 'Board'}</span><span class="seg-item">${state.info.setupSession ? 'Setup' : state.info.xinputFallback ? 'XInput → HID' : state.info.autoHost ? `Auto: ${AUTO_HOSTS[state.info.autoHost] || '?'} → ${m ? m.short : '?'}` : m ? m.short : '?'}</span><span class="seg-item mono${state.fwOutdated ? ' old' : ''}" title="${state.fwOutdated ? 'A newer firmware is available' : 'Firmware version'}">v${state.info.major}.${state.info.minor}</span>`;
   } else {
     pill.classList.remove('on');
     $('#connText').textContent = state.connecting ? 'Connecting…' : 'Not connected';
@@ -636,6 +642,40 @@ function buildTune() {
   };
   refresh();
   buildTilt();
+  buildRumble();
+}
+
+// ------------------------------------------------------------------ rumble (firmware 0.30+)
+function buildRumble() {
+  const c = state.cfg, body = $('#rumbleBody');
+  if (!body) return;
+  if ((c.cfgVersion ?? 0) < 5 || !(state.info.major > 0 || state.info.minor >= 30)) {
+    body.innerHTML = '<p class="notice small">Rumble needs firmware 0.30 or newer. Update the firmware on the Flash page.</p>';
+    return;
+  }
+  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), ...accelPins()].filter((p) => p !== PIN_NONE));
+  const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !taken.has(p) || p === c.rumblePin);
+  const on = c.rumblePin !== PIN_NONE;
+  const sw = (bit, title, desc) => `<div class="opt"><div><h3>${title}</h3><p class="dim">${desc}</p></div>
+    <label class="switch"><input type="checkbox" data-bit="${bit}" ${c.rumbleFlags & bit ? 'checked' : ''}><i></i></label></div>`;
+  body.innerHTML = `
+    <div class="opt first"><div><h3>Motor pin</h3><p class="dim">Drives the transistor's base (through about 1 kΩ) or the MOSFET's gate.</p></div>
+      <div class="row"><select id="rmPin"><option value="255">None</option>${free.map((p) => `<option value="${p}">GP${p}</option>`).join('')}</select>
+      ${on ? '<button class="btn small" id="rmTest">Test</button>' : ''}</div></div>
+    ${on ? `
+    <div class="slider-row"><label for="rmStr">Strength</label><output class="val" id="rmStrV">${c.rumbleStrength} %</output><input type="range" id="rmStr" min="10" max="100" step="5" value="${c.rumbleStrength}"></div>
+    ${sw(1, 'Game rumble', 'Follow the rumble games send. On a guitar, Clone Hero and YARG use the rumble channel for stage kit and star power messages: those are recognised and left out.')}
+    ${sw(2, 'Buzz on star power', 'A short buzz when star power / overdrive starts, in games that report it (YARG, Clone Hero, RB3 Enhanced over XInput).')}
+    ${sw(4, 'Buzz on a missed note', 'A tap when a note is missed, in games that report it.')}` : ''}`;
+  const live = () => { $('#tuneState').textContent = 'Live changes, not saved yet.'; pushCfg(); };
+  const sel = $('#rmPin');
+  sel.value = String(c.rumblePin ?? PIN_NONE);
+  sel.onchange = () => { c.rumblePin = +sel.value; live(); buildRumble(); };
+  const st = $('#rmStr');
+  if (st) st.oninput = () => { c.rumbleStrength = +st.value; $('#rmStrV').textContent = c.rumbleStrength + ' %'; live(); };
+  body.querySelectorAll('[data-bit]').forEach((cb) => (cb.onchange = () => { const b = +cb.dataset.bit; c.rumbleFlags = cb.checked ? c.rumbleFlags | b : c.rumbleFlags & ~b; live(); }));
+  const t = $('#rmTest');
+  if (t) t.onclick = async () => { try { await state.dev.setConfig(c); await state.dev.rumbleTest(500); } catch (e) { toast('Rumble test failed: ' + e.message, 'bad'); } };
 }
 
 // ------------------------------------------------------------------ tilt sensors (firmware 0.29+)
@@ -665,7 +705,7 @@ function buildTilt() {
     return;
   }
   const own = new Set(accelPins());
-  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins()].filter((p) => p !== PIN_NONE && !own.has(p)));
+  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), c.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE && !own.has(p)));
   const pairs = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !(p & 1) && i2cPinsOk(p, p + 1) && !taken.has(p) && !taken.has(p + 1));
   const accelOn = c.accelSda !== PIN_NONE && i2cPinsOk(c.accelSda, c.accelScl);
   const srcOpts = (i) => {
@@ -959,7 +999,7 @@ function buildModes() {
   const modeTag = (id) => setup
     ? (id === running ? '<span class="tag">Setup session</span>' : id === c.usbMode ? '<span class="tag live">Next plug-in</span>' : '<span></span>')
     : (id === running ? '<span class="tag live">Running</span>' : '<span></span>');
-  $('#modeCards').innerHTML = MODES.map((m) => `<div class="mode-row ${c.usbMode === m.id ? 'sel' : ''}" data-mode="${m.id}" role="radio" tabindex="0" aria-checked="${c.usbMode === m.id}" title="${m.desc.replace(/"/g, '&quot;')}">
+  $('#modeCards').innerHTML = availableModes().map((m) => `<div class="mode-row ${c.usbMode === m.id ? 'sel' : ''}" data-mode="${m.id}" role="radio" tabindex="0" aria-checked="${c.usbMode === m.id}" title="${m.desc.replace(/"/g, '&quot;')}">
       <span class="radio"></span><div><b>${m.name.replace(/ \(experimental\)$/, '')}</b>${m.host ? ' <span class="tag exp">Experimental</span>' : ''}<div class="dim">${MODE_USE[m.id] || ''}</div></div>
       ${modeTag(m.id)}</div>`).join('');
   $('#setupNote').hidden = !setup;
@@ -971,7 +1011,7 @@ function buildModes() {
   $('#modeCards').onclick = (e) => { const row = e.target.closest('.mode-row'); if (row) pick(row); };
   $('#modeCards').onkeydown = (e) => { const row = e.target.closest('.mode-row'); if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(row); } };
   const opts = (sel) => `<option value="255" ${sel === MODE_NONE ? 'selected' : ''}>Nothing (use the default)</option>` +
-    MODES.map((m) => `<option value="${m.id}" ${sel === m.id ? 'selected' : ''}>${m.name}</option>`).join('');
+    availableModes().map((m) => `<option value="${m.id}" ${sel === m.id ? 'selected' : ''}>${m.name}</option>`).join('');
   $('#bootTable').innerHTML = [0, 1, 2, 3, 4].map((i) => `<div class="fret-row" style="--c:${FRET_COLORS[i]}"><span class="fret-key"></span><label for="boot${i}">${funcName(i)}</label>
       <select id="boot${i}" data-fret="${i}">${opts(c.bootModes[i])}</select></div>`).join('');
   $('#bootTable').onchange = (e) => { c.bootModes[+e.target.dataset.fret] = +e.target.value; buildHostPort(); };
@@ -983,6 +1023,9 @@ function buildModes() {
   $('#xiType').onchange = (e) => { c.xinputType = +e.target.value; };
   $('#starLeft').checked = !!c.starDpadLeft;
   $('#starLeft').onchange = (e) => { c.starDpadLeft = e.target.checked; };
+  $('#rxRow').hidden = (c.cfgVersion ?? 0) < 5 || !(state.info.major > 0 || state.info.minor >= 30);
+  $('#xiRx').checked = !(c.xinputOpts & 1);
+  $('#xiRx').onchange = (e) => { c.xinputOpts = (c.xinputOpts & ~1) | (e.target.checked ? 0 : 1); };
 
   // keyboard bindings
   const keyOpts = (sel) => Object.entries(KEYS).sort((x, y) => (+x[0] === 0 ? -1 : +y[0] === 0 ? 1 : 0))
@@ -1009,7 +1052,7 @@ function buildHostPort() {
   const c = state.cfg;
   if (c.hostPin === undefined) c.hostPin = PIN_NONE;
   const own = new Set(hostPins());
-  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...accelPins(c)].filter((p) => p !== PIN_NONE && !own.has(p)));
+  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...accelPins(c), c.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE && !own.has(p)));
   const free = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !taken.has(p) && !taken.has(p + 1));
   const sel = $('#hostPin');
   sel.innerHTML = '<option value="255">Off (no host port)</option>' +

@@ -5,6 +5,7 @@
 #include "rgb.h"
 #include "host/usb_host.h"
 #include "accel.h"
+#include "rumble.h"
 
 // ---- detection grade pin state (fixed debounce, used for pin discovery) ----
 #define DETECT_DEBOUNCE_US 3000
@@ -73,7 +74,7 @@ static inline bool deb_step(deb_t *d, bool raw, uint32_t now, uint32_t lockout, 
 
 static bool raw_for_slot(uint32_t all, int s) {
     uint8_t pin = (s == SLOT_TILT) ? g_cfg.tilt_pin : g_cfg.pins[s];
-    if (pin >= NUM_DIGITAL_PINS || accel_pin(pin)) return false;
+    if (pin >= NUM_DIGITAL_PINS || accel_pin(pin) || rumble_pin_active(pin)) return false;
     return !((all >> pin) & 1);       // active low
 }
 
@@ -86,7 +87,7 @@ void input_poll(void) {
 
     // detection grade
     for (int p = 0; p < NUM_DIGITAL_PINS; p++) {
-        if (rgb_active_pin(p) || usb_host_pin(p) || accel_pin(p)) { level[p] = 1; differing[p] = false; continue; }   // LED / USB host lines, not buttons
+        if (rgb_active_pin(p) || usb_host_pin(p) || accel_pin(p) || rumble_pin_active(p)) { level[p] = 1; differing[p] = false; continue; }   // LED / USB host lines, not buttons
         uint8_t raw = (all >> p) & 1;
         if (raw != level[p]) {
             if (!differing[p]) { differing[p] = true; since[p] = now; }

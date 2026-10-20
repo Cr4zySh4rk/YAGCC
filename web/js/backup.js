@@ -9,12 +9,14 @@ export const SECTIONS = [
     keys: ['pins', 'whammyCh', 'whammyInvert', 'whammyMin', 'whammyMax', 'tiltPin', 'tiltEnabled', 'btEnabled', 'hostPin'] },
   { id: 'tilt', name: 'Tilt sensors', desc: 'Analog tilt sensors, accelerometer pins, calibration and filters',
     keys: ['atilt', 'accelSda', 'accelScl', 'accelGate', 'accelMedian', 'accelLowpass'] },
+  { id: 'rumble', name: 'Rumble', desc: 'Rumble motor pin, strength and what makes it buzz',
+    keys: ['rumblePin', 'rumbleFlags', 'rumbleStrength'] },
   { id: 'tuning', name: 'Tuning', desc: 'Debounce, shared strum lockout, whammy smoothing and dead zone',
     keys: ['debounceMode', 'debounce100us', 'combinedStrum', 'whammySmooth', 'whammyDeadzone'] },
   { id: 'lights', name: 'Lights', desc: 'LED type and pins, colours, effect, brightness, LED order',
     keys: ['rgbEnabled', 'rgbBootFlash', 'rgbPin', 'rgbBrightness', 'rgbEffect', 'rgbSpeed', 'ledMap', 'colors', 'ledType', 'ledOrder', 'ledClkPin', 'rgbStarPower'] },
   { id: 'modes', name: 'Modes', desc: 'Default mode, hold-a-fret modes, XInput type, keyboard bindings',
-    keys: ['usbMode', 'bootModes', 'xinputType', 'starDpadLeft', 'keys'] },
+    keys: ['usbMode', 'bootModes', 'xinputType', 'starDpadLeft', 'xinputOpts', 'keys'] },
 ];
 
 const isPin = (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < NUM_DIGITAL_PINS);
@@ -30,6 +32,7 @@ const CHECK = {
   whammyDeadzone: (v) => Number.isInteger(v) && v >= 0 && v <= 30,
   rgbSpeed: (v) => Number.isInteger(v) && v >= 1 && v <= 10,
   usbMode: (v) => MODES.some((m) => m.id === v),
+  xinputOpts: (v) => v === 0 || v === 1,
   bootModes: (v) => Array.isArray(v) && v.length === 5 && v.every((m) => m === 255 || MODES.some((x) => x.id === m)),
   ledMap: (v) => Array.isArray(v) && v.length === 5 && [...v].sort().join() === '0,1,2,3,4',
   colors: (v) => Array.isArray(v) && v.length === 5 && v.every((c) => /^#[0-9a-f]{6}$/i.test(c)),
@@ -37,7 +40,9 @@ const CHECK = {
   atilt: (v) => Array.isArray(v) && v.length === 2 && v.every((s) => s && (s.src === PIN_NONE || (Number.isInteger(s.src) && s.src >= 0 && s.src < 9)) &&
     (s.target === 0 || s.target === 1) && typeof s.invert === 'boolean' && Number.isInteger(s.threshold) && s.threshold >= 1 && s.threshold <= 99 &&
     [s.min, s.max].every((x) => Number.isInteger(x) && x >= 0 && x <= 4095)),
-  accelSda: isPin, accelScl: isPin,
+  accelSda: isPin, accelScl: isPin, rumblePin: isPin,
+  rumbleFlags: (v) => Number.isInteger(v) && v >= 0 && v <= 7,
+  rumbleStrength: (v) => Number.isInteger(v) && v >= 10 && v <= 100,
   accelGate: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
   accelMedian: (v) => Number.isInteger(v) && v >= 0 && v <= 9,
   accelLowpass: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
@@ -48,8 +53,8 @@ export const LABELS = {
   debounceMode: 'debounce type', debounce100us: 'debounce time', combinedStrum: 'shared strum lockout', whammySmooth: 'whammy smoothing', whammyDeadzone: 'whammy dead zone',
   rgbEnabled: 'LEDs on/off', rgbBootFlash: 'mode flash', rgbPin: 'LED data pin', rgbBrightness: 'brightness', rgbEffect: 'effect', rgbSpeed: 'effect speed',
   ledMap: 'LED order', colors: 'fret colours', ledType: 'LED type', ledOrder: 'colour order', ledClkPin: 'LED clock pin', rgbStarPower: 'star power glow',
-  atilt: 'tilt sensors', accelSda: 'accelerometer SDA pin', accelScl: 'accelerometer SCL pin', accelGate: 'gravity gate', accelMedian: 'median filter', accelLowpass: 'low pass filter',
-  usbMode: 'default mode', bootModes: 'hold-a-fret modes', xinputType: 'XInput guitar type', starDpadLeft: 'star power on D-pad left', keys: 'keyboard bindings',
+  atilt: 'tilt sensors', rumblePin: 'rumble motor pin', rumbleFlags: 'rumble triggers', rumbleStrength: 'rumble strength', accelSda: 'accelerometer SDA pin', accelScl: 'accelerometer SCL pin', accelGate: 'gravity gate', accelMedian: 'median filter', accelLowpass: 'low pass filter',
+  usbMode: 'default mode', bootModes: 'hold-a-fret modes', xinputType: 'XInput guitar type', starDpadLeft: 'star power on D-pad left', xinputOpts: 'Steam-friendly XInput', keys: 'keyboard bindings',
 };
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));
 

@@ -56,6 +56,7 @@ export class YaccDevice extends EventTarget {
   async setConfig(cfg) { await this._out(VREQ.SETCFG, 0, serializeConfig(cfg)); }
   async save() { await this._out(VREQ.SAVE); }
   async defaults() { await this._out(VREQ.DEFAULTS); }
+  async rumbleTest(ms = 400) { await this._out(VREQ.RUMBLE, ms); }
   async ledTest(i) { await this._out(VREQ.LEDTEST, i < 0 ? 0xffff : i); }
   async reboot(bootsel = false) { await this._out(VREQ.REBOOT, bootsel ? 1 : 0); }
 

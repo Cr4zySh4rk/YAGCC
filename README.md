@@ -21,7 +21,9 @@ Flash the board, plug it in, and the web app walks you through mapping every but
 ## Features at a glance
 
 * **Any-pin button mapping**: press each fret twice and the configurator finds its pin, with a live 3D guitar that mirrors the real one.
-* **Many controller modes**: Xbox 360 (XInput), PS3 Guitar Hero and Rock Band, Wii Rock Band, Nintendo Switch, generic HID, keyboard (Fortnite Festival), original Xbox, and PS4 / PS5 and Xbox One / Series with console authentication passed through to a licensed controller *(experimental)*. Pick a mode by holding a fret at plug-in.
+* **Auto mode**: plug into anything and the guitar works out whether it's on Windows, macOS, Linux, a PS2, PS3, PS4, PS5, Xbox 360, Xbox One, Wii or Switch (Santroller's console detection) and becomes the right controller.
+* **Many controller modes**: Xbox 360 (XInput), PS3 Guitar Hero and Rock Band, Wii Rock Band, Nintendo Switch, generic HID, keyboard (Fortnite Festival), original Xbox, and PS4, PS5 and Xbox One / Series with console authentication passed through to a licensed controller or dongle *(experimental)*. Pick a mode by holding a fret at plug-in.
+* **Rumble**: a vibration motor that follows game rumble and can buzz on star power and missed notes.
 * **Bluetooth LE** on the Pico W / Pico 2 W, presenting the same controller as the USB mode, with automatic reconnects.
 * **Whammy calibration**, smoothing, dead zone and per-input debounce, all live.
 * **Tilt sensors**: a digital tilt switch, up to two analog tilt sensors and an I²C accelerometer (LIS3DH, SC7A20, LIS3DSH, ADXL345, MPU-6050, detected automatically), each working the whammy or star power, all at the same time as the whammy bar and star power button.
@@ -48,6 +50,7 @@ An earlier 5-minute walkthrough with voice-over (from v0.4; the setup flow is th
 
 | Hold at plug-in (default) | Mode | What it is | Best for |
 |---|---|---|---|
+| *(nothing: the default for new setups)* | **Auto** | Detects the host, then restarts as the matching mode below and stays that way until unplugged (firmware 0.30+) | Anything: see *Auto mode* below |
 | Green | **XInput** | Xbox 360 guitar (Guitar Hero or Rock Band type, selectable). Answers Xbox 360 security (XSM3). On a host with no XInput driver (macOS) it switches itself to the HID gamepad | Windows / Linux / macOS, Clone Hero / YARG / Fortnite Festival (PC), Xbox 360 *(experimental)* |
 | Red | **PS3 Rock Band** | Rock Band guitar `12BA:0200` (Santroller report layout: tilt → R1, star power → select) | Rock Band on PS3 / RPCS3, YARG |
 | Yellow | **HID gamepad** | Generic gamepad (16 buttons, hat, 4 axes) | macOS, Linux, Android, emulators |
@@ -57,6 +60,7 @@ An earlier 5-minute walkthrough with voice-over (from v0.4; the setup flow is th
 | *(assign on Modes tab)* | **Wii Rock Band** | Harmonix Wii guitar `1BAD:0004` | Rock Band on Wii / Dolphin |
 | *(assign on Modes tab)* | **OG Xbox** | Original Xbox controller (XID) | Guitar Hero II / III on original Xbox *(experimental)* |
 | *(assign on Modes tab)* | **PS4 / PS5 guitar** | Rock Band 4 PS4 guitar (`1532:0401`); console authentication is passed through to a controller on the USB host port | Rock Band 4 on PS4 / PS5 *(experimental, untested on a console)* |
+| *(assign on Modes tab)* | **PS5 guitar** | Third-party PS5 Rock Band guitar; the console's security check and the signing of every input report are done by a Besavior **P5General** dongle on the USB host port (Santroller's approach) | PS5 games *(experimental, untested on a console)* |
 | *(assign on Modes tab)* | **Xbox One / Series guitar** | Rock Band 4 Stratocaster over GIP (`0738:02EA`); authentication passed through to a controller on the USB host port | Rock Band 4 on Xbox One / Series *(experimental, untested on a console)* |
 | Plus | **Setup mode** | XInput + web config for this boot only, nothing saved | |
 | Star + Plus | **Bootloader** | Jumps to UF2 mode so you can reflash without touching BOOTSEL | |
@@ -67,6 +71,25 @@ The mode picked by holding a fret is remembered (like GP2040-CE), and every fret
 **Fortnite Festival.** On a Switch, hold **orange** while plugging in (Switch mode). On PS4, PS5, Xbox and PC, assign keyboard mode to a fret on the Modes tab and hold that fret while plugging in; in Fortnite turn on *Pro* input for guitar and choose the keyboard layout that matches the bindings shown on the Modes tab (Pro guitar is the default; a Lead-lane preset — D F J K L, arrows, Space — is one click away, and every key is rebindable). On PC you can also use XInput mode with *Star power → D-pad left* switched on.
 
 **XInput options.** The guitar can report as a *Guitar Hero* (subtype 7) or *Rock Band* (subtype 6) guitar. Whammy sits on right stick X and tilt on right stick Y, both resting at the bottom like real guitars. When a game sends star power / overdrive state over the rumble channel, the fret LEDs can glow cyan (*Star power glow* on the Lights tab).
+
+**Auto mode.** The guitar starts as a HID gamepad that also carries the PS3 / PS4 feature reports, an Xbox 360 security interface and the Microsoft OS descriptors, and watches how the host enumerates it (Santroller's detection, `firmware/src/auto_detect.c`):
+
+| Host does | Host is | Becomes |
+|---|---|---|
+| reads the Microsoft OS descriptors and the strings | Windows | XInput (as a wireless receiver slot, for Steam) |
+| reads the Microsoft OS descriptors, never a string | Xbox One / Series | Xbox One guitar with an auth controller on the host port, otherwise the Fortnite Festival keyboard |
+| starts the Xbox 360 security handshake | Xbox 360 | XInput |
+| asks for a PS3 feature report (or RPCS3's) | PS3 / RPCS3 | PS3 Guitar Hero or Rock Band guitar (the XInput guitar type picks which) |
+| asks for feature report 3 with 48 bytes | PS4 / PS5 | PS4 guitar (PS5 guitar if the auth dongle is a P5General) with an auth controller on the host port, otherwise the PS3 Rock Band guitar Rock Band 4 takes as a legacy instrument |
+| clears both endpoints, or reads only the report descriptor | Switch / Switch 2 | Switch |
+| asks for the XID descriptor | original Xbox | OG Xbox |
+| configures it, then goes quiet | Wii / Wii U | Wii Rock Band guitar |
+| reads descriptors but never configures it | PS2 | PS3 guitar (what PS2 games and OPL's PADEMU take) |
+| reads strings and uses it as it is | macOS, Linux, Android | stays the HID gamepad |
+
+It decides within a few seconds, restarts in that mode, and goes back to Auto when unplugged. Windows caches the Microsoft OS descriptors, so on a PC that has seen the guitar before it may stay the HID gamepad (Clone Hero and YARG take both); pick XInput explicitly if a game needs it.
+
+**Steam on Windows (firmware 0.30+).** Steam's controller driver chokes on a wired XInput pad that shares its USB device with another interface (the configurator's). Like Santroller, the guitar presents itself to Windows as one controller slot of an **Xbox 360 wireless receiver** instead, with its own Microsoft OS descriptor entry so Windows binds the receiver driver. A real Xbox 360 never reads those descriptors and still gets the wired pad. *Steam-friendly on Windows* on the Modes page turns this off.
 
 **XInput on a Mac.** macOS has no driver for Xbox 360 controllers, so in XInput mode nothing would read the guitar. If no XInput driver has used it within 2.5 seconds of plugging in (and the host isn't Windows), the guitar re-connects as the **HID gamepad**, which Clone Hero and YARG pick up as usual; the configurator shows *XInput → HID*. The saved mode stays XInput, and the next plug-in starts as XInput again, so the same guitar works on Windows, Linux and macOS without changing modes.
 
@@ -99,6 +122,13 @@ See the **Compatibility** page in the web app for a game-by-game / console-by-co
 * Tilt switch: any of GP0–GP22 to GND (a mercury ball switch is fine).
 * Analog tilt sensor: output to a free one of GP26–GP28, powered from 3V3(OUT) and GND, like the whammy pot.
 * Accelerometer module (I²C): SDA to an even GPIO and SCL to the next one (GP4 / GP5, GP0 / GP1, …), VCC to 3V3(OUT), GND to GND.
+
+### Rumble
+
+Tune page, firmware 0.30+. A small vibration motor (coin / ERM) on any free GPIO, switched by an NPN transistor (base through ~1 kΩ) or a logic-level MOSFET, with a flyback diode across the motor; never drive it straight from the pin. The pin runs 20 kHz PWM, scaled by a strength setting. It can:
+
+* follow **game rumble**: XInput (wired and receiver), PS4 and PS5 output reports and original Xbox. On a guitar the XInput rumble channel also carries Clone Hero / YARG stage kit and star power messages (Santroller's convention); those are recognised and don't make it buzz;
+* **buzz when star power starts** and **tap on a missed note**, in games that report them.
 
 ### Tilt sensors
 

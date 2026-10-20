@@ -5,6 +5,7 @@
 #include "pio_usb.h"
 #include "usb_host.h"
 #include "ps4_auth.h"
+#include "ps5_auth.h"
 #include "xbone.h"
 #include "xinput_host.h"
 
@@ -34,6 +35,7 @@ bool usb_host_start(uint8_t dp_pin) {
 void usb_host_task(void) {
     if (running) tuh_task();
     ps4_auth_task();
+    ps5_auth_task();
 }
 
 // ---------------------------------------------------------------- class driver for Xbox One controllers
@@ -51,20 +53,23 @@ void tuh_xinput_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t c
 
 // ---------------------------------------------------------------- HID (DualShock 4 / PS4 auth dongles)
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *desc_report, uint16_t desc_len) {
-    ps4_host_mount(dev_addr, instance, desc_report, desc_len);
+    if (ps5_host_is_dongle(dev_addr)) ps5_host_mount(dev_addr, instance);   // P5General (PS5 mode)
+    else ps4_host_mount(dev_addr, instance, desc_report, desc_len);
     tuh_hid_receive_report(dev_addr, instance);
 }
-void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) { (void)instance; ps4_host_unmount(dev_addr); }
+void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) { (void)instance; ps4_host_unmount(dev_addr); ps5_host_unmount(dev_addr); }
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *report, uint16_t len) {
-    (void)report; (void)len;
-    tuh_hid_receive_report(dev_addr, instance);   // input reports are not used, just keep the pipe drained
+    ps5_host_report(dev_addr, instance, report, len);   // the P5General's signed copies; other input is just drained
+    tuh_hid_receive_report(dev_addr, instance);
 }
 void tuh_hid_set_report_complete_cb(uint8_t dev_addr, uint8_t idx, uint8_t report_id, uint8_t report_type, uint16_t len) {
     (void)report_type;
     if (len) ps4_host_set_report_complete(dev_addr, idx, report_id, len);
+    ps5_host_set_report_complete(dev_addr, idx, report_id, len);
 }
 void tuh_hid_get_report_complete_cb(uint8_t dev_addr, uint8_t idx, uint8_t report_id, uint8_t report_type, uint16_t len) {
     (void)report_type;
     if (len) ps4_host_get_report_complete(dev_addr, idx, report_id, len);
+    ps5_host_get_report_complete(dev_addr, idx, report_id, len);
 }
 }

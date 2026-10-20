@@ -30,7 +30,7 @@ endif()
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 29)
+set(YACC_VERSION_MINOR 30)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")
@@ -65,9 +65,12 @@ add_executable(yacc
   src/bt.c
   src/rgb.c
   src/accel.c
+  src/auto_detect.c
+  src/rumble.c
   # console authentication passthrough over a PIO USB host port (ported from GP2040-CE, MIT)
   src/host/usb_host.cpp
   src/host/ps4_auth.cpp
+  src/host/ps5_auth.cpp
   src/host/xbone.cpp
   src/host/xgip_protocol.cpp
   src/host/xinput_host.cpp
@@ -104,6 +107,7 @@ target_link_libraries(yacc
   hardware_pio
   hardware_clocks
   hardware_i2c
+  hardware_pwm
   tinyusb_device
   tinyusb_host
   tinyusb_pico_pio_usb

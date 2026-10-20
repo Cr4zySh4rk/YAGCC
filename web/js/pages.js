@@ -14,9 +14,11 @@ export const STATUS = {
 };
 
 export const COMPAT = [
+  { group: 'pc', console: 'Any console or computer', game: 'Whatever it is plugged into', mode: 'Auto (detect the console)', how: 'Direct USB', status: 'plug',
+    notes: 'Firmware 0.30+, the default for new setups. Finds out what it is plugged into, the way Santroller does, and restarts as the right controller: XInput on Windows and Xbox 360, PS3 guitar on PS3 and PS2, PS3 Rock Band guitar for Rock Band 4 on PS4 / PS5 (or PS4 / PS5 mode with an auth controller on the host port), Switch, Wii Rock Band, original Xbox, keyboard on Xbox One without an auth controller, HID gamepad on macOS / Linux / Android.' },
   { group: 'pc', console: 'PC (Windows)', game: 'Clone Hero, YARG, Fortnite Festival, RPCS3 / PCSX2 / Dolphin',
     mode: 'XInput (Guitar Hero or Rock Band type), HID, PS3 modes', how: 'Direct USB', status: 'plug',
-    notes: 'For Fortnite Festival with XInput, turn on "Star power also presses D-pad left" on the Modes page, or use keyboard mode.' },
+    notes: 'For Fortnite Festival with XInput, turn on "Star power also presses D-pad left" on the Modes page, or use keyboard mode. Firmware 0.30+ shows up on Windows as one controller of an Xbox 360 wireless receiver, which Steam handles (switch off on the Modes page if a game misbehaves).' },
   { group: 'pc', console: 'macOS / Linux', game: 'Clone Hero, YARG, emulators',
     mode: 'XInput, HID gamepad or PS3 modes', how: 'Direct USB', status: 'plug',
     notes: 'macOS has no XInput driver: in XInput mode the guitar switches itself to the HID gamepad a few seconds after plugging in (firmware 0.28+).' },
@@ -39,7 +41,11 @@ export const COMPAT = [
   { group: 'ps', console: 'PlayStation 4 / 5', game: 'Rock Band 4', mode: 'PS3 Rock Band', how: 'Direct USB', status: 'legacy', notes: 'Rock Band 4 accepts PS3 Rock Band guitars as legacy instruments, so no authentication is needed.' },
   { group: 'ps', console: 'PlayStation 4 / 5', game: 'Fortnite Festival (Pro Lead / Pro Bass)', mode: 'Keyboard (Fortnite Festival bindings)', how: 'Direct USB', status: 'noauth', notes: 'Assign keyboard mode to a fret on the Modes page.' },
   { group: 'ps', console: 'PlayStation 4 / 5', game: 'Rock Band 4 (native PS4 guitar)', mode: 'PS4 / PS5 guitar', how: 'DualShock 4 or PS4 auth dongle on the guitar\'s USB host port', status: 'exp',
-    notes: 'Shows up as a PS4 Rock Band 4 guitar; the console\'s security check is passed to the controller. Not yet tested on a console. PS5 needs a PS4 controller, not a DualSense.' },
+    notes: 'Shows up as a PS4 Rock Band 4 guitar; the console\'s security check is passed to the controller. Not yet tested on a console.' },
+  { group: 'ps', console: 'PlayStation 5', game: 'PS5 games', mode: 'PS5 guitar', how: 'Besavior P5General dongle on the guitar\'s USB host port', status: 'exp',
+    notes: 'Firmware 0.30+. The dongle answers the console\'s security check and signs every input report, as with Santroller. Not yet tested on a console. For Rock Band 4 alone, PS3 Rock Band mode needs nothing extra.' },
+  { group: 'ps', console: 'PlayStation 4 (jailbroken)', game: 'Rock Band 4, Guitar Hero Live', mode: 'PS4 / PS5 guitar', how: 'Direct USB with the GoldHEN plugin OrbisInstrumentalizer', status: 'setup',
+    notes: 'The plugin removes the instrument and authentication checks, so no controller is needed on the host port.' },
   { group: 'nin', console: 'Wii / Wii U', game: 'Rock Band 1, 2, 3, The Beatles: Rock Band', mode: 'Wii Rock Band', how: 'Direct USB', status: 'plug', notes: 'Set "Hold at plug-in" for a fret to Wii Rock Band on the Modes page.' },
   { group: 'nin', console: 'Wii / Wii U', game: 'Guitar Hero, Band Hero', mode: 'Wii Remote emulation', how: 'Bluetooth (genuine Pico W, or a USB Bluetooth dongle)', status: 'planned',
     notes: 'Clone "Pico W" boards with an ESP8285 have no Bluetooth.' },

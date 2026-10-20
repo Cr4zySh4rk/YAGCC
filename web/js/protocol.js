@@ -1,10 +1,10 @@
 // YAGCC wire protocol (the on-wire magic stays 'YACC' for compatibility) - mirrors firmware/src/config.h and usb_common.h
 export const VID = 0x1209;
-export const PIDS = [0x0001, 0x0002, 0x0003];
+export const PIDS = [0x0001, 0x0002, 0x0003, 0x0004];   // 4 = Auto mode before the host is known
 
 export const VREQ = {
   INFO: 0x30, STATUS: 0x31, GETCFG: 0x32, SETCFG: 0x33,
-  SAVE: 0x34, DEFAULTS: 0x35, REBOOT: 0x36, SETMODE: 0x37, LEDTEST: 0x38, BTLOG: 0x39, BTLOGFL: 0x3A,
+  SAVE: 0x34, DEFAULTS: 0x35, REBOOT: 0x36, SETMODE: 0x37, LEDTEST: 0x38, BTLOG: 0x39, BTLOGFL: 0x3A, RUMBLE: 0x3B,
 };
 
 export const FUNCS = ['green', 'red', 'yellow', 'blue', 'orange', 'strumUp', 'strumDown', 'star', 'plus'];
@@ -19,6 +19,8 @@ export const MODE_NONE = 0xff;
 
 // order = how they are listed in the UI; id = firmware MODE_* value
 export const MODES = [
+  { id: 10, name: 'Auto (detect the console)', short: 'Auto', config: true, min: 30,
+    desc: 'Works out what it is plugged into and becomes the right controller: XInput on Windows and Xbox 360, PS3 guitar on PS3 and PS2, the PS3 Rock Band guitar Rock Band 4 takes on PS4 / PS5 (or PS4 mode with an auth controller on the host port), Switch, Wii Rock Band, original Xbox, Xbox One (keyboard for Fortnite Festival without an auth controller), and the HID gamepad on macOS, Linux and Android. Same detection as Santroller. Firmware 0.30+.' },
   { id: 0, name: 'XInput (Xbox 360)', short: 'XInput', config: true,
     desc: 'Xbox 360 guitar: Guitar Hero or Rock Band type. Plug-and-play on Windows (Clone Hero, YARG, Fortnite Festival) and on a real Xbox 360 — the console\'s security check is answered by the firmware. macOS has no XInput driver: use HID mode on a Mac.' },
   { id: 3, name: 'PS3 Rock Band', short: 'PS3 RB', config: false,
@@ -37,6 +39,8 @@ export const MODES = [
     desc: 'Original Xbox controller (XID). Needs a USB-to-Xbox-port adapter cable.' },
   { id: 8, name: 'PS4 / PS5 guitar (experimental)', short: 'PS4', config: false, host: true,
     desc: 'Rock Band 4 guitar for PS4 and PS5. The console\'s security check is passed through to a licensed PS4 controller or auth dongle plugged into the guitar\'s USB host port. Experimental: not yet tested on a console.' },
+  { id: 11, name: 'PS5 guitar (experimental)', short: 'PS5', config: false, host: true, min: 30,
+    desc: 'Rock Band 4 guitar for PS5 games. The console\'s security check and the signing of every input report are done by a Besavior P5General dongle plugged into the guitar\'s USB host port (as Santroller does). For Rock Band 4 alone, PS3 Rock Band mode works on a PS5 with nothing extra. Experimental: not yet tested on a console.' },
   { id: 9, name: 'Xbox One / Series guitar (experimental)', short: 'Xbox One', config: false, host: true,
     desc: 'Rock Band 4 guitar for Xbox One and Xbox Series. The console\'s security check is passed through to a licensed Xbox One / Series controller plugged into the guitar\'s USB host port. Experimental: not yet tested on a console.' },
 ];
@@ -175,7 +179,8 @@ export const ACCEL_TYPES = ['none found', 'LIS3DH', 'ADXL345', 'MPU-6050', 'SC7A
 export function defaultTiltSensors() {
   return {
     atilt: [0, 1].map((i) => ({ src: PIN_NONE, target: i ? 1 : 0, invert: false, threshold: 50, min: 0, max: 4095 })),
-    accelSda: PIN_NONE, accelScl: PIN_NONE, accelGate: 0, accelMedian: 3, accelLowpass: 20,
+    accelSda: PIN_NONE, accelScl: PIN_NONE, accelGate: 0, accelMedian: 3, accelLowpass: 20, xinputOpts: 0,
+    rumblePin: PIN_NONE, rumbleFlags: 3, rumbleStrength: 80,
   };
 }
 // I2C pins: SDA on an even GPIO, SCL on the odd one of the same I2C block (GP4/GP5, GP2/GP3, ...)
@@ -239,6 +244,8 @@ export function parseConfig(dv) {
         return { src: dv.getUint8(o), target: dv.getUint8(o + 1), invert: !!dv.getUint8(o + 2), threshold: dv.getUint8(o + 3), min: dv.getUint16(o + 4, true), max: dv.getUint16(o + 6, true) };
       }),
       accelSda: dv.getUint8(108), accelScl: dv.getUint8(109), accelGate: dv.getUint8(110), accelMedian: dv.getUint8(111), accelLowpass: dv.getUint8(112),
+      xinputOpts: dv.getUint8(113),
+      rumblePin: dv.getUint8(114), rumbleFlags: dv.getUint8(115), rumbleStrength: dv.getUint8(116) || 80,
     } : defaultTiltSensors()),
   };
 }
@@ -292,6 +299,9 @@ export function serializeConfig(c) {
   });
   dv.setUint8(108, c.accelSda ?? PIN_NONE); dv.setUint8(109, c.accelScl ?? PIN_NONE);
   dv.setUint8(110, Math.min(100, c.accelGate | 0)); dv.setUint8(111, Math.min(9, c.accelMedian | 0)); dv.setUint8(112, Math.min(100, c.accelLowpass | 0));
+  dv.setUint8(113, (c.xinputOpts | 0) & 1);
+  dv.setUint8(114, c.rumblePin ?? PIN_NONE); dv.setUint8(115, (c.rumbleFlags ?? 3) & 7);
+  dv.setUint8(116, Math.max(10, Math.min(100, c.rumbleStrength ?? 80)));
   dv.setUint32(124, crc32(new Uint8Array(buf, 0, 124)), true);
   return buf;
 }
@@ -365,6 +375,7 @@ export function parseInfo(dv) {
     mode: dv.byteLength > 11 ? dv.getUint8(11) : 0,
     setupSession: dv.byteLength > 12 ? !!(dv.getUint8(12) & 1) : false,   // firmware 0.6+: one-off setup boot
     xinputFallback: dv.byteLength > 12 ? !!(dv.getUint8(12) & 2) : false, // firmware 0.28+: XInput running as HID (host has no XInput driver)
+    autoHost: dv.byteLength > 13 && (dv.getUint8(12) & 4) ? dv.getUint8(13) : 0,   // firmware 0.30+: host Auto mode found (HOST_*)
   };
 }
 

@@ -14,6 +14,9 @@
 #include "bt.h"
 #include "rgb.h"
 #include "accel.h"
+#include "rumble.h"
+#include "auto_detect.h"
+#include "host/ps5_auth.h"
 #include "host/usb_host.h"
 #include "host/xbone.h"
 
@@ -30,6 +33,7 @@ static volatile bool setup_reboot;
 // Asked over HID (PS3 mode has no WebUSB interface): restart once in setup mode (XInput + web config)
 #define SETUP_MAGIC 0x59414743u   // "YAGC"
 #define MODESWITCH_MAGIC 0x594D4F44u   // "YMOD": rebooted by a Bluetooth mode change, skip the plug-in shortcuts
+#define AUTO_MAGIC 0x59415554u         // "YAUT": Auto mode found the host; scratch[1] = mode | host << 8
 void usb_request_setup_reboot(void) {
     setup_reboot = true;
     reboot_at = time_us_64() + 150000;
@@ -59,6 +63,7 @@ static uint16_t build_status(void) {
 
 static bool g_setup_session;
 static bool g_xinput_fallback;    // XInput mode, but this host has no XInput driver (macOS): running as the HID gamepad
+static uint8_t g_auto_host;       // HOST_* Auto mode found (this boot runs the mode picked for it), 0 = not from Auto
 static bool g_bt_pair_at_boot;
 static bool g_bt_mode_switched;   // this boot follows a Star + fret mode change over Bluetooth   // Star power held at power-on: pair a new Bluetooth host   // this boot is a one-off setup session (XInput + web config), not the saved mode
 
@@ -73,7 +78,8 @@ static uint16_t build_info(void) {
     *p++ = NUM_ADC_CH;
     *p++ = NUM_FUNCS;
     *p++ = g_usb_mode;                  // mode this boot is running in
-    *p++ = (g_setup_session ? 1 : 0) | (g_xinput_fallback ? 2 : 0);   // flags: 1 = setup session, 2 = XInput running as HID (host has no XInput driver)
+    *p++ = (g_setup_session ? 1 : 0) | (g_xinput_fallback ? 2 : 0) | (g_auto_host ? 4 : 0);   // flags: 1 = setup session, 2 = XInput running as HID (host has no XInput driver), 4 = picked by Auto mode
+    *p++ = g_auto_host;                 // firmware 0.30+: the host Auto mode found (HOST_*)
     return (uint16_t)(p - tx_buf);
 }
 
@@ -91,8 +97,8 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             // a configurator from before 0.29 sends the 96 byte layout: keep this guitar's tilt sensor settings
             yacc_config_t up;
             if (config_from_v4((const uint8_t *)&cfg_rx, &up)) {
-                memcpy(up.atilt, g_cfg.atilt, sizeof(up.atilt));
-                up.accel_sda = g_cfg.accel_sda; up.accel_scl = g_cfg.accel_scl;
+                memcpy((uint8_t *)&up + YACC_CFG_V4_SIZE - 4, (const uint8_t *)&g_cfg + YACC_CFG_V4_SIZE - 4,
+                       sizeof(up) - YACC_CFG_V4_SIZE);   // every field past the v4 layout (offset 92 up to the crc)
                 config_seal(&up);
                 cfg_rx = up;
             }
@@ -117,6 +123,7 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             return false;
         case VREQ_MS_OS:
             g_host_windows = true;                    // only Windows reads the MS OS 2.0 descriptor set
+            if (g_usb_mode == MODE_AUTO) auto_mark_ms_os();
             if (req->wIndex == 7) {
                 uint16_t n;
                 const uint8_t *d = yacc_ms_os_desc(&n);
@@ -143,6 +150,9 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             return tud_control_status(rhport, req);
         case VREQ_SETMODE:
             if (req->wValue < NUM_MODES) g_cfg.usb_mode = (uint8_t)req->wValue;
+            return tud_control_status(rhport, req);
+        case VREQ_RUMBLE:
+            rumble_test(req->wValue);
             return tud_control_status(rhport, req);
         case VREQ_LEDTEST:
             rgb_test_led(req->wValue < MAX_LEDS ? (int)req->wValue : -1);
@@ -213,7 +223,11 @@ static volatile bool g_star_power_active;
 static volatile uint8_t g_star_power_fill;
 void usb_game_feedback(uint8_t command, uint8_t param) {
     switch (command) {
-        case 0x09: g_star_power_active = param != 0; break;   // star power / overdrive active
+        case 0x09:                                             // star power / overdrive active
+            if (param && !g_star_power_active) rumble_event(RUMBLE_EV_STAR);
+            g_star_power_active = param != 0;
+            break;
+        case 0x0C: rumble_event(RUMBLE_EV_MISS); break;        // a missed note
         case 0x08: g_star_power_fill = param; break;          // star power meter
         case 0xFF: g_star_power_active = false; break;        // all off
         default: break;
@@ -434,6 +448,35 @@ static uint16_t build_ps4(const pad_t *s, uint8_t *out) {
     return PS4_GUITAR_REPORT_LEN;
 }
 
+// ---- PS5 Rock Band guitar, 64 byte report (Santroller's PS5RockBandGuitar_Data_t). It goes to the P5General,
+// which hands back the copy the console accepts.
+static uint16_t build_ps5(const pad_t *s, uint8_t *out) {
+    memset(out, 0, PS5_REPORT_LEN);
+    out[0] = 0x01;
+    out[1] = out[2] = out[3] = out[4] = 0x80;          // sticks centred
+    uint8_t hat = 0x08;
+    if (s->strum_up && !s->strum_down) hat = 0x00;
+    else if (s->strum_down && !s->strum_up) hat = 0x04;
+    uint8_t b8 = hat;
+    if (s->blue)   b8 |= 0x10;                          // square
+    if (s->green)  b8 |= 0x20;                          // cross
+    if (s->red)    b8 |= 0x40;                          // circle
+    if (s->yellow) b8 |= 0x80;                          // triangle
+    uint8_t b9 = 0;
+    if (s->orange) b9 |= 0x01;                          // L1
+    if (s->star)   b9 |= 0x10;                          // create = overdrive
+    if (s->plus)   b9 |= 0x20;                          // options
+    out[8] = b8;
+    out[9] = b9;
+    out[30] = 0x1A;                                     // as a DualSense
+    out[40] = 0x00;                                     // pickup selector notch
+    out[41] = (uint8_t)(s->whammy >> 7);               // whammy, 0 = rest
+    out[42] = s->tilt ? 0xFF : 0x00;                    // tilt
+    out[43] = (uint8_t)((s->green ? 0x01 : 0) | (s->red ? 0x02 : 0) | (s->yellow ? 0x04 : 0) |
+                        (s->blue ? 0x08 : 0) | (s->orange ? 0x10 : 0));
+    return PS5_REPORT_LEN;
+}
+
 // ---- Xbox One Rock Band 4-style guitar: 32 byte GIP input body (Santroller's XboxOneRockBandGuitar_Data_t)
 static void build_xbone(const pad_t *s, uint8_t *out) {
     memset(out, 0, XBONE_GUITAR_PAYLOAD_LEN);
@@ -456,7 +499,24 @@ static void build_xbone(const pad_t *s, uint8_t *out) {
                        (s->blue ? 0x08 : 0) | (s->orange ? 0x10 : 0));
 }
 
-static bool needs_host(uint8_t mode) { return mode == MODE_PS4 || mode == MODE_XBONE; }
+static bool needs_host(uint8_t mode) { return mode == MODE_PS4 || mode == MODE_PS5 || mode == MODE_XBONE; }
+
+// Auto mode: the mode to run for the host it found
+static uint8_t auto_mode_for(uint8_t host) {
+    bool rb = g_cfg.xinput_type == XI_ROCK_BAND, port = g_cfg.host_dp_pin != PIN_NONE;
+    switch (host) {
+        case HOST_WINDOWS:
+        case HOST_XBOX360: return MODE_XINPUT;
+        case HOST_XBOXONE: return port ? MODE_XBONE : MODE_KEYBOARD;   // no auth controller: Fortnite Festival keys
+        case HOST_PS4:     return port ? MODE_PS4 : MODE_PS3_RB;       // Rock Band 4 takes the PS3 Rock Band guitar
+        case HOST_PS3:
+        case HOST_PS2:     return rb ? MODE_PS3_RB : MODE_PS3_GH;
+        case HOST_SWITCH:  return MODE_SWITCH;
+        case HOST_WII:     return MODE_WII_RB;
+        case HOST_OGXBOX:  return MODE_OGXBOX;
+    }
+    return MODE_NONE;
+}
 
 // ---------------------------------------------------------------- boot-time mode selection
 static void settle_inputs(void) {
@@ -477,6 +537,12 @@ static uint8_t pick_mode(void) {
         watchdog_hw->scratch[0] = 0;
         g_setup_session = true;
         return MODE_XINPUT;
+    }
+    if (watchdog_caused_reboot() && watchdog_hw->scratch[0] == AUTO_MAGIC) {
+        uint32_t v = watchdog_hw->scratch[1];
+        watchdog_hw->scratch[0] = watchdog_hw->scratch[1] = 0;
+        uint8_t m = (uint8_t)(v & 0xFF), h = (uint8_t)((v >> 8) & 0xFF);
+        if (m < NUM_MODES && m != MODE_AUTO && h && h < NUM_HOSTS) { g_auto_host = h; return m; }
     }
     if (watchdog_caused_reboot() && watchdog_hw->scratch[0] == MODESWITCH_MAGIC) {
         watchdog_hw->scratch[0] = 0;          // frets may still be held from the shortcut: use the saved mode
@@ -525,6 +591,8 @@ int main(void) {
     }
     if (bt_ok) bt_init(g_cfg.flags & CFG_FLAG_BT_ENABLED, g_bt_pair_at_boot, g_bt_mode_switched);
     if (g_usb_mode == MODE_XBONE) xbone_init();
+    // Windows found by Auto mode: XInput as a wireless receiver slot, which Steam handles (Santroller)
+    g_xinput_wireless = g_usb_mode == MODE_XINPUT && g_auto_host == HOST_WINDOWS && !(g_cfg.xinput_opts & XOPT_NO_RECEIVER);
     tusb_init();
     if (needs_host(g_usb_mode) && g_cfg.host_dp_pin != PIN_NONE) usb_host_start(g_cfg.host_dp_pin);
     rgb_boot_indicator(g_usb_mode);
@@ -547,12 +615,40 @@ int main(void) {
     // Windows (which reads the MS OS 2.0 descriptors, and may take a while to install the driver the first
     // time), re-enumerate as the HID gamepad, which every OS supports. Unplugging goes back to XInput, so the
     // next host gets XInput first. Not in a setup session.
-    enum { XI_WATCH, XI_SWITCHING, XI_AS_HID, XI_DONE } xi_state = (g_usb_mode == MODE_XINPUT && !g_setup_session) ? XI_WATCH : XI_DONE;
+    enum { XI_WATCH, XI_SWITCHING, XI_AS_HID, XI_RX_SWITCHING, XI_DONE } xi_state = (g_usb_mode == MODE_XINPUT && !g_setup_session) ? XI_WATCH : XI_DONE;
     uint64_t xi_t = 0;
     bool xi_was_mounted = false;
+    // a mode Auto picked lasts until the guitar is unplugged (matters for boards on a battery)
+    bool auto_was_mounted = false;
+    uint64_t auto_lost_at = 0;
 
     while (true) {
         tud_task();
+        if (g_usb_mode == MODE_AUTO && !g_setup_session) {
+            uint8_t host = auto_task(to_ms_since_boot(get_absolute_time()));
+            uint8_t m = host ? auto_mode_for(host) : MODE_NONE;
+            if (m != MODE_NONE) {
+                tud_disconnect();
+                watchdog_hw->scratch[1] = (uint32_t)m | ((uint32_t)host << 8);
+                watchdog_hw->scratch[0] = AUTO_MAGIC;
+                watchdog_reboot(0, 0, 10);
+                while (true) tight_loop_contents();
+            }
+        } else if (g_auto_host && g_usb_mode == MODE_PS4 && ps5_dongle_present()) {
+            // Auto sent a PS4 / PS5 console here, and the auth controller is a P5General: this is a PS5
+            tud_disconnect();
+            watchdog_hw->scratch[1] = (uint32_t)MODE_PS5 | ((uint32_t)g_auto_host << 8);
+            watchdog_hw->scratch[0] = AUTO_MAGIC;
+            watchdog_reboot(0, 0, 10);
+            while (true) tight_loop_contents();
+        } else if (g_auto_host) {
+            uint64_t t = time_us_64();
+            if (tud_mounted()) { auto_was_mounted = true; auto_lost_at = 0; }
+            else if (auto_was_mounted) {
+                if (!auto_lost_at) auto_lost_at = t;
+                else if (t - auto_lost_at > 1500000) { watchdog_reboot(0, 0, 10); while (true) tight_loop_contents(); }   // back to Auto
+            }
+        }
         {
             uint64_t t = time_us_64();
             switch (xi_state) {
@@ -561,6 +657,16 @@ int main(void) {
                     else if (xi_was_mounted) {          // unplugged: forget what the last host was
                         xi_was_mounted = false;
                         g_xinput_driver_seen = g_host_windows = g_config_seen = false;
+                        if (!g_auto_host) g_xinput_wireless = false;   // the next host may be a 360: wired again
+                    }
+                    // Windows (it read the Microsoft OS 2.0 descriptors): come back as a wireless receiver slot,
+                    // which Steam's driver takes (a wired XInput pad sharing its device with the config interface
+                    // makes it choke). A 360 never reads those descriptors, so it keeps the wired pad.
+                    if (tud_mounted() && g_host_windows && !g_xinput_wireless && !(g_cfg.xinput_opts & XOPT_NO_RECEIVER)) {
+                        tud_disconnect();
+                        g_xinput_wireless = true;
+                        xi_state = XI_RX_SWITCHING; xi_t = t; xi_was_mounted = false;
+                        break;
                     }
                     // (the configurator talking over WebUSB says nothing about whether games can see XInput: ignored)
                     if (!tud_mounted() || g_xinput_driver_seen || g_host_windows) { xi_t = 0; break; }
@@ -571,6 +677,9 @@ int main(void) {
                         g_xinput_fallback = true;
                         xi_state = XI_SWITCHING; xi_t = t; xi_was_mounted = false;
                     }
+                    break;
+                case XI_RX_SWITCHING:
+                    if (t - xi_t > 300000) { tud_connect(); xi_state = XI_WATCH; xi_t = 0; }
                     break;
                 case XI_SWITCHING:                      // long enough for the host to see the device leave
                     if (t - xi_t > 300000) { tud_connect(); xi_state = XI_AS_HID; xi_t = t; }
@@ -593,6 +702,8 @@ int main(void) {
         bt_task();
         input_poll();
         accel_task();
+        if (!tud_mounted()) rumble_stop();
+        rumble_task();
         uint64_t now = time_us_64();
         // USB power but no host talking to us for 3 s (a phone charger or power bank charging the battery through
         // the Pico's USB port): tell the LEDs to show the charging sweep. Back to normal the moment a host appears.
@@ -711,9 +822,17 @@ int main(void) {
             case MODE_KEYBOARD: len = build_keyboard(&st, rpt); break;
             case MODE_SWITCH: len = build_switch(&st, rpt); break;
             case MODE_OGXBOX: len = build_ogxbox(&st, rpt); break;
-            case MODE_HID:    len = build_hid(&st, rpt); break;
+            case MODE_HID:
+            case MODE_AUTO:   len = build_hid(&st, rpt); break;
             case MODE_PS4:    len = build_ps4(&st, rpt); break;
+            case MODE_PS5:    len = build_ps5(&st, rpt); break;
             default:          len = build_xinput(&st, rpt); break;
+        }
+        if (g_usb_mode == MODE_PS5) {                   // every report is signed by the dongle: relay continuously
+            static bool ps5_first = true;
+            if (ps5_first) rpt[10] |= 0x01;             // the first one taps PS so the console wakes up
+            if (tud_ready() && ps5_relay_report(rpt, len)) ps5_first = false;
+            continue;
         }
         if (len != last_len || memcmp(rpt, last_report, len) != 0) {
             dirty = true;
@@ -732,7 +851,8 @@ int main(void) {
                 ok = tud_hid_n_ready(0) && tud_hid_n_report(0, r[0], &r[1], (uint16_t)(last_len - 1));
                 if (ok) { ps4_counter = (uint8_t)((ps4_counter + 1) & 0x3F); ps4_first = false; }
             } else {
-                ok = tud_hid_n_ready(0) && tud_hid_n_report(0, 0, last_report, last_len);
+                // Auto mode's descriptor numbers its reports (it carries the PS3 / PS4 feature reports): gamepad = 1
+                ok = tud_hid_n_ready(0) && tud_hid_n_report(0, g_usb_mode == MODE_AUTO ? 1 : 0, last_report, last_len);
             }
             if (ok) {
                 dirty = false;

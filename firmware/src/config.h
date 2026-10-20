@@ -32,6 +32,8 @@ enum {
     MODE_OGXBOX = 7,   // Original Xbox controller (XID) - needs a USB-to-Xbox-port adapter
     MODE_PS4    = 8,   // PS4 Rock Band 4-style guitar; console auth relayed to a DS4 / dongle on the USB host port
     MODE_XBONE  = 9,   // Xbox One Rock Band 4-style guitar; auth relayed to an Xbox One/Series pad on the host port
+    MODE_AUTO   = 10,  // detect the console / computer and restart in its mode (Santroller's detection)
+    MODE_PS5    = 11,  // PS5 Rock Band guitar; auth and report signing by a P5General dongle on the host port
     NUM_MODES
 };
 #define MODE_NONE 0xFF
@@ -67,6 +69,11 @@ enum {
 // Analog tilt sensors (firmware 0.29+): up to two, each on its own analog input, each either adding to the
 // whammy or pressing tilt / star power past a calibrated angle. They work alongside the whammy bar, the
 // star power button and the digital tilt switch.
+#define XOPT_NO_RECEIVER (1u << 0)
+#define RUMBLE_FLAG_GAME (1u << 0)   // follow the rumble games send
+#define RUMBLE_FLAG_STAR (1u << 1)   // buzz when star power / overdrive starts (games that report it)
+#define RUMBLE_FLAG_MISS (1u << 2)   // short buzz on a missed note (games that report it)   // XInput: never present as a wireless receiver slot on Windows
+
 #define NUM_ATILT 2
 enum { ATILT_WHAMMY = 0, ATILT_STAR = 1 };
 // where a tilt sensor reads from: an analog input, or one axis of the I2C accelerometer
@@ -155,7 +162,11 @@ typedef struct __attribute__((packed)) {
     uint8_t  accel_gate;          // 110     drop samples more than this far from 1 g, in hundredths of g (0..100)
     uint8_t  accel_median;        // 111     median of this many samples (0 = off, 3..9)
     uint8_t  accel_lowpass;       // 112     2nd order Butterworth low pass cutoff in Hz (0 = off, 1..100)
-    uint8_t  reserved2[11];       // 113..123
+    uint8_t  xinput_opts;         // 113     XOPT_* (firmware 0.30)
+    uint8_t  rumble_pin;          // 114     vibration motor GPIO (PWM, through a transistor) or PIN_NONE
+    uint8_t  rumble_flags;        // 115     RUMBLE_FLAG_*
+    uint8_t  rumble_strength;     // 116     percent of full power at the strongest rumble (10..100)
+    uint8_t  reserved2[7];        // 117..123
     uint32_t crc;                 // 124     crc32 of bytes 0..123
 } yacc_config_t;
 
