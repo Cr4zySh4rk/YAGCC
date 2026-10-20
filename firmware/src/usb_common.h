@@ -64,6 +64,10 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
 bool xinput_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t const *req);
 const uint8_t *yacc_webusb_url_desc(uint16_t *len);
 const uint8_t *yacc_ms_os_desc(uint16_t *len);
+// XInput host detection (main.c falls back to HID when no XInput driver uses the guitar)
+extern volatile bool g_xinput_driver_seen;   // a host driver read a report, wrote the OUT endpoint or sent an XInput request
+extern volatile bool g_host_windows;         // the host asked for the Microsoft OS 2.0 descriptor (only Windows does)
+extern volatile bool g_config_seen;          // the web configurator talked to the guitar
 // The running mode's HID report descriptor (the generic gamepad for the XInput / Xbox modes) and USB ids,
 // so Bluetooth can present the same device
 const uint8_t *usb_hid_report_desc(uint16_t *len);

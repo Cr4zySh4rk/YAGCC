@@ -308,6 +308,7 @@ export function parseInfo(dv) {
     digitalPins: dv.getUint8(8), adcChannels: dv.getUint8(9), funcs: dv.getUint8(10),
     mode: dv.byteLength > 11 ? dv.getUint8(11) : 0,
     setupSession: dv.byteLength > 12 ? !!(dv.getUint8(12) & 1) : false,   // firmware 0.6+: one-off setup boot
+    xinputFallback: dv.byteLength > 12 ? !!(dv.getUint8(12) & 2) : false, // firmware 0.28+: XInput running as HID (host has no XInput driver)
   };
 }
 

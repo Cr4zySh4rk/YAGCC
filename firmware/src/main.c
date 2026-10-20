@@ -49,6 +49,7 @@ static uint16_t build_status(void) {
 }
 
 static bool g_setup_session;
+static bool g_xinput_fallback;    // XInput mode, but this host has no XInput driver (macOS): running as the HID gamepad
 static bool g_bt_pair_at_boot;
 static bool g_bt_mode_switched;   // this boot follows a Star + fret mode change over Bluetooth   // Star power held at power-on: pair a new Bluetooth host   // this boot is a one-off setup session (XInput + web config), not the saved mode
 
@@ -63,7 +64,7 @@ static uint16_t build_info(void) {
     *p++ = NUM_ADC_CH;
     *p++ = NUM_FUNCS;
     *p++ = g_usb_mode;                  // mode this boot is running in
-    *p++ = g_setup_session ? 1 : 0;     // flags: 1 = setup session (the saved mode returns on the next plug-in)
+    *p++ = (g_setup_session ? 1 : 0) | (g_xinput_fallback ? 2 : 0);   // flags: 1 = setup session, 2 = XInput running as HID (host has no XInput driver)
     return (uint16_t)(p - tx_buf);
 }
 
@@ -86,6 +87,7 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
     }
     if (stage != CONTROL_STAGE_SETUP) return true;
 
+    if (req->bRequest >= VREQ_INFO && req->bRequest <= 0x3F) g_config_seen = true;   // the configurator, not just Chrome reading the WebUSB URL
     switch (req->bRequest) {
         case VREQ_WEBUSB:
             if (req->wIndex == 2) {
@@ -95,6 +97,7 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             }
             return false;
         case VREQ_MS_OS:
+            g_host_windows = true;                    // only Windows reads the MS OS 2.0 descriptor set
             if (req->wIndex == 7) {
                 uint16_t n;
                 const uint8_t *d = yacc_ms_os_desc(&n);
@@ -358,7 +361,10 @@ static uint16_t build_hid(const pad_t *s, uint8_t *out) {
     out[3] = 0x80;
     out[4] = 0x80;
     out[5] = (uint8_t)(s->whammy >> 7);
-    out[6] = s->star ? 0xFF : 0x00;
+    // Rz follows the tilt sensor only. Pressing star power moves button 6 alone, so a game binding it
+    // (Clone Hero's remap screen) records a plain button with a label, not an unnamed axis.
+    // Tilt still presses button 6 too (folded into `star`), so it needs no separate binding.
+    out[6] = s->tilt ? 0xFF : 0x00;
     return HID_REPORT_LEN;
 }
 
@@ -499,8 +505,53 @@ int main(void) {
     uint16_t last_len = 0;
     bool dirty = true;
 
+    // XInput on a host without an XInput driver (macOS has none): nothing reads the controller, so it would
+    // never show up in games. If no driver has used it 2.5 s after the host configured it, and the host isn't
+    // Windows (which reads the MS OS 2.0 descriptors, and may take a while to install the driver the first
+    // time), re-enumerate as the HID gamepad, which every OS supports. Unplugging goes back to XInput, so the
+    // next host gets XInput first. Not in a setup session.
+    enum { XI_WATCH, XI_SWITCHING, XI_AS_HID, XI_DONE } xi_state = (g_usb_mode == MODE_XINPUT && !g_setup_session) ? XI_WATCH : XI_DONE;
+    uint64_t xi_t = 0;
+    bool xi_was_mounted = false;
+
     while (true) {
         tud_task();
+        {
+            uint64_t t = time_us_64();
+            switch (xi_state) {
+                case XI_WATCH:
+                    if (tud_mounted()) xi_was_mounted = true;
+                    else if (xi_was_mounted) {          // unplugged: forget what the last host was
+                        xi_was_mounted = false;
+                        g_xinput_driver_seen = g_host_windows = g_config_seen = false;
+                    }
+                    // (the configurator talking over WebUSB says nothing about whether games can see XInput: ignored)
+                    if (!tud_mounted() || g_xinput_driver_seen || g_host_windows) { xi_t = 0; break; }
+                    if (!xi_t) xi_t = t ? t : 1;
+                    else if (t - xi_t > 2500000) {
+                        tud_disconnect();
+                        g_usb_mode = MODE_HID;
+                        g_xinput_fallback = true;
+                        xi_state = XI_SWITCHING; xi_t = t; xi_was_mounted = false;
+                    }
+                    break;
+                case XI_SWITCHING:                      // long enough for the host to see the device leave
+                    if (t - xi_t > 300000) { tud_connect(); xi_state = XI_AS_HID; xi_t = t; }
+                    break;
+                case XI_AS_HID:
+                    if (tud_mounted()) { xi_was_mounted = true; xi_t = t; }
+                    else if (xi_was_mounted && t - xi_t > 1000000) {   // unplugged: the next host gets XInput again
+                        tud_disconnect();
+                        g_usb_mode = MODE_XINPUT;
+                        g_xinput_fallback = false;
+                        g_xinput_driver_seen = g_host_windows = g_config_seen = false;
+                        xi_state = XI_WATCH; xi_t = 0;
+                        tud_connect();
+                    }
+                    break;
+                default: break;
+            }
+        }
         if (needs_host(g_usb_mode)) usb_host_task();
         bt_task();
         input_poll();

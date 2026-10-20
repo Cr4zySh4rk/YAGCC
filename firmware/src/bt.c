@@ -49,6 +49,9 @@ void bt_log_flash_clear(void) {}
 
 // from usb_common.h / usb_descriptors.c (that header pulls in TinyUSB, whose HID types clash with BTstack's)
 extern uint8_t g_usb_mode;
+// the mode Bluetooth started in: its identity and bond list stay with it even if USB later re-enumerates
+// (XInput falls back to HID on hosts without an XInput driver)
+static uint8_t s_mode;
 const uint8_t *usb_hid_report_desc(uint16_t *len);
 void usb_mode_ids(uint16_t *vid, uint16_t *pid, uint16_t *version);
 
@@ -312,10 +315,10 @@ static void *s_tlv_ctx;
 #define TAG4(a, b, c, d) (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
 #define CCC_TAG(mode, i) TAG4('C', 'C', (mode), (i))
 static uint32_t map_tag(uint32_t tag) {
-    if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'D')) return BOND_TAG(g_usb_mode, tag & 0xFF);
-    if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'C')) return CCC_TAG(g_usb_mode, tag & 0xFF);
-    if (tag == TAG4('S', 'M', 'I', 'R')) return TAG4('S', 'I', g_usb_mode, 'R');
-    if (tag == TAG4('S', 'M', 'E', 'R')) return TAG4('S', 'E', g_usb_mode, 'R');
+    if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'D')) return BOND_TAG(s_mode, tag & 0xFF);
+    if ((tag >> 8) == ((((uint32_t)'B') << 16) | (((uint32_t)'T') << 8) | 'C')) return CCC_TAG(s_mode, tag & 0xFF);
+    if (tag == TAG4('S', 'M', 'I', 'R')) return TAG4('S', 'I', s_mode, 'R');
+    if (tag == TAG4('S', 'M', 'E', 'R')) return TAG4('S', 'E', s_mode, 'R');
     return tag;
 }
 static int mt_get(void *c, uint32_t tag, uint8_t *buf, uint32_t size) { return s_tlv->get_tag(c, map_tag(tag), buf, size); }
@@ -329,8 +332,8 @@ static const btstack_tlv_t mode_tlv = { mt_get, mt_store, mt_delete };
 static void forget_this_mode(void) {
     if (!s_tlv) return;
     for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) {
-        s_tlv->delete_tag(s_tlv_ctx, HASH_TAG(g_usb_mode, i));
-        s_tlv->delete_tag(s_tlv_ctx, CCC_TAG(g_usb_mode, i));
+        s_tlv->delete_tag(s_tlv_ctx, HASH_TAG(s_mode, i));
+        s_tlv->delete_tag(s_tlv_ctx, CCC_TAG(s_mode, i));
     }
 }
 
@@ -355,8 +358,8 @@ static bool db_hash(uint8_t *h) {
 static void hash_remember(int index) {
     uint8_t h[4], old[4];
     if (!s_tlv || index < 0 || !db_hash(h)) return;
-    if (s_tlv->get_tag(s_tlv_ctx, HASH_TAG(g_usb_mode, index), old, 4) == 4 && memcmp(old, h, 4) == 0) return;
-    s_tlv->store_tag(s_tlv_ctx, HASH_TAG(g_usb_mode, index), h, 4);
+    if (s_tlv->get_tag(s_tlv_ctx, HASH_TAG(s_mode, index), old, 4) == 4 && memcmp(old, h, 4) == 0) return;
+    s_tlv->store_tag(s_tlv_ctx, HASH_TAG(s_mode, index), h, 4);
 }
 static void send_service_changed(void *ctx) {
     (void)ctx;
@@ -371,7 +374,7 @@ static void check_host(hci_con_handle_t h) {
     int index = sm_le_device_index(h);
     uint8_t cur[4], old[4];
     if (!s_tlv || index < 0 || !db_hash(cur)) return;
-    if (s_tlv->get_tag(s_tlv_ctx, HASH_TAG(g_usb_mode, index), old, 4) == 4 && memcmp(old, cur, 4) == 0) return;
+    if (s_tlv->get_tag(s_tlv_ctx, HASH_TAG(s_mode, index), old, 4) == 4 && memcmp(old, cur, 4) == 0) return;
     blog(L_SVCCHG, 0xFF, (uint16_t)index);          // sending
     s_sc_handle = h; s_sc_index = index;
     s_sc_reg.callback = &send_service_changed; s_sc_reg.context = NULL;
@@ -429,7 +432,7 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
         case BTSTACK_EVENT_STATE:
             if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) break;
             s_powered = true;
-            blog(L_WORKING, g_usb_mode, 0);
+            blog(L_WORKING, s_mode, 0);
             if (s_want_pair) { s_want_pair = false; open_pairing(true, PAIRING_TIMEOUT_MS); }
             else if (s_want_window) { s_want_window = false; open_pairing(false, WINDOW_TIMEOUT_MS); }
             else set_adv(false);
@@ -550,15 +553,16 @@ void bt_init(bool enabled, bool pair, bool open_window) {
 #if YACC_BT_LOG_FLASH
     flog_init();
 #endif
+    s_mode = g_usb_mode;
     if (cyw43_arch_init()) return;
     s_running = true;
-    blog(L_BOOT, (uint8_t)(pair | (open_window << 1)), g_usb_mode);
+    blog(L_BOOT, (uint8_t)(pair | (open_window << 1)), s_mode);
     s_want_pair = pair;
     s_want_window = open_window && !pair;
 
     // identity of the running mode
-    snprintf(s_name, sizeof(s_name), "YAGCC %s", mode_short(g_usb_mode));
-    s_appearance = g_usb_mode == MODE_KEYBOARD ? 0x03C1 : 0x03C4;   // HID keyboard / HID gamepad
+    snprintf(s_name, sizeof(s_name), "YAGCC %s", mode_short(s_mode));
+    s_appearance = s_mode == MODE_KEYBOARD ? 0x03C1 : 0x03C4;   // HID keyboard / HID gamepad
     build_descriptor();
     uint16_t vid, pid, ver;
     usb_mode_ids(&vid, &pid, &ver);
@@ -566,7 +570,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     pico_get_unique_board_id(&uid);
     bd_addr_t addr;                                  // static random address, different for every mode
     for (int i = 0; i < 6; i++) addr[i] = uid.id[2 + i];
-    addr[5] ^= (uint8_t)(g_usb_mode * 0x2B + 1);
+    addr[5] ^= (uint8_t)(s_mode * 0x2B + 1);
     // v0.17: new addresses. Windows can keep a hidden, stale record (with an old legacy key) for an address it
     // was once paired with; it then keeps trying that key alongside the current one and the link fails with a
     // MIC error (0x3D) on every other attempt. Fresh addresses leave any such record behind for good.

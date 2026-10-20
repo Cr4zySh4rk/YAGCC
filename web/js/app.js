@@ -22,7 +22,7 @@ const MODE_USE = {   // one line per mode: where you'd use it
 
 // macOS has no driver for Xbox 360 (XInput) controllers, so nothing on a Mac sees XInput mode
 const IS_MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || '') && !/iphone|ipad/i.test(navigator.userAgent);
-const MAC_XINPUT_TIP = 'macOS has no driver for Xbox 360 controllers, so games on a Mac (Clone Hero, YARG) can\u2019t see XInput mode. Use <b>HID gamepad</b> (hold yellow while plugging in) or <b>PS3 Guitar Hero</b> (hold blue).';
+const MAC_XINPUT_TIP = 'macOS has no driver for Xbox 360 controllers. In <b>XInput</b> mode the guitar notices this and switches itself to the <b>HID gamepad</b> a few seconds after plugging in, so Clone Hero and YARG still see it (firmware 0.28 or newer).';
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -138,7 +138,7 @@ function updatePill() {
   if (state.dev && state.info) {
     pill.classList.add('on');
     const m = MODES.find((x) => x.id === state.info.mode);
-    $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? 'Board'}</span><span class="seg-item">${state.info.setupSession ? 'Setup' : m ? m.short : '?'}</span><span class="seg-item mono${state.fwOutdated ? ' old' : ''}" title="${state.fwOutdated ? 'A newer firmware is available' : 'Firmware version'}">v${state.info.major}.${state.info.minor}</span>`;
+    $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? 'Board'}</span><span class="seg-item">${state.info.setupSession ? 'Setup' : state.info.xinputFallback ? 'XInput → HID' : m ? m.short : '?'}</span><span class="seg-item mono${state.fwOutdated ? ' old' : ''}" title="${state.fwOutdated ? 'A newer firmware is available' : 'Firmware version'}">v${state.info.major}.${state.info.minor}</span>`;
   } else {
     pill.classList.remove('on');
     $('#connText').textContent = state.connecting ? 'Connecting…' : 'Not connected';
@@ -172,8 +172,8 @@ async function connect(device, { navigate = false } = {}) {
     buildUi();
     updatePill();
     toast('Controller connected', 'ok');
-    if (IS_MAC && state.info.mode === 0 && !state.info.setupSession)
-      toast('XInput mode doesn\u2019t work on a Mac: games can\u2019t see it. Use HID mode (hold yellow at plug-in) or PS3 Guitar Hero (hold blue).', 'bad');
+    if (state.info.xinputFallback)
+      toast('This computer has no XInput driver, so the guitar is running as a HID gamepad. Games see it as usual.', 'ok');
     checkFirmware();
     if (navigate) showView('setup');
   } catch (e) {

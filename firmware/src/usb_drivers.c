@@ -10,6 +10,7 @@
 #include "host/xbone.h"
 
 static uint8_t ep_in, ep_out;
+volatile bool g_xinput_driver_seen, g_host_windows, g_config_seen;
 static uint8_t out_buf[32];
 static uint8_t in_buf[32];
 
@@ -31,6 +32,7 @@ static bool drv_deinit(void) { return true; }
 static void drv_reset(uint8_t rhport) {
     (void)rhport;
     ep_in = ep_out = 0;
+    g_xinput_driver_seen = false;                // a new enumeration: wait for this host's driver
     if (g_usb_mode == MODE_XBONE) xbone_dev_reset();
 }
 
@@ -78,6 +80,7 @@ static bool drv_control(uint8_t rhport, uint8_t stage, tusb_control_request_t co
 
 static bool drv_xfer(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t bytes) {
     if (g_usb_mode == MODE_XBONE) return xbone_dev_xfer(rhport, ep_addr, result, bytes);
+    if (result == XFER_RESULT_SUCCESS && ((ep_in && ep_addr == ep_in) || (ep_out && ep_addr == ep_out))) g_xinput_driver_seen = true;
     if (ep_out && ep_addr == ep_out) {
         // XInput rumble report {0x00, 0x08, 0x00, left, right, ...}: games such as YARG use the
         // Santroller convention of right = command, left = parameter (star power, multiplier, ...)
@@ -117,6 +120,7 @@ usbd_class_driver_t const *usbd_app_driver_get_cb(uint8_t *driver_count) {
 
 bool xinput_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t const *req) {
     if (stage != CONTROL_STAGE_SETUP) return true;
+    g_xinput_driver_seen = true;                 // only an XInput driver (xusb22, xpad, a 360) asks these
     if (req->bmRequestType_bit.direction != TUSB_DIR_IN) return false;
 
     static uint8_t buf[20];

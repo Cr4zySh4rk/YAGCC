@@ -47,7 +47,7 @@ An earlier 5-minute walkthrough with voice-over (from v0.4; the setup flow is th
 
 | Hold at plug-in (default) | Mode | What it is | Best for |
 |---|---|---|---|
-| Green | **XInput** | Xbox 360 guitar (Guitar Hero or Rock Band type, selectable). Answers Xbox 360 security (XSM3) | Windows / Clone Hero / YARG / Fortnite Festival (PC), Xbox 360 *(experimental)* |
+| Green | **XInput** | Xbox 360 guitar (Guitar Hero or Rock Band type, selectable). Answers Xbox 360 security (XSM3). On a host with no XInput driver (macOS) it switches itself to the HID gamepad | Windows / Linux / macOS, Clone Hero / YARG / Fortnite Festival (PC), Xbox 360 *(experimental)* |
 | Red | **PS3 Rock Band** | Rock Band guitar `12BA:0200` (Santroller report layout: tilt → R1, star power → select) | Rock Band on PS3 / RPCS3, YARG |
 | Yellow | **HID gamepad** | Generic gamepad (16 buttons, hat, 4 axes) | macOS, Linux, Android, emulators |
 | Blue | **PS3 Guitar Hero** | RedOctane `12BA:0100` with the PS3 guitar handshake | Guitar Hero on PS3 / RPCS3, Clone Hero |
@@ -66,6 +66,10 @@ The mode picked by holding a fret is remembered (like GP2040-CE), and every fret
 **Fortnite Festival.** On a Switch, hold **orange** while plugging in (Switch mode). On PS4, PS5, Xbox and PC, assign keyboard mode to a fret on the Modes tab and hold that fret while plugging in; in Fortnite turn on *Pro* input for guitar and choose the keyboard layout that matches the bindings shown on the Modes tab (Pro guitar is the default; a Lead-lane preset — D F J K L, arrows, Space — is one click away, and every key is rebindable). On PC you can also use XInput mode with *Star power → D-pad left* switched on.
 
 **XInput options.** The guitar can report as a *Guitar Hero* (subtype 7) or *Rock Band* (subtype 6) guitar. Whammy sits on right stick X and tilt on right stick Y, both resting at the bottom like real guitars. When a game sends star power / overdrive state over the rumble channel, the fret LEDs can glow cyan (*Star power glow* on the Lights tab).
+
+**XInput on a Mac.** macOS has no driver for Xbox 360 controllers, so in XInput mode nothing would read the guitar. If no XInput driver has used it within 2.5 seconds of plugging in (and the host isn't Windows), the guitar re-connects as the **HID gamepad**, which Clone Hero and YARG pick up as usual; the configurator shows *XInput → HID*. The saved mode stays XInput, and the next plug-in starts as XInput again, so the same guitar works on Windows, Linux and macOS without changing modes.
+
+**HID gamepad layout.** Frets are buttons 1–5, star power button 6, plus button 7, strum up/down buttons 8/9 and the hat; whammy is the Z axis and the tilt sensor the Rz axis (tilt also presses button 6). Pressing star power changes only button 6, so games' remap screens record it as a plain button.
 
 **Configuring in other modes:** XInput, HID and keyboard modes keep the WebUSB config channel (browsers grant permission per mode, so press *Connect* once after switching). PS3, Wii, Switch and OG Xbox modes have to look exactly like the real device, so they have no config channel: the Setup page finds PS3/Wii guitars over WebHID (*Find it*) and restarts them in setup mode with one click; for the others hold *Plus* while plugging in. **macOS** has no XInput driver, so use HID mode for games on a Mac.
 
