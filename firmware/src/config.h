@@ -145,7 +145,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  cfg_rev;             // 57      bumped by in-place migrations (see config_load)
     uint8_t  xinput_type;         // 58      XI_GUITAR_HERO / XI_ROCK_BAND
     uint8_t  led_type;            // 59      LED_*
-    uint8_t  led_order;           // 60      ORDER_* (WS2812 / SK6812)
+    uint8_t  led_order;           // 60      ORDER_* (WS2812; APA102 swaps the meaning of GRB and BGR, so 0 = its BGR)
     uint8_t  led_clk_pin;         // 61      APA102 clock GPIO or PIN_NONE
     uint8_t  keys[NUM_KEYS];      // 62..72  HID usage codes for keyboard mode (0 = none, 0xE0..E7 = modifiers)
     uint8_t  host_dp_pin;         // 73      USB host port D+ GPIO (D- is the next pin) or PIN_NONE

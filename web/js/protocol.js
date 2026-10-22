@@ -99,7 +99,7 @@ export function applyLedLayout(c, { frets, strum, strumFirst, per = c.fretLeds =
 export const LED_TYPES = [
   { id: 0, name: 'WS2812B / NeoPixel', desc: 'One data wire. Also WS2813, SK6812 (RGB) and most addressable strips.' },
   { id: 1, name: 'SK6812 RGBW', desc: 'One data wire, with a separate white LED in each pixel.' },
-  { id: 2, name: 'APA102 / DotStar', desc: 'Data and clock wires — no timing issues, any length of wire.' },
+  { id: 2, name: 'APA102 / SK9822', desc: 'APA102, SK9822 or DotStar. Data and clock wires: no timing issues on long wires, and smoother dimming. Needs a second pin for the clock.' },
 ];
 export const LED_ORDERS = ['GRB', 'RGB', 'BRG', 'RBG', 'GBR', 'BGR'];
 

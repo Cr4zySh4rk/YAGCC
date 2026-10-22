@@ -1,4 +1,4 @@
-// Fret and strum bar lighting: WS2812 / SK6812 (RGBW) over PIO or APA102 (data + clock), per-fret colour,
+// Fret and strum bar lighting: WS2812 / SK6812 (RGBW) over PIO or APA102 / SK9822 (data + clock, 4 MHz), per-fret colour,
 // remappable chain order, press-reactive effects, brightness, a boot-time mode indicator and
 // star power glow when a game reports it. One chain of up to 9 LEDs: the five fret LEDs (optional) and up
 // to eight strum bar LEDs (one per side, the four corners, or four along each side), in any order along the chain.
@@ -7,6 +7,7 @@
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/gpio.h"
+#include "hardware/clocks.h"
 #include "config.h"
 #include "input.h"
 #include "ws2812.pio.h"
@@ -22,6 +23,7 @@ static const uint rgb_sm = 0;
 static uint rgb_offset;
 static bool program_loaded;
 static int cur_pin = -1, cur_clk = -1, cur_type = -1;
+static uint32_t apa_half_cycles;      // APA102 clock half period in CPU cycles (see apa102_byte)
 static volatile bool star_power;
 static volatile bool charging;
 static volatile uint8_t bt_led;
@@ -72,9 +74,12 @@ static void attach(int pin, int clk, int type) {
     cur_pin = cur_clk = cur_type = -1;
     if (pin < 0) return;
     if (type == LED_APA102) {
-        if (clk < 0) return;
+        if (clk < 0 || clk == pin) return;
         gpio_init(pin); gpio_set_dir(pin, GPIO_OUT); gpio_put(pin, 0);
         gpio_init(clk); gpio_set_dir(clk, GPIO_OUT); gpio_put(clk, 0);
+        gpio_set_drive_strength(pin, GPIO_DRIVE_STRENGTH_8MA);
+        gpio_set_drive_strength(clk, GPIO_DRIVE_STRENGTH_8MA);
+        apa_half_cycles = clock_get_hz(clk_sys) / 8000000u;              // half of a 4 MHz period
         cur_clk = clk;
     } else {
         ws2812_program_init(rgb_pio, rgb_sm, rgb_offset, (uint)pin, 800000.0f, type == LED_SK6812_RGBW ? 32 : 24);
@@ -111,32 +116,64 @@ static void hsv(uint8_t h, uint8_t *r, uint8_t *g, uint8_t *b) {
     }
 }
 
-typedef struct { uint8_t r, g, b; } px_t;
+typedef struct { uint8_t r, g, b, gb; } px_t;   // gb: APA102 5-bit global brightness (31 for WS2812 / SK6812)
 
 static px_t pack(uint8_t r, uint8_t g, uint8_t b, uint8_t level, uint8_t bright) {
     uint32_t k = (uint32_t)level * bright;                  // 0 .. 255*255
-    px_t p = { (uint8_t)((uint32_t)gamma8[r] * k / (255u * 255u)),
-               (uint8_t)((uint32_t)gamma8[g] * k / (255u * 255u)),
-               (uint8_t)((uint32_t)gamma8[b] * k / (255u * 255u)) };
+    uint32_t vr = (uint32_t)gamma8[r] * k / 255u, vg = (uint32_t)gamma8[g] * k / 255u, vb = (uint32_t)gamma8[b] * k / 255u;   // colour x 255
+    if (cur_type == LED_APA102) {
+        // APA102 / SK9822: put the dimming in the chip's 5-bit brightness and keep the colour bytes large,
+        // so dim colours and slow fades keep their tint instead of stepping through a handful of levels
+        uint32_t m = vr > vg ? (vr > vb ? vr : vb) : (vg > vb ? vg : vb);
+        uint32_t gb = (m * 31u + 65024u) / 65025u;
+        if (gb < 1) gb = 1;
+        px_t p = { (uint8_t)(vr * 31u / (255u * gb)), (uint8_t)(vg * 31u / (255u * gb)), (uint8_t)(vb * 31u / (255u * gb)), (uint8_t)gb };
+        return p;
+    }
+    px_t p = { (uint8_t)(vr / 255u), (uint8_t)(vg / 255u), (uint8_t)(vb / 255u), 31 };
     return p;
 }
 
+// APA102 clock: about 4 MHz whatever the system clock, slow enough for long or unshielded wires
+// (the chips take far more, but the edges round off over a metre of ribbon cable) and still under 0.2 ms a frame
 static void apa102_byte(uint8_t v) {
     for (int i = 7; i >= 0; i--) {
         gpio_put(cur_pin, (v >> i) & 1);
+        busy_wait_at_least_cycles(apa_half_cycles);
         gpio_put(cur_clk, 1);
+        busy_wait_at_least_cycles(apa_half_cycles);
         gpio_put(cur_clk, 0);
     }
 }
 
+// the three colour bytes in wire order. APA102 / SK9822 chips take blue, green, red, so for them the
+// default setting (0) means BGR and the "BGR" slot means GRB; every other order reads the same for both types.
+static void order_bytes(uint8_t r, uint8_t g, uint8_t b, uint8_t c[3]) {
+    uint8_t o = g_cfg.led_order;
+    if (cur_type == LED_APA102) o = o == ORDER_GRB ? ORDER_BGR : o == ORDER_BGR ? ORDER_GRB : o;
+    switch (o) {
+        case ORDER_RGB: c[0] = r; c[1] = g; c[2] = b; break;
+        case ORDER_BRG: c[0] = b; c[1] = r; c[2] = g; break;
+        case ORDER_RBG: c[0] = r; c[1] = b; c[2] = g; break;
+        case ORDER_GBR: c[0] = g; c[1] = b; c[2] = r; break;
+        case ORDER_BGR: c[0] = b; c[1] = g; c[2] = r; break;
+        default:        c[0] = g; c[1] = r; c[2] = b; break;          // GRB (WS2812B)
+    }
+}
+
 static void output(const px_t *px, int n) {
+    uint8_t c[3];
     if (cur_type == LED_APA102) {
         for (int i = 0; i < 4; i++) apa102_byte(0x00);                    // start frame
         for (int i = 0; i < n; i++) {
-            apa102_byte(0xFF);                                            // full global brightness (scaled in colour)
-            apa102_byte(px[i].b); apa102_byte(px[i].g); apa102_byte(px[i].r);
+            order_bytes(px[i].r, px[i].g, px[i].b, c);
+            apa102_byte(0xE0 | px[i].gb);                                 // 111 + 5-bit brightness
+            apa102_byte(c[0]); apa102_byte(c[1]); apa102_byte(c[2]);
         }
-        for (int i = 0; i < 4; i++) apa102_byte(0xFF);                    // end frame
+        // end frame: the data runs one half clock behind per LED, so n/2 more clocks push it to the last one.
+        // Zeros rather than 0xFF: SK9822 clones latch on them, and an extra LED past the chain stays dark.
+        int end = (n + 15) / 16; if (end < 4) end = 4;
+        for (int i = 0; i < end; i++) apa102_byte(0x00);
         return;
     }
     for (int i = 0; i < n; i++) {
@@ -147,15 +184,7 @@ static void output(const px_t *px, int n) {
             pio_sm_put_blocking(rgb_pio, rgb_sm, word);
             continue;
         }
-        uint8_t c[3];
-        switch (g_cfg.led_order) {
-            case ORDER_RGB: c[0] = r; c[1] = g; c[2] = b; break;
-            case ORDER_BRG: c[0] = b; c[1] = r; c[2] = g; break;
-            case ORDER_RBG: c[0] = r; c[1] = b; c[2] = g; break;
-            case ORDER_GBR: c[0] = g; c[1] = b; c[2] = r; break;
-            case ORDER_BGR: c[0] = b; c[1] = g; c[2] = r; break;
-            default:        c[0] = g; c[1] = r; c[2] = b; break;          // GRB (WS2812B)
-        }
+        order_bytes(r, g, b, c);
         pio_sm_put_blocking(rgb_pio, rgb_sm, (((uint32_t)c[0] << 16) | ((uint32_t)c[1] << 8) | c[2]) << 8);
     }
 }

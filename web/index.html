@@ -197,8 +197,8 @@
           <div id="rgbOpts">
             <div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input.</p></div><select id="rgbPin"></select></div>
             <div class="opt"><div><h3>LED type</h3><p class="dim" id="ledTypeDesc"></p></div><select id="ledType"></select></div>
-            <div class="opt" id="ledOrderRow"><div><h3>Colour order</h3><p class="dim">If red shows up green, try RGB.</p></div><select id="ledOrder"></select></div>
-            <div class="opt" id="ledClkRow"><div><h3>Clock pin</h3><p class="dim">The APA102 clock input.</p></div><select id="ledClk"></select></div>
+            <div class="opt" id="ledClkRow"><div><h3>Clock pin</h3><p class="dim" id="ledClkHint">Wired to the first LED's clock input (CI / CKI).</p></div><select id="ledClk"></select></div>
+            <div class="opt" id="ledOrderRow"><div><h3>Colour order</h3><p class="dim" id="ledOrderHint">If red shows up green, try RGB.</p></div><select id="ledOrder"></select></div>
             <div class="slider-row"><label for="rgbBri">Brightness</label><output class="val" id="rgbBriVal"></output>
               <input type="range" id="rgbBri" min="0" max="255" step="1"></div>
             <div id="rgbBriNote"></div>

@@ -108,7 +108,7 @@ export const HARDWARE = [
   { group: 'led', name: 'WS2812B / NeoPixel', bus: '1 GPIO (PIO)', status: 'ok',
     points: ['5 LEDs, one per fret, any order (LED order wizard)', 'Colours, presets, 7 effects, brightness 0–255', 'Selectable colour order (GRB, RGB, …)'] },
   { group: 'led', name: 'SK6812 RGBW', bus: '1 GPIO (PIO)', status: 'exp', points: ['White channel used for the shared white part of each colour'] },
-  { group: 'led', name: 'APA102 / DotStar', bus: 'Data + clock GPIO', status: 'exp', points: ['No timing issues on long wires'] },
+  { group: 'led', name: 'APA102 / SK9822 / DotStar', bus: 'Data + clock GPIO', status: 'exp', points: ['No timing issues on long wires', 'Smooth dimming with the chip\'s own brightness', 'Selectable colour order (BGR default)'] },
   { group: 'led', name: 'Star power / overdrive lighting from games', bus: 'XInput rumble channel', status: 'exp',
     points: ['Idle frets pulse when the game says star power is active', 'For games that send Santroller-style commands, such as YARG'] },
   { group: 'led', name: 'Mode indicator', bus: 'Fret LEDs', status: 'ok', points: ['The fret that selects the running mode flashes for a second after plug-in'] },

@@ -988,15 +988,23 @@ function buildLights() {
       <input type="color" data-col="${f}"><span class="hex" data-hex="${f}"></span></div>`).join('');
 
   $('#ledType').innerHTML = LED_TYPES.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
-  $('#ledOrder').innerHTML = LED_ORDERS.map((o, i) => `<option value="${i}">${o}</option>`).join('');
+  // APA102 / SK9822 send blue first: for them setting 0 is BGR and the BGR slot is GRB (see rgb.c)
+  const orderNames = (t) => LED_ORDERS.map((o, i) => (t === 2 ? (i === 0 ? 'BGR (standard)' : i === 5 ? 'GRB' : o) : (i === 0 ? 'GRB (standard)' : o)));
   $('#ledClk').innerHTML = '<option value="255">Choose pin…</option>' +
     [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p) || p === c.ledClkPin).map((p) => `<option value="${p}">GP${p}</option>`).join('');
   const refresh = () => {
     $on.checked = c.rgbEnabled;
     $('#ledType').value = String(c.ledType); $('#ledTypeDesc').textContent = (LED_TYPES[c.ledType] || LED_TYPES[0]).desc;
+    $('#ledOrder').innerHTML = orderNames(c.ledType).map((o, i) => `<option value="${i}">${o}</option>`).join('');
     $('#ledOrder').value = String(c.ledOrder); $('#ledClk').value = String(c.ledClkPin);
-    $('#ledOrderRow').style.display = c.ledType === 0 ? '' : 'none';
+    $('#ledOrderRow').style.display = c.ledType !== 1 ? '' : 'none';
+    $('#ledOrderHint').textContent = c.ledType === 2 ? 'Most APA102 and SK9822 LEDs are BGR. If red shows up blue, try RGB.' : 'If red shows up green, try RGB.';
     $('#ledClkRow').style.display = c.ledType === 2 ? '' : 'none';
+    // the data and clock pins can't be the same GPIO
+    for (const o of $('#ledClk').options) o.disabled = +o.value !== PIN_NONE && +o.value === c.rgbPin;
+    for (const o of $pin.options) o.disabled = c.ledType === 2 && +o.value !== PIN_NONE && +o.value === c.ledClkPin;
+    $('#ledClkRow').classList.toggle('warn', c.ledType === 2 && c.rgbEnabled && c.ledClkPin === PIN_NONE);
+    $('#ledClkHint').textContent = c.ledType === 2 && c.ledClkPin === PIN_NONE ? 'Choose the clock pin: APA102 LEDs stay dark without it.' : "Wired to the first LED's clock input (CI / CKI).";
     $('#rgbSp').checked = !!c.rgbStarPower;
     $pin.value = String(c.rgbPin);
     $bri.max = maxBrightness(c); c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
@@ -1018,7 +1026,7 @@ function buildLights() {
   $pin.onchange = () => { c.rgbPin = +$pin.value; live(); };
   $('#ledType').onchange = (e) => { c.ledType = +e.target.value; live(); };
   $('#ledOrder').onchange = (e) => { c.ledOrder = +e.target.value; live(); };
-  $('#ledClk').onchange = (e) => { c.ledClkPin = +e.target.value; live(); };
+  $('#ledClk').onchange = (e) => { c.ledClkPin = +e.target.value; if (c.ledClkPin === c.rgbPin) c.ledClkPin = PIN_NONE; live(); };
   $('#rgbSp').onchange = (e) => { c.rgbStarPower = e.target.checked; live(); };
   $bri.oninput = () => { c.rgbBrightness = +$bri.value; live(); };
   $('#rgbFlash').onchange = (e) => { c.rgbBootFlash = e.target.checked; live(); };

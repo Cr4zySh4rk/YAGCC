@@ -428,3 +428,4 @@ pre.btlog { margin: 10px 0 0; padding: 12px 14px; max-height: 260px; overflow: a
 .ps2-grid label { display: grid; gap: 4px; font: 600 12px var(--mono); color: var(--dim); }
 .ps2-grid select { width: 100%; min-width: 0; max-width: 100%; }
 .ps2-grid label { min-width: 0; }
+.opt.warn #ledClkHint { color: var(--warn); }
