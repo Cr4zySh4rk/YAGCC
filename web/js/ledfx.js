@@ -218,7 +218,9 @@ export function createEngine(cfg) {
     zs.update(zSt, t, heldS, dirS, F(zSt), c.starSpeed || 5);
     // colours
     const colors = c.colors.map(rgb), press = (c.fretPress || c.colors).map(rgb), second = c.fret2Own ? (c.fret2Colors || c.colors).map(rgb) : colors;
-    const starF = star && c.rgbStarPower !== false && (c.starZones & 1), starS = star && c.rgbStarPower !== false && (c.starZones & 2);
+    // input.forceStar: the Lights page preview shows star power even while the guitar's star power glow is switched off
+    const glow = c.rgbStarPower !== false || !!input.forceStar;
+    const starF = star && glow && (c.starZones & 1), starS = star && glow && (c.starZones & 2);
     const sc = { color: rgb(c.starColor), anim: c.starAnim, speed: c.starSpeed || 5 };
     const pcF = zFr.same ? colors : press, pcF2 = zFr.same ? second : press;
     zf.render(zFr, t, colors, pcF, F(zFr), starF, sc, frame.fret);

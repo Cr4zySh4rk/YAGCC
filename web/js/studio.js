@@ -1,8 +1,8 @@
-// Lights page "lighting studio": live LED preview, themes and the zone tabs (frets, strum bar, star power, whammy).
+// Lights page "Look" area (the lighting studio): live LED preview, themes and a few simple controls, with the rest under "More options".
 // Needs firmware 0.34 (config version 7); on older firmware the sections are shown locked. The preview itself always runs.
 import {
   IDLE, PRESS, STAR, WFX, IDLE_ANIMS, PRESS_FX, STAR_ANIMS, WHAMMY_FX, RGB_PRESETS, FRET_DEFAULT_COLORS, FUNC_LABEL, FUNCS, STRUM_ROLES,
-  isPressed, hexToRgb, rgbToHex, ledLayout, effectZone, MAX_STRUM_LEDS,
+  isPressed, hexToRgb, rgbToHex, ledLayout, MAX_STRUM_LEDS,
 } from './protocol.js?v=dev';
 import { createEngine, toCss } from './ledfx.js?v=dev';
 
@@ -12,7 +12,6 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const mixHex = (h, to, t) => { const a = hexToRgb(h), b = to; return rgbToHex(...a.map((v, i) => Math.round(v + (b[i] - v) * t))); };
 const brighter = (h) => mixHex(h, [255, 255, 255], 0.55);
 const FRET_NAMES = [0, 1, 2, 3, 4].map((i) => FUNC_LABEL[FUNCS[i]]);
-const ROLE_TXT = ['up and down', 'up', 'down'];
 
 // ------------------------------------------------------------------ themes
 const P = RGB_PRESETS.map((p) => p.colors);   // Guitar Hero, Neon, Ice, Fire, Mono white palettes from the old colour presets
@@ -76,89 +75,101 @@ const setPath = (o, p, v) => { const ks = p.split('.'), l = ks.pop(); ks.reduce(
 const FMT = {
   pct: (v) => `${v} %`, ms: (v) => `${1100 - 100 * v} ms`, min: (v) => (+v ? `${v} min` : 'Never'), num: (v) => String(v),
 };
+const LISTS = { 'zoneFrets.idle': IDLE_ANIMS, 'zoneFrets.press': PRESS_FX, 'zoneStrum.idle': IDLE_ANIMS, 'zoneStrum.press': PRESS_FX, starAnim: STAR_ANIMS, whammyFx: WHAMMY_FX };
+const MORE_KEY = 'yacc.lfxMore';
+const readMore = () => { try { return localStorage.getItem(MORE_KEY) === '1'; } catch { return false; } };
+const writeMore = (on) => { try { localStorage.setItem(MORE_KEY, on ? '1' : '0'); } catch { /* storage blocked */ } };
 
-let S = null;   // the studio's live state: { ctx, root, engine, manual, raf, tab, ... }
+let S = null;   // the studio's live state: { ctx, root, engine, manual, raf, star, ... }
 
 const needHtml = () => '<p class="lfx-need" hidden>These options need <b>firmware 0.34</b>. <button type="button" class="btn small" data-led-update>Update firmware</button></p>';
-const lockWrap = (inner) => `<div data-v7>${inner}</div>`;
 
-function cards(path, list, label) {
-  return `<div class="lfx-cards" role="radiogroup" aria-label="${esc(label)}" data-cards="${path}">${list.map((e) => `<button type="button" role="radio" class="lfx-card" data-id="${e.id}" aria-checked="false" tabindex="-1">
-    <span class="lfx-sw" data-sw="${path}:${e.id}" aria-hidden="true">${'<i></i>'.repeat(5)}</span><b>${esc(e.name)}</b><span class="dim">${esc(e.desc)}</span></button>`).join('')}</div>`;
-}
-const slider = (id, path, label, min, max, fmt, extra = '') => `<div class="slider-row" id="${id}" ${extra}><label for="${id}In">${label}</label><output class="val" data-out="${path}" data-fmt="${fmt}"></output>
+const select = (id, path, label, list) => `<div class="lfx-field"><label for="${id}">${label}</label>
+  <select id="${id}" data-b="${path}" data-num>${list.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+  <p class="dim small lfx-desc" data-desc="${path}"></p></div>`;
+const speedField = (id, path) => `<div class="lfx-field narrow" id="${id}"><label for="${id}In">Speed <output class="val" data-out="${path}" data-fmt="num"></output></label>
+  <input type="range" id="${id}In" data-b="${path}" min="1" max="10" step="1"></div>`;
+const slider = (id, path, label, min, max, fmt) => `<div class="slider-row" id="${id}"><label for="${id}In">${label}</label><output class="val" data-out="${path}" data-fmt="${fmt}"></output>
   <input type="range" id="${id}In" data-b="${path}" min="${min}" max="${max}" step="1"></div>`;
-const toggle = (id, path, title, desc, extra = '', bit = '') => `<div class="opt${extra.includes('data-adv') ? ' adv' : ''}" ${extra}><div><h3 id="${id}T">${title}</h3><p class="dim">${desc}</p></div>
-  <label class="switch"><input type="checkbox" id="${id}" data-b="${path}" ${bit ? `data-bit="${bit}"` : ''} aria-labelledby="${id}T"><i></i></label></div>`;
+const check = (id, path, label, bit = '') => `<label class="lfx-check" id="${id}Row"><input type="checkbox" id="${id}" data-b="${path}" ${bit ? `data-bit="${bit}"` : ''}><span>${label}</span></label>`;
 const picker = (path, label, extra = '') => `<input type="color" class="lfx-pick" data-b="${path}" aria-label="${esc(label)}" ${extra}>`;
-const zoneChecks = (path, name) => `<div class="lfx-zones" role="group" aria-label="${name}">
-  <label class="lfx-check"><input type="checkbox" data-b="${path}" data-bit="1"><span>Fret LEDs</span></label>
-  <label class="lfx-check"><input type="checkbox" data-b="${path}" data-bit="2"><span>Strum bar LEDs</span></label></div>`;
+const swatch = (label, path, extra = '', aria = label) => `<span class="lfx-sw"><span class="lfx-lbl">${label}</span>${picker(path, aria, extra)}</span>`;
+const zoneChecks = (path, name) => `<div class="lfx-zones" role="group" aria-label="${name}">${check(path.replace(/\W/g, '') + 'F', path, 'Fret LEDs', 1)}${check(path.replace(/\W/g, '') + 'S', path, 'Strum bar LEDs', 2)}</div>`;
 
-function zonePanel(zn) {
-  const zk = zn === 'frets' ? 'zoneFrets' : 'zoneStrum', name = zn === 'frets' ? 'fret' : 'strum bar';
-  return `${needHtml()}<div data-v7>
-    <section class="lfx-sec"><h3>Idle animation</h3><p class="dim small">What the ${name} LEDs do while nothing is pressed.</p>
-      ${cards(`${zk}.idle`, IDLE_ANIMS, `${name} idle animation`)}
-      ${slider(`lfx-${zn}-level`, `${zk}.idleLevel`, 'Idle brightness', 0, 100, 'pct')}
-      ${slider(`lfx-${zn}-speed`, `${zk}.speed`, 'Speed', 1, 10, 'num')}</section>
-    <section class="lfx-sec"><h3>When pressed</h3><p class="dim small">How the ${name} LEDs react when you ${zn === 'frets' ? 'hold a fret' : 'strum'}.</p>
-      ${cards(`${zk}.press`, PRESS_FX, `${name} reaction`)}
-      ${slider(`lfx-${zn}-fade`, `${zk}.fade`, 'Fade time', 1, 10, 'ms')}</section>
-    <section class="lfx-sec"><h3>Colours</h3>${zn === 'frets' ? fretColours() : strumColours()}</section></div>`;
-}
-function fretColours() {
-  return `<div id="lfxFretCols" class="lfx-colgrid" role="group" aria-label="Fret colours"></div>
-    ${toggle('lfxFretSame', 'zoneFrets.same', 'Pressed colour = idle colour', 'The fret keeps its own colour when pressed. Turn off, or just pick a pressed colour above, to give each fret its own pressed colour.')}
-    <div class="row lfx-quick"><button type="button" class="btn small" id="lfxPressWhite">Pressed = white</button><button type="button" class="btn small" id="lfxPressBright">Pressed = brighter</button></div>
-    ${toggle('lfxFret2', 'fret2Own', 'Second LED has its own colour', 'With two LEDs per fret, give the second one a colour of its own.', 'id="lfxFret2Row" data-adv')}
-    <h4 class="lfx-sub">Colour palettes</h4><div class="presets" id="lfxPalettes"></div>`;
-}
-function strumColours() {
-  return `<p class="dim small" id="lfxStrumNone" hidden>No strum LEDs in the layout yet. Add them under <b>LED layout</b> below.</p>
-    ${toggle('lfxPerLed', 'zoneStrum.perLed', 'Each strum LED its own colour', 'Pick a separate idle colour for every strum LED, or one colour for all of them.')}
-    <div id="lfxStrumCols" class="lfx-colgrid" role="group" aria-label="Strum bar colours"></div>
-    ${toggle('lfxStrumSame', 'zoneStrum.same', 'Pressed colour = idle colour', 'The LED keeps its idle colour when strummed. Turn off, or just pick a strum up / down colour below, to light each direction in its own colour.')}
-    <div class="lfx-colgrid" role="group" aria-label="Strum pressed colours">
-      <span class="lfx-lbl">Strum up colour</span>${picker('strumUpColor', 'Strum up colour')}
-      <span class="lfx-lbl">Strum down colour</span>${picker('strumDownColor', 'Strum down colour')}</div>
-    <p class="dim small lfx-warn" id="lfxStrumPressNote" hidden>The reaction picked above (<b>No reaction</b>, <b>Dim</b> or <b>Go dark</b>) doesn't use a pressed colour: pick <b>Light up</b>, <b>Flash &amp; fade</b> or another one to see the up / down colours.</p>
-    <p class="dim small">Which LEDs follow strum up, strum down or both is set under <b>LED layout</b> below.</p>`;
+function previewHtml() {
+  return `<h2 class="look-h">Live preview</h2>
+    <div class="studio-off" id="studioOff" hidden><span>LEDs are switched off.</span> <button type="button" class="btn small primary" id="studioOn">Turn LEDs on</button></div>
+    <div class="lfx-stage" id="lfxStage"><p class="dim" id="lfxNoLeds" hidden>No LEDs in the layout. Choose fret and / or strum LEDs under Change setup.</p>
+      <div class="lfx-frets" id="lfxFrets" role="group" aria-label="Fret LEDs. Press and hold to preview a fret."></div>
+      <div class="lfx-strum" id="lfxStrum" role="group" aria-label="Strum bar LEDs"><div class="lfx-bar" id="lfxBar"></div>
+        <div class="lfx-strumbtns"><button type="button" class="btn small lfx-hold" data-hold="up"><span aria-hidden="true">&#9650;</span> Strum up</button><button type="button" class="btn small lfx-hold" data-hold="down"><span aria-hidden="true">&#9660;</span> Strum down</button></div></div></div>
+    <div class="lfx-ctl"><button type="button" class="btn small lfx-starbtn" id="lfxStarBtn" aria-pressed="false"><span aria-hidden="true">&#9733;</span> Preview star power</button>
+      <div class="lfx-whammy"><label for="lfxWhammy">Whammy</label><input type="range" id="lfxWhammy" min="0" max="100" value="0"></div></div>
+    <div class="lfx-starnote" id="lfxStarNote" hidden><span id="lfxGlowT">Star power glow is off on the guitar — turn it on</span>
+      <label class="switch"><input type="checkbox" id="lfxGlowSw" data-b="rgbStarPower" aria-labelledby="lfxGlowT"><i></i></label></div>
+    <p class="dim small lfx-starnote" id="lfxZoneNote" hidden>Star power is set to show on no LEDs. Pick where under More options, Star power.</p>
+    <p class="dim small" id="lfxHint">Click, tap or hold the frets and strum buttons to try your settings. It also follows the real guitar.</p>`;
 }
 
-function buildHtml() {
-  return `<div class="studio-head"><div><h2>Lighting studio</h2><p class="dim">Design how the LEDs idle, react to your playing and glow for star power and whammy. Everything is sent to the guitar as you change it; use <b>Save to guitar</b> to keep it.</p></div>
-      <div class="studio-off" id="studioOff" hidden><span>LEDs are switched off.</span> <button type="button" class="btn small primary" id="studioOn">Turn LEDs on</button></div></div>
-    <div class="lfx-top">
-      <div class="lfx-box" id="lfxPreviewBox"><h3>Live preview</h3>
-        <div class="lfx-stage" id="lfxStage"><p class="dim" id="lfxNoLeds" hidden>No LEDs in the layout. Choose fret and / or strum LEDs under LED layout.</p>
-          <div class="lfx-frets" id="lfxFrets" role="group" aria-label="Fret LEDs. Press and hold to preview a fret."></div>
-          <div class="lfx-strum" id="lfxStrum" role="group" aria-label="Strum bar LEDs"><div class="lfx-bar" id="lfxBar"></div>
-            <div class="lfx-strumbtns"><button type="button" class="btn small lfx-hold" data-hold="up"><span aria-hidden="true">&#9650;</span> Strum up</button><button type="button" class="btn small lfx-hold" data-hold="down"><span aria-hidden="true">&#9660;</span> Strum down</button></div></div></div>
-        <div class="lfx-ctl"><button type="button" class="btn small lfx-starbtn" id="lfxStarBtn" aria-pressed="false"><span aria-hidden="true">&#9733;</span> Preview star power</button>
-          <div class="lfx-whammy"><label for="lfxWhammy">Whammy</label><input type="range" id="lfxWhammy" min="0" max="100" value="0"></div></div>
-        <p class="dim small" id="lfxHint">Click, tap or hold the frets and strum buttons to try your settings without touching the guitar. It also follows the real guitar.</p></div>
-      <div class="lfx-box" id="lfxThemeBox"><h3>Themes</h3><p class="dim small">One click sets every colour and effect. Fine-tune afterwards in the tabs below.</p>
-        ${needHtml()}<div data-v7><div class="lfx-themes" id="lfxThemes"></div>
-        <div class="row lfx-quick"><button type="button" class="btn small" id="lfxCopy">Copy fret settings to strum bar</button></div></div></div>
+function controlsHtml() {
+  return `<h2>Start with a theme</h2>${needHtml()}
+    <div data-v7><div class="lfx-themes" id="lfxThemes"></div></div>
+    <h2 class="lfx-customise">Customise</h2>
+    <div data-v7>
+      <section class="lfx-grp" aria-labelledby="gFrets"><h3 id="gFrets">Frets</h3>
+        <div class="lfx-fields">${select('lfxFretIdle', 'zoneFrets.idle', 'Idle', IDLE_ANIMS)}${select('lfxFretPress', 'zoneFrets.press', 'When pressed', PRESS_FX)}${speedField('lfx-frets-speed', 'zoneFrets.speed')}</div>
+        <div id="lfxFretCols" class="lfx-fretcols" role="group" aria-label="Fret colours"></div>
+        ${check('lfxFretSame', 'zoneFrets.same', 'Pressed = same colour')}
+      </section>
+      <section class="lfx-grp" aria-labelledby="gStrum"><h3 id="gStrum">Strum bar</h3>
+        <p class="dim small" id="lfxStrumNone" hidden>No strum LEDs — add them in LED setup.</p>
+        <div id="lfxStrumBody">
+          <div class="lfx-fields">${select('lfxStrumIdle', 'zoneStrum.idle', 'Idle', IDLE_ANIMS)}${select('lfxStrumPress', 'zoneStrum.press', 'When pressed', PRESS_FX)}${speedField('lfx-strum-speed', 'zoneStrum.speed')}</div>
+          <div class="lfx-swrow" id="lfxStrumCols" role="group" aria-label="Strum bar colours"></div>
+          ${check('lfxStrumSame', 'zoneStrum.same', 'Pressed = same colour')}
+          <p class="dim small lfx-warn" id="lfxStrumPressNote" hidden>The reaction picked above (<b>No reaction</b>, <b>Dim</b> or <b>Go dark</b>) doesn't use a pressed colour: pick <b>Light up</b>, <b>Flash &amp; fade</b> or another one to see the up / down colours.</p>
+        </div>
+      </section>
     </div>
-    <div class="lfx-tabs" role="tablist" aria-label="Lighting zones">${[['frets', 'Frets'], ['strum', 'Strum bar'], ['star', 'Star power'], ['extras', 'Whammy & extras']].map(([id, t]) => `<button type="button" role="tab" id="lfxtab-${id}" data-tab="${id}" aria-controls="lfxp-${id}" aria-selected="false" tabindex="-1">${t}</button>`).join('')}</div>
-    <div class="lfx-panel" role="tabpanel" id="lfxp-frets" aria-labelledby="lfxtab-frets" tabindex="0">${zonePanel('frets')}</div>
-    <div class="lfx-panel" role="tabpanel" id="lfxp-strum" aria-labelledby="lfxtab-strum" tabindex="0">${zonePanel('strum')}</div>
-    <div class="lfx-panel" role="tabpanel" id="lfxp-star" aria-labelledby="lfxtab-star" tabindex="0">
-      ${toggle('rgbSp', 'rgbStarPower', 'Star power glow', 'The LEDs react when the game reports star power (XInput games). Turn off to ignore it.')}
-      ${needHtml()}<div data-v7><section class="lfx-sec"><h3>Animation</h3>${cards('starAnim', STAR_ANIMS, 'Star power animation')}
-        <div class="lfx-colgrid" role="group" aria-label="Star power colour"><span class="lfx-lbl">Colour</span>${picker('starColor', 'Star power colour')}</div>
-        ${slider('lfx-star-speed', 'starSpeed', 'Speed', 1, 10, 'num')}</section>
-        <section class="lfx-sec"><h3>Where</h3><p class="dim small">Which LEDs show star power (a held fret keeps its own colour).</p>${zoneChecks('starZones', 'Star power zones')}</section>
-        ${toggle('lfxFlash', 'starFlash', 'Flash white when I activate star power', 'All LEDs flash white for a moment when you press star power or tilt.')}</div></div>
-    <div class="lfx-panel" role="tabpanel" id="lfxp-extras" aria-labelledby="lfxtab-extras" tabindex="0">
-      ${needHtml()}<div data-v7><section class="lfx-sec"><h3>Whammy bar effect</h3><p class="dim small">The LEDs change as you push the whammy bar (or tilt-whammy). Try the slider in the preview.</p>
-        ${cards('whammyFx', WHAMMY_FX, 'Whammy effect')}
-        <h4 class="lfx-sub">Where</h4>${zoneChecks('whammyZones', 'Whammy zones')}</section>
-        ${toggle('lfxSleep', 'sleepMin', 'Turn LEDs off when idle', '', 'id="lfxSleepRow" data-adv')}</div>
-      ${toggle('rgbFlash', 'rgbBootFlash', 'Show the mode at plug-in', 'The fret that picks the running mode flashes for a second.')}</div>
-    <p class="adv-hint" id="lfxAdvHint" hidden></p>`;
+    <section class="lfx-grp" aria-labelledby="gStar"><h3 id="gStar">Star power</h3>
+      <label class="lfx-check" id="rgbSpRow"><input type="checkbox" id="rgbSp" data-b="rgbStarPower"><span>Glow when the game reports star power</span></label>
+      <div data-v7><div class="lfx-fields">${select('lfxStarAnim', 'starAnim', 'Animation', STAR_ANIMS)}
+        <div class="lfx-field narrow"><span class="lfx-lbl" id="lfxStarColT">Colour</span><span class="lfx-sw">${picker('starColor', 'Star power colour')}</span></div></div></div>
+    </section>
+    <details class="lfx-more" id="lfxMore" ${S.moreOpen ? 'open' : ''}><summary><span>More options</span><span class="lfx-badge" id="lfxMoreN" hidden></span></summary>
+      <div class="lfx-more-body">
+        <div data-v7>
+        <section class="lfx-grp" aria-labelledby="mFrets"><h4 id="mFrets">Frets</h4>
+          ${slider('lfx-frets-level', 'zoneFrets.idleLevel', 'Idle brightness', 0, 100, 'pct')}
+          ${slider('lfx-frets-fade', 'zoneFrets.fade', 'Fade time', 1, 10, 'ms')}
+          <div id="lfxFret2Wrap">${check('lfxFret2', 'fret2Own', 'Second LED has its own colour')}<div class="lfx-swrow" id="lfxFret2Cols" role="group" aria-label="Second LED colours"></div></div>
+          <div class="row lfx-quick"><button type="button" class="btn small" id="lfxPressWhite">Pressed = white</button><button type="button" class="btn small" id="lfxPressBright">Pressed = brighter</button></div>
+          <h5 class="lfx-sub">Colour palettes</h5><div class="presets" id="lfxPalettes"></div>
+        </section>
+        <section class="lfx-grp" id="lfxMoreStrum" aria-labelledby="mStrum"><h4 id="mStrum">Strum bar</h4>
+          ${slider('lfx-strum-level', 'zoneStrum.idleLevel', 'Idle brightness', 0, 100, 'pct')}
+          ${slider('lfx-strum-fade', 'zoneStrum.fade', 'Fade time', 1, 10, 'ms')}
+          ${check('lfxPerLed', 'zoneStrum.perLed', 'Each strum LED its own colour')}
+          <div class="row lfx-quick"><button type="button" class="btn small" id="lfxCopy">Copy fret settings to strum bar</button></div>
+        </section>
+        <section class="lfx-grp" aria-labelledby="mStar"><h4 id="mStar">Star power</h4>
+          ${slider('lfx-star-speed', 'starSpeed', 'Speed', 1, 10, 'num')}
+          <p class="lfx-lbl small">Show star power on</p>${zoneChecks('starZones', 'Star power zones')}
+          ${check('lfxFlash', 'starFlash', 'Flash white when I activate star power')}
+        </section>
+        <section class="lfx-grp" aria-labelledby="mWham"><h4 id="mWham">Whammy</h4>
+          <div class="lfx-fields">${select('lfxWhammyFx', 'whammyFx', 'Effect', WHAMMY_FX)}</div>
+          <p class="lfx-lbl small">Show whammy on</p>${zoneChecks('whammyZones', 'Whammy zones')}
+        </section>
+        <section class="lfx-grp" aria-labelledby="mOther"><h4 id="mOther">Other</h4>
+          <div class="slider-row" id="lfxSleepRow"><label for="lfxSleepIn">Turn LEDs off when idle</label><output class="val" data-out="sleepMin" data-fmt="min"></output>
+            <input type="range" id="lfxSleepIn" data-b="sleepMin" min="0" max="30" step="1"></div>
+        </section>
+        </div>
+        <section class="lfx-grp" aria-labelledby="mOther2"><h4 id="mOther2" class="lfx-sr">Plug-in</h4>
+          ${check('rgbFlash', 'rgbBootFlash', 'Show the mode at plug-in (the fret that picks it flashes)')}
+        </section>
+      </div></details>`;
 }
 
 // ------------------------------------------------------------------ DOM <-> config
@@ -168,16 +179,18 @@ function readControl(el) {
     if (el.dataset.bit) return (getPath(c, p) & ~(+el.dataset.bit)) | (el.checked ? +el.dataset.bit : 0);
     return el.checked;
   }
-  if (el.type === 'range') return +el.value;
+  if (el.type === 'range' || el.dataset.num !== undefined) return +el.value;
   return el.value;
 }
 function writeControl(el) {
   const c = S.ctx.state.cfg, v = getPath(c, el.dataset.b);
   if (el.type === 'checkbox') el.checked = el.dataset.bit ? !!(v & +el.dataset.bit) : !!v;
-  else if (el.type === 'range') { if (+el.value !== v) el.value = v; }
-  else if (v !== undefined && el.value !== v) el.value = v;
+  else if (v === undefined) return;
+  else if (el.type === 'range' || el.dataset.num !== undefined) { if (el.value !== String(v)) el.value = v; }
+  else if (el.value !== v) el.value = v;
 }
 const v7 = () => (S.ctx.state.cfg.cfgVersion ?? 0) >= 7;
+const OLD_OK = ['rgbStarPower', 'rgbBootFlash'];   // the only studio switches that work on firmware before 0.34
 
 function changed(structural = false) {
   S.ctx.changed();
@@ -186,14 +199,14 @@ function changed(structural = false) {
 
 function wire() {
   const root = S.root;
-  $('#lfxStarBtn', root).addEventListener('click', () => { S.star = !S.star; if (S.star) S.manual.starPressed = true; sync(); });
-  // the page rebuilds the studio's HTML inside the same root (reconnect, undo): delegate once, not per rebuild
+  // the page rebuilds the studio's HTML inside the same root (reconnect, undo): delegate everything once, never per rebuild
   if (root._lfxWired) return;
   root._lfxWired = true;
   root.addEventListener('input', (e) => {
     const el = e.target;
+    if (el.id === 'lfxWhammy') { S.manual.whammy = +el.value / 100; S.manual.wAt = performance.now(); return; }
     if (el.dataset?.b && (el.type === 'range' || el.type === 'color')) {
-      if (!v7() && !['rgbStarPower', 'rgbBootFlash'].includes(el.dataset.b)) return;
+      if (!v7() && !OLD_OK.includes(el.dataset.b)) return;
       const c = S.ctx.state.cfg;
       setPath(c, el.dataset.b, readControl(el));
       let flip = false;
@@ -204,83 +217,82 @@ function wire() {
   });
   root.addEventListener('change', (e) => {
     const el = e.target;
-    if (el.dataset?.b && el.type === 'checkbox') {
-      if (!v7() && !['rgbStarPower', 'rgbBootFlash'].includes(el.dataset.b)) return;
+    if (el.dataset?.b && (el.type === 'checkbox' || el.tagName === 'SELECT')) {
+      if (!v7() && !OLD_OK.includes(el.dataset.b)) return;
       setPath(S.ctx.state.cfg, el.dataset.b, readControl(el)); changed(true);
     }
   });
   root.addEventListener('click', (e) => {
-    const card = e.target.closest('.lfx-card');
-    if (card && v7()) { setPath(S.ctx.state.cfg, card.parentElement.dataset.cards, +card.dataset.id); changed(true); return; }
-    const tab = e.target.closest('[data-tab]');
-    if (tab) { setTab(tab.dataset.tab, true); return; }
-    const th = e.target.closest('[data-theme]');
+    const t = e.target;
+    // star power preview: a plain toggle, shown even when the guitar's star power glow is off
+    if (t.closest('#lfxStarBtn')) { S.star = !S.star; if (S.star) S.manual.starPressed = true; sync(); return; }
+    const th = t.closest('[data-theme]');
     if (th && v7()) { applyTheme(S.ctx.state.cfg, THEMES[+th.dataset.theme]); changed(true); S.ctx.toast?.(`Theme: ${THEMES[+th.dataset.theme].name}`, 'ok'); return; }
-    const pal = e.target.closest('[data-palette]');
+    const pal = t.closest('[data-palette]');
     if (pal && v7()) { const c = S.ctx.state.cfg; c.colors = RGB_PRESETS[+pal.dataset.palette].colors.slice(); c.fret2Colors = c.colors.slice(); if (c.zoneFrets.same) c.fretPress = c.colors.slice(); changed(true); return; }
-    if (e.target.closest('#lfxCopy') && v7()) { copyFretsToStrum(S.ctx.state.cfg); changed(true); S.ctx.toast?.('Copied the fret settings to the strum bar', 'ok'); return; }
-    if (e.target.closest('#lfxPressWhite') && v7()) { const c = S.ctx.state.cfg; c.fretPress = Array(5).fill('#ffffff'); c.zoneFrets.same = false; changed(true); return; }
-    if (e.target.closest('#lfxPressBright') && v7()) { const c = S.ctx.state.cfg; c.fretPress = c.colors.map(brighter); c.zoneFrets.same = false; changed(true); return; }
-    if (e.target.closest('#studioOn')) S.ctx.turnOn();
+    if (t.closest('#lfxCopy') && v7()) { copyFretsToStrum(S.ctx.state.cfg); changed(true); S.ctx.toast?.('Copied the fret settings to the strum bar', 'ok'); return; }
+    if (t.closest('#lfxPressWhite') && v7()) { const c = S.ctx.state.cfg; c.fretPress = Array(5).fill('#ffffff'); c.zoneFrets.same = false; changed(true); return; }
+    if (t.closest('#lfxPressBright') && v7()) { const c = S.ctx.state.cfg; c.fretPress = c.colors.map(brighter); c.zoneFrets.same = false; changed(true); return; }
+    if (t.closest('#studioOn')) S.ctx.turnOn();
   });
-  // radio groups and tabs: arrow keys move
-  root.addEventListener('keydown', (e) => {
-    const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
-    const card = e.target.closest('.lfx-card'), tab = e.target.closest('[data-tab]');
-    if ((card || tab) && keys[e.key]) {
-      const list = card ? $$('.lfx-card', card.parentElement) : $$('[data-tab]', root), i = list.indexOf(card || tab), nx = list[(i + keys[e.key] + list.length) % list.length];
-      e.preventDefault(); nx.focus(); if (card && v7()) nx.click(); else if (tab) nx.click();
-    }
-  });
+  root.addEventListener('toggle', (e) => { if (e.target.id === 'lfxMore') { S.moreOpen = e.target.open; writeMore(S.moreOpen); } }, true);
   // the preview's hold buttons: pointer or keyboard, held while pressed
   const hold = (key, on) => { const now = performance.now(); S.manual.down[key] = on; if (on) S.manual.until[key] = now + 170; };
-  const holdTarget = (e) => e.target.closest('[data-hold]')?.dataset.hold;
+  const holdTarget = (e) => e.target.closest?.('[data-hold]')?.dataset.hold;
   root.addEventListener('pointerdown', (e) => { const k = holdTarget(e); if (k) { hold(k, true); try { e.target.closest('[data-hold]').setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ } } });
   for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) root.addEventListener(t, (e) => { const k = holdTarget(e); if (k) hold(k, false); });
   root.addEventListener('keydown', (e) => { const k = holdTarget(e); if (k && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); if (!e.repeat) hold(k, true); } });
   root.addEventListener('keyup', (e) => { const k = holdTarget(e); if (k && (e.key === ' ' || e.key === 'Enter')) hold(k, false); });
   root.addEventListener('blur', (e) => { const k = holdTarget(e); if (k) hold(k, false); }, true);
-  $('#lfxWhammy', root).addEventListener('input', (e) => { S.manual.whammy = +e.target.value / 100; S.manual.wAt = performance.now(); });
-}
-
-function setTab(id, focus = false) {
-  S.tab = id;
-  $$('[data-tab]', S.root).forEach((b) => { const on = b.dataset.tab === id; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
-  $$('.lfx-panel', S.root).forEach((p) => { p.hidden = p.id !== 'lfxp-' + id; });
 }
 
 // ------------------------------------------------------------------ sync config -> controls
-function paintCards(root, c) {
-  $$('[data-cards]', root).forEach((g) => {
-    const cur = getPath(c, g.dataset.cards);
-    $$('.lfx-card', g).forEach((b) => { const on = +b.dataset.id === cur; b.setAttribute('aria-checked', on); b.tabIndex = on ? 0 : -1; b.classList.toggle('sel', on); });
-  });
-}
 const rowsKey = (c) => JSON.stringify([c.fretLeds, c.noFretLeds, c.strumLeds, c.strumRoles, c.zoneStrum?.perLed]);
 function renderRows(c) {
   const key = rowsKey(c);
   if (S.rowsKey === key) return;
   S.rowsKey = key;
   const l = ledLayout(c), two = l.frets && l.per === 2;
-  $('#lfxFretCols', S.root).style.setProperty('--cols', two ? 3 : 2);
-  $('#lfxFretCols', S.root).innerHTML = `<span class="lfx-lbl head"></span><span class="lfx-hd">Idle</span><span class="lfx-hd" data-pcol>Pressed</span>${two ? '<span class="lfx-hd" data-c2>2nd LED</span>' : ''}` +
-    [0, 1, 2, 3, 4].map((f) => `<span class="lfx-lbl"><span class="fretdot" style="background:${FRET_DEFAULT_COLORS[f]}"></span>${FRET_NAMES[f]}</span>${picker(`colors.${f}`, `${FRET_NAMES[f]} idle colour`)}${picker(`fretPress.${f}`, `${FRET_NAMES[f]} pressed colour`, 'data-pcol')}${two ? picker(`fret2Colors.${f}`, `${FRET_NAMES[f]} second LED colour`, 'data-c2') : ''}`).join('');
+  const R = $('#lfxFretCols', S.root);
+  R.innerHTML = `<span></span>${[0, 1, 2, 3, 4].map((f) => `<span class="lfx-hd"><span class="fretdot" style="background:${FRET_DEFAULT_COLORS[f]}"></span>${esc(FRET_NAMES[f][0])}</span>`).join('')}
+    <span class="lfx-lbl">Idle</span>${[0, 1, 2, 3, 4].map((f) => picker(`colors.${f}`, `${FRET_NAMES[f]} idle colour`)).join('')}
+    <span class="lfx-lbl">Pressed</span>${[0, 1, 2, 3, 4].map((f) => picker(`fretPress.${f}`, `${FRET_NAMES[f]} pressed colour`, 'data-pcol')).join('')}`;
+  $('#lfxFret2Cols', S.root).innerHTML = [0, 1, 2, 3, 4].map((f) => picker(`fret2Colors.${f}`, `${FRET_NAMES[f]} second LED colour`, 'data-c2')).join('');
+  $('#lfxFret2Wrap', S.root).hidden = !two;
   const n = l.strum, per = !!c.zoneStrum?.perLed;
-  $('#lfxStrumCols', S.root).style.setProperty('--cols', 1);
-  $('#lfxStrumCols', S.root).innerHTML = !n ? '' : per
-    ? [...Array(n).keys()].map((k) => `<span class="lfx-lbl">Strum LED ${k + 1} <span class="dim">(${ROLE_TXT[c.strumRoles[k] || 0]})</span></span>${picker(`strumLedColors.${k}`, `Strum LED ${k + 1} idle colour`)}`).join('')
-    : `<span class="lfx-lbl">Idle colour</span>${picker('strumColor', 'Strum bar idle colour')}`;
+  $('#lfxStrumCols', S.root).innerHTML = (per
+    ? [...Array(n).keys()].map((k) => swatch(`LED ${k + 1}`, `strumLedColors.${k}`, '', `Strum LED ${k + 1} idle colour`)).join('')
+    : swatch('Idle', 'strumColor', '', 'Strum bar idle colour')) + swatch('Strum up', 'strumUpColor', 'data-pcol') + swatch('Strum down', 'strumDownColor', 'data-pcol');
   $('#lfxStrumNone', S.root).hidden = !!n;
-  S.dirtyRows = true;
+  $('#lfxStrumBody', S.root).hidden = !n;
+  $('#lfxMoreStrum', S.root).hidden = !n;
 }
-function sync(structural = false) {
+
+// settings in "More options" that are not at their default, so nothing active is ever hidden
+function moreChanged(c, l) {
+  const r = [], z = c.zoneFrets, s = c.zoneStrum;
+  if (z.idleLevel !== 25) r.push('fret idle brightness');
+  if (z.fade !== 5) r.push('fret fade time');
+  if (c.fret2Own && l.frets && l.per === 2) r.push('second LED colours');
+  if (l.strum) { if (s.idleLevel !== 25) r.push('strum idle brightness'); if (s.fade !== 5) r.push('strum fade time'); if (s.perLed) r.push('strum LED colours'); }
+  if (c.starSpeed !== 5) r.push('star power speed');
+  if (c.starZones !== 3) r.push('star power zones');
+  if (c.starFlash) r.push('star flash');
+  if (c.whammyFx !== WFX.NONE) r.push('whammy effect');
+  if (c.whammyZones !== 3) r.push('whammy zones');
+  if (c.sleepMin) r.push('sleep timer');
+  if (c.rgbBootFlash === false) r.push('mode flash at plug-in');
+  return r;
+}
+
+function sync() {
   if (!S) return;
   const c = S.ctx.state.cfg, root = S.root, ok = v7(), l = ledLayout(c);
   S.engine.setConfig(c);
   renderRows(c);
   $$('[data-b]', root).forEach(writeControl);
   $$('[data-out]', root).forEach((o) => { o.textContent = FMT[o.dataset.fmt || 'num'](getPath(c, o.dataset.out)); });
-  paintCards(root, c);
+  $$('[data-desc]', root).forEach((p) => { p.textContent = LISTS[p.dataset.desc][getPath(c, p.dataset.desc)]?.desc || ''; });
   // locked on firmware before 0.34
   $$('.lfx-need', root).forEach((e) => { e.hidden = ok; });
   $$('[data-v7]', root).forEach((e) => { e.inert = !ok; e.classList.toggle('lfx-locked', !ok); });
@@ -293,32 +305,24 @@ function sync(structural = false) {
     $(`#lfx-${zn}-fade`, root).hidden = !press.fade;
   }
   $('#lfx-star-speed', root).hidden = !(c.starAnim === STAR.PULSE || c.starAnim === STAR.STROBE);
-  $$('[data-pcol]', root).forEach((e) => { e.classList.toggle('dim-col', !!c.zoneFrets.same); });   // still clickable: picking one switches "same" off
+  $$('[data-pcol]', root).forEach((e) => { e.classList.toggle('dim-col', e.dataset.b.startsWith('fretPress') ? !!c.zoneFrets.same : !!c.zoneStrum.same); });   // still clickable: picking one switches "same" off
   $$('[data-c2]', root).forEach((e) => { e.disabled = !c.fret2Own; e.classList.toggle('dim-col', !c.fret2Own); });
-  $('#lfxFret2Row', root).hidden = !(l.frets && l.per === 2);
-  $('#lfxFret2Row', root).classList.toggle('adv-keep', !!c.fret2Own);
-  const sleepRow = $('#lfxSleepRow', root);
-  sleepRow.hidden = false; sleepRow.classList.toggle('adv-keep', !!c.sleepMin);
-  if (!sleepRow.dataset.built) {
-    sleepRow.dataset.built = 1;
-    sleepRow.innerHTML = `<div><h3 id="lfxSleepT">Turn LEDs off when idle</h3><p class="dim">The LEDs fade out after this many minutes without any button or whammy input, and wake on the next press. 0 keeps them on.</p></div>
-      <div class="lfx-sleep"><output class="val" data-out="sleepMin" data-fmt="min"></output><input type="range" id="lfxSleepIn" data-b="sleepMin" min="0" max="30" step="1" aria-labelledby="lfxSleepT"></div>`;
-    sync(); return;
-  }
-  $('#lfxStrumSame', root).disabled = !(l.strum);
-  $$('#lfxStrumCols input, #lfxPerLed, #lfxStrumSame', root).forEach((e) => { if (!l.strum) e.disabled = true; });
-  $$('[data-b="strumUpColor"], [data-b="strumDownColor"]', root).forEach((e) => { e.disabled = !l.strum; e.classList.toggle('dim-col', !!c.zoneStrum.same); });
-  { const n = $('#lfxStrumPressNote', root); if (n) n.hidden = ![0, 3, 4].includes(c.zoneStrum.press) || !l.strum; }
-  // preview: layout, off notice, star button
+  $('#lfxStrumPressNote', root).hidden = ![0, 3, 4].includes(c.zoneStrum.press) || !l.strum;
+  $('#lfxPerLed', root).disabled = !l.strum;
+  // preview: layout, off notice, star button and its notes
   $('#studioOff', root).hidden = !!c.rgbEnabled;
   $('#lfxStarBtn', root).setAttribute('aria-pressed', S.star);
   $('#lfxStarBtn', root).classList.toggle('on', S.star);
+  $('#lfxStarNote', root).hidden = !S.star || !!c.rgbStarPower;
+  $('#lfxZoneNote', root).hidden = !(S.star && ok && !(c.starZones & 3));
   const sig = JSON.stringify([l.frets, l.per, l.strum]);
   if (S.stageSig !== sig) { S.stageSig = sig; drawStage(l); }
   $('#lfxNoLeds', root).hidden = !!l.chain;
-  S.dirtyRows = false;
-  paintThemes(c); retintSwatches(c);
-  S.ctx.advRefresh?.();
+  // "More options" badge
+  const ch = ok ? moreChanged(c, l) : (c.rgbBootFlash === false ? ['mode flash at plug-in'] : []);
+  const badge = $('#lfxMoreN', root);
+  badge.hidden = !ch.length; badge.textContent = `${ch.length} changed`; badge.title = ch.join(', ');
+  paintThemes(c);
 }
 
 // themes list (once) + a marker on the one that matches the colours
@@ -367,51 +371,8 @@ function liveInput(now) {
   return {
     frets: [0, 1, 2, 3, 4].map((f) => held('f' + f) || real(c.pins[f])),
     up: held('up') || real(c.pins[5]), down: held('down') || real(c.pins[6]),
-    star: S.star, starPressed, whammy: Math.max(m.whammy, real_w),
+    star: S.star, forceStar: true, starPressed, whammy: Math.max(m.whammy, real_w),
   };
-}
-
-// ---- tiny animated swatches on the option cards
-function swatchCfg(kind, id, c) {
-  const pal = swatchPalette(kind, c), hot = pal.map(brighter);
-  const base = { cfgVersion: 7, colors: pal, fretPress: hot, fret2Colors: pal, fret2Own: false, strumLeds: 0, fretLeds: 1, strumLedColors: [], strumRoles: [], rgbStarPower: true, strumColor: '#ffffff',
-    starColor: c.starColor, starAnim: 0, starZones: 3, starSpeed: c.starSpeed, whammyFx: 0, whammyZones: 3, starFlash: false, sleepMin: 0, strumUpColor: '#00c8ff', strumDownColor: '#ff3cc8' };
-  const zk = kind.split('.')[0], zone = c[zk] || c.zoneFrets;
-  if (kind.endsWith('.idle')) base.zoneFrets = { idle: id, idleLevel: 100, press: 0, speed: zone.speed, fade: 5, same: true, perLed: false };
-  else if (kind.endsWith('.press')) base.zoneFrets = { idle: IDLE.SOLID, idleLevel: 28, press: id, speed: zone.speed, fade: zone.fade, same: false, perLed: false };
-  else base.zoneFrets = { idle: IDLE.SOLID, idleLevel: 30, press: 0, speed: 5, fade: 5, same: true, perLed: false };
-  if (kind === 'starAnim') base.starAnim = id;
-  if (kind === 'whammyFx') base.whammyFx = id;
-  base.zoneStrum = base.zoneFrets;
-  return base;
-}
-function swatchPalette(kind, c) {
-  if (kind === 'starAnim') return Array(5).fill(c.starColor);
-  if (kind.startsWith('zoneStrum')) { const n = Math.max(1, c.strumLeds || 1); return [0, 1, 2, 3, 4].map((k) => (c.zoneStrum.perLed ? c.strumLedColors[k % n] : c.strumColor) || '#ffffff'); }
-  return c.colors;
-}
-function buildSwatches() {
-  S.sw = $$('[data-sw]', S.root).map((el) => {
-    const [kind, id] = el.dataset.sw.split(':');
-    return { el, kind, id: +id, dots: $$('i', el), engine: null, tab: el.closest('.lfx-panel').id.replace('lfxp-', '') };
-  });
-  retintSwatches(S.ctx.state.cfg, true);
-}
-function retintSwatches(c, force = false) {
-  if (!S?.sw) return;
-  const sig = JSON.stringify([c.colors, c.strumColor, c.strumLedColors, c.zoneStrum.perLed, c.starColor, c.zoneFrets.speed, c.zoneFrets.fade, c.zoneStrum.speed, c.zoneStrum.fade, c.starSpeed, c.strumLeds]);
-  if (!force && S.swSig === sig) return;
-  S.swSig = sig;
-  for (const w of S.sw) { w.cfg = swatchCfg(w.kind, w.id, c); if (w.engine) w.engine.setConfig(w.cfg); else w.engine = createEngine(w.cfg); }
-}
-function tickSwatches(now) {
-  for (const w of S.sw || []) {
-    if (w.tab !== S.tab || !w.engine) continue;
-    const ph = now % 1500, step = Math.floor(now / 1500) % 5;
-    const inp = { frets: [0, 1, 2, 3, 4].map((f) => f === step && ph < 650), whammy: w.kind === 'whammyFx' ? 0.5 - 0.5 * Math.cos(now / 700) : 0, star: w.kind === 'starAnim', up: false, down: false };
-    const f = w.engine.tick(now, inp);
-    for (let k = 0; k < 5; k++) { const px = f.fret[k]; w.dots[k].style.background = `rgb(${gamma(px[0]) | 0},${gamma(px[1]) | 0},${gamma(px[2]) | 0})`; }
-  }
 }
 
 function frameLoop(now) {
@@ -424,7 +385,6 @@ function frameLoop(now) {
   if (l.frets) for (let k = 0; k < 5; k++) { paintLed(S.fretEls[k][0], f.fret[k]); if (S.fretEls[k][1]) paintLed(S.fretEls[k][1], f.fret2[k]); }
   for (let k = 0; k < S.strumEls.length; k++) if (f.strum[k]) paintLed(S.strumEls[k], f.strum[k]);
   $$('.lfx-fret, .lfx-hold', S.root).forEach((b) => { const k = b.dataset.hold, on = !!S.manual.down[k] || now < (S.manual.until[k] || 0); if (b._on !== on) { b._on = on; b.classList.toggle('held', on); } });
-  tickSwatches(now);
   S.frame = f;
 }
 
@@ -433,20 +393,14 @@ export function buildStudio(ctx) {
   const root = $('#studio');
   if (!root) return;
   if (S?.raf) cancelAnimationFrame(S.raf);
-  const keepTab = S?.tab || 'frets', keepStar = S?.star || false;
-  S = { ctx, root, engine: createEngine(ctx.state.cfg), manual: { down: {}, until: {}, whammy: 0, starPressed: false }, star: keepStar, tab: keepTab, raf: 0, sw: null, rowsKey: null, stageSig: null, fretEls: [], strumEls: [] };
-  root.innerHTML = buildHtml();
+  const keepStar = S?.star || false;
+  S = { ctx, root, engine: createEngine(ctx.state.cfg), manual: { down: {}, until: {}, whammy: 0, starPressed: false }, star: keepStar, moreOpen: S ? S.moreOpen : readMore(), raf: 0, rowsKey: null, stageSig: null, fretEls: [], strumEls: [] };
+  $('#studioPrev', root).innerHTML = previewHtml();
+  $('#studioCtl', root).innerHTML = controlsHtml();
   wire();
-  buildSwatches();
-  setTab(keepTab);
   sync();
   S.raf = requestAnimationFrame(frameLoop);
   // test hook: the latest rendered frame
   window.__lfx = { frame: () => S?.frame, engine: () => S?.engine, star: (on) => { S.star = on; sync(); } };
 }
 export function syncStudio() { if (S) { sync(); if (!S.raf && S.ctx.state.view === 'lights') S.raf = requestAnimationFrame(frameLoop); } }
-export function studioAdvNames() {
-  if (!S) return [];
-  const c = S.ctx.state.cfg, l = ledLayout(c);
-  return [!c.sleepMin && 'LED sleep timer', l.frets && l.per === 2 && !c.fret2Own && 'second LED colours'].filter(Boolean);
-}

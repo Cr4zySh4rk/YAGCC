@@ -206,51 +206,61 @@
 
   <!-- ================= LIGHTS ================= -->
   <section class="view" id="view-lights">
-    <div class="page-head"><h1 class="display">Lights</h1><p class="dim">Optional: only if you wired LEDs under the frets or on the strum bar. Turn them on, test them, pick colours.</p></div>
+    <div class="page-head"><h1 class="display">Lights</h1><p class="dim">Optional: only if you wired LEDs under the frets or on the strum bar. Check they work, then pick how they look.</p></div>
     <div id="lightsGate" class="gate small-gate"><p class="dim">Connect a controller to set up its lights.</p><button class="btn primary" data-connect>Connect controller</button></div>
     <div id="lightsMain" style="display:none">
-      <div class="stage compact"><div id="lightsStage"></div></div>
-      <section class="panel studio" id="studio" aria-label="Lighting studio"></section>
-      <div class="cols">
-        <div class="panel">
-          <div class="opt first"><div><h2>LEDs</h2><p class="dim">Turn on if you wired LEDs under the frets or on the strum bar.</p></div>
-            <label class="switch"><input type="checkbox" id="rgbOn"><i></i></label></div>
-          <div class="result" id="ledStatus"></div>
-          <div class="row led-gap"><button class="btn" id="ledTestBtn">Test LEDs</button></div>
+      <section class="panel led-hw" id="ledHw" aria-label="LED hardware">
+        <div class="led-sum">
+          <p class="led-sum-line" id="ledStatus" role="status"></p>
+          <div class="row led-sum-btns">
+            <button class="btn primary" id="ledSetupGo" hidden>Set up LEDs</button>
+            <button class="btn" id="ledTestBtn">Test LEDs</button>
+            <button class="btn" id="ledSetupBtn" aria-expanded="false" aria-controls="ledSetupBody">Change setup</button>
+          </div>
+        </div>
+        <div id="ledSetupBody" hidden>
+          <div class="opt first"><div><h3>LEDs</h3><p class="dim">Turn on if you wired LEDs under the frets or on the strum bar.</p></div>
+            <label class="switch"><input type="checkbox" id="rgbOn" aria-label="LEDs on"><i></i></label></div>
           <div id="rgbOpts">
             <div class="opt led-type"><div><h3>LED type</h3><p class="dim" id="ledTypeDesc"></p></div></div>
             <div id="ledTypeCards"></div>
-            <div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input (DIN, or DI on APA102).</p></div><select id="rgbPin"></select></div>
-            <div class="opt" id="ledClkRow"><div><h3>Clock pin</h3><p class="dim" id="ledClkHint">Wired to the first LED's clock input (CI / CKI).</p></div><select id="ledClk"></select></div>
-            <div class="opt adv" id="ledOrderRow"><div><h3>Colour order</h3><p class="dim" id="ledOrderHint">If red shows up green, try RGB.</p></div><select id="ledOrder"></select></div>
+            <div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input (DIN, or DI on APA102).</p></div><select id="rgbPin" aria-label="Data pin"></select></div>
+            <div class="opt" id="ledClkRow"><div><h3>Clock pin</h3><p class="dim" id="ledClkHint">Wired to the first LED's clock input (CI / CKI).</p></div><select id="ledClk" aria-label="Clock pin"></select></div>
+            <div class="opt adv" id="ledOrderRow"><div><h3>Colour order</h3><p class="dim" id="ledOrderHint">If red shows up green, try RGB.</p></div><select id="ledOrder" aria-label="Colour order"></select></div>
             <div class="slider-row"><label for="rgbBri">Brightness</label><output class="val" id="rgbBriVal"></output>
               <input type="range" id="rgbBri" min="0" max="255" step="1"></div>
             <div id="rgbBriNote"></div>
             <p class="adv-hint" id="ledAdvHint" hidden></p>
           </div>
-          <div id="ledHelp"></div>
-        </div>
-        <div class="stack">
-          <div class="panel" id="strumCard">
-            <h2>LED layout</h2>
+          <div class="led-sub" id="strumCard">
+            <h3>LED layout</h3>
             <div id="layoutOpts"></div>
             <div id="strumOpts"></div>
           </div>
+          <div class="led-sub" id="mapCard">
+            <h3>LED order</h3>
+            <p class="dim">Which LED in the chain sits under which fret or on the strum bar.</p>
+            <div id="mapView" class="ledmap"></div>
+            <button class="btn" id="mapWizard">Remap with the wizard</button>
+          </div>
+          <div id="ledHelp"></div>
+        </div>
+      </section>
+
+      <div class="look-head"><h2 id="lookH">Look</h2></div>
+      <div class="look-grid" id="studio" aria-labelledby="lookH">
+        <div class="panel look-prev" id="studioPrev"></div>
+        <div class="look-ctl">
           <div class="panel" id="legacyCard" hidden>
-            <h2>Effect and colours</h2>
-            <p class="dim">This guitar has firmware older than 0.34, which has one effect for all LEDs. <button type="button" class="btn small" data-led-update>Update firmware</button> for the full lighting studio above.</p>
-            <div class="choice-list" id="fxList"></div>
+            <h3>Effect</h3>
+            <p class="dim">This guitar has firmware older than 0.34, which has one effect for all LEDs. <button type="button" class="btn small" data-led-update>Update firmware</button> for the full set of options.</p>
+            <div class="lfx-field"><label for="fxSel">Effect</label><select id="fxSel"></select><p class="dim small lfx-desc" id="fxDesc"></p></div>
             <div class="slider-row"><label for="fxSpeed">Speed</label><output class="val" id="fxSpeedVal"></output>
               <input type="range" id="fxSpeed" min="1" max="10" step="1"></div>
             <div id="colRows"></div>
             <div class="presets" id="presets"></div>
           </div>
-          <div class="panel" id="mapCard">
-            <h2>LED order</h2>
-            <p class="dim">Which LED in the chain sits under which fret or on the strum bar.</p>
-            <div id="mapView" class="ledmap"></div>
-            <button class="btn" id="mapWizard">Remap with the wizard</button>
-          </div>
+          <div class="panel" id="studioCtl"></div>
         </div>
       </div>
     </div>

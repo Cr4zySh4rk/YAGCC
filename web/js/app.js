@@ -8,7 +8,7 @@ import { YaccDevice, webusbSupported } from './usb.js?v=dev';
 import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
 import { createGuitar } from './guitar.js?v=dev';
 import { renderHardware, renderCompat } from './pages.js?v=dev';
-import { buildStudio, syncStudio, studioAdvNames } from './studio.js?v=dev';
+import { buildStudio, syncStudio } from './studio.js?v=dev';
 import { SECTIONS, makeBackup, backupFileName, readBackup, applyBackup, download } from './backup.js?v=dev';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -205,8 +205,6 @@ function advRefresh() {
   hint('#modesAdvHint', advOn(), [!rx && 'Steam receiver option', !ports && 'PS2 / Wii ports', !host && 'USB host port'].filter(Boolean));
   const order = keep('#ledOrderRow', c.ledType === 2 || c.ledOrder !== 0);
   hint('#ledAdvHint', advOn() || order || c.ledType === 1 || !c.rgbEnabled, ['colour order']);
-  const studioNames = (c.cfgVersion ?? 0) >= 7 && c.rgbEnabled ? studioAdvNames() : [];
-  hint('#lfxAdvHint', advOn(), studioNames);
 }
 $('#advSw').addEventListener('change', (e) => {
   setAdv(e.target.checked);
@@ -416,8 +414,7 @@ function buildUi() {
   stageViewer = makeViewer($('#stage'), true, false, onGuitarPart);
   $('#tuneStage').innerHTML = '';
   makeViewer($('#tuneStage'), false, true);
-  $('#lightsStage').innerHTML = '';
-  makeViewer($('#lightsStage'), false, true);
+  if ($('#lightsStage')) { $('#lightsStage').innerHTML = ''; makeViewer($('#lightsStage'), false, true); }   // the Lights page has no compact viewer any more (the live preview replaces it)
   buildTune();
   buildBackup();
   buildLights();
@@ -841,7 +838,7 @@ function btnIcon(i) {
 
 const BP_AUTO_KEY = 'yagcc.btnAuto';
 const bp = { open: false, func: 0, queue: null, qi: 0, phase: 'listen', detector: null, timer: 0, prev: 0, msg: null, root: null, opener: null, restore: '', manualOpen: false };
-const bpAuto = () => store.get(BP_AUTO_KEY) === '1';
+const bpAuto = () => store.get(BP_AUTO_KEY) !== '0';   // on unless the user switched it off
 
 function btnUndoNow() {
   if (!btnUndo) return;
@@ -1605,13 +1602,14 @@ async function ledTestButton(btn, label) {
   return ok;
 }
 
+let ledHwOpen = false;   // the Lights page's "Change setup" disclosure (opens by itself while the LEDs would be dark)
 function buildLights() {
   const c = state.cfg;
   const $on = $('#rgbOn'), $pin = $('#rgbPin'), $bri = $('#rgbBri'), $spd = $('#fxSpeed');
   const used = new Set(assignedPins());
   $pin.innerHTML = '<option value="255">Choose pin…</option>' +
     [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p) || p === c.rgbPin).map((p) => `<option value="${p}">GP${p}</option>`).join('');
-  $('#fxList').innerHTML = EFFECTS.map((e) => `<label><input type="radio" name="fx" value="${e.id}"><div><b>${e.name}</b><span class="dim">${e.desc}</span></div></label>`).join('');
+  $('#fxSel').innerHTML = EFFECTS.map((e) => `<option value="${e.id}">${e.name}</option>`).join('');
   $('#presets').innerHTML = RGB_PRESETS.map((p, i) => `<button class="preset" data-preset="${i}">${p.colors.map((x) => `<i style="background:${x}"></i>`).join('')}<span>${p.name}</span></button>`).join('');
   $('#colRows').innerHTML = [0, 1, 2, 3, 4].map((f) => `<div class="col-row"><span><span class="fretdot" style="background:${FRET_DEFAULT_COLORS[f]}"></span>${funcName(f)}</span>
       <input type="color" data-col="${f}"><span class="hex" data-hex="${f}"></span></div>`).join('');
@@ -1626,10 +1624,18 @@ function buildLights() {
     $('#ledTypeCards').innerHTML = ledTypeCards(c);
     wireLedTypeCards($('#ledTypeCards'), c, live);
     // status line + help: say why the LEDs are dark right now; keep the panel open if the user opened it
-    const why = ledWhyDark(c), st = $('#ledStatus');
-    st.className = 'result ' + (why ? 'bad' : 'ok');
-    st.textContent = why ? `The LEDs stay dark because ${why}.` : 'Ready. Press Test LEDs to check the wiring.';
+    const why = ledWhyDark(c), st = $('#ledStatus'), n = ledLayout(c).chain;
+    st.className = 'led-sum-line ' + (why ? 'bad' : 'ok');
+    st.textContent = why ? `The LEDs stay dark because ${why}.`
+      : `\u2713 ${n} LED${n === 1 ? '' : 's'} \u00b7 ${LED_SHORT[c.ledType] || LED_SHORT[0]} on GP${c.rgbPin}${c.ledType === 2 ? ' + GP' + c.ledClkPin : ''} \u00b7 brightness ${c.rgbBrightness}`;
     $('#ledTestBtn').disabled = !!why;
+    $('#ledSetupGo').hidden = !why;
+    // the hardware controls are tucked away while everything works, and open by themselves when the LEDs would be dark
+    const open = !!why || ledHwOpen;
+    $('#ledSetupBody').hidden = !open;
+    $('#ledSetupBtn').hidden = !!why;
+    $('#ledSetupBtn').setAttribute('aria-expanded', String(open));
+    $('#ledSetupBtn').textContent = open ? 'Hide setup' : 'Change setup';
     const help = $('#ledHelp'), html = ledHelpHtml(c, !!help.querySelector('details[open]'));
     if (help._html !== html) { help.innerHTML = html; help._html = html; }
     $('#ledOrder').innerHTML = orderNames(c.ledType).map((o, i) => `<option value="${i}">${o}</option>`).join('');
@@ -1647,12 +1653,12 @@ function buildLights() {
     $bri.value = c.rgbBrightness; $('#rgbBriVal').textContent = c.rgbBrightness;
     $('#rgbBriNote').innerHTML = brightNote(c);
     $spd.value = c.rgbSpeed; $('#fxSpeedVal').textContent = c.rgbSpeed;
-    document.querySelectorAll('input[name=fx]').forEach((r) => { r.checked = +r.value === c.rgbEffect; });
+    $('#fxSel').value = String(c.rgbEffect); $('#fxDesc').textContent = EFFECTS.find((e) => e.id === c.rgbEffect)?.desc || '';
     document.querySelectorAll('[data-col]').forEach((i) => { i.value = c.colors[+i.dataset.col]; $(`[data-hex="${i.dataset.col}"]`).textContent = c.colors[+i.dataset.col].toUpperCase(); });
-    for (const id of ['#rgbOpts', '#legacyCard', '#mapCard', '#strumCard']) $(id).classList.toggle('rgb-disabled', !c.rgbEnabled);
+    for (const id of ['#rgbOpts', '#mapCard', '#strumCard']) $(id).classList.toggle('rgb-disabled', !c.rgbEnabled);
     $('#legacyCard').hidden = (c.cfgVersion ?? 0) >= 7;
     $('#mapView').innerHTML = chainLabels(c).map((l, p) => `${p ? '<span class="arrow">→</span>' : ''}<div class="led" ${l.fret !== undefined ? `data-fret="${l.fret}"` : `data-strum="${l.strum}"`} style="--c:${l.color}"><b style="background:${l.color}"></b>LED ${p + 1}<br>${l.name}</div>`).join('')
-      || '<p class="dim">No LEDs set up: choose fret and / or strum LEDs under LED layout.</p>';
+      || '<p class="dim">No LEDs set up: choose fret and / or strum LEDs under LED layout above.</p>';
     applyColors();
     syncStudio();
   };
@@ -1660,6 +1666,8 @@ function buildLights() {
 
   $on.onchange = () => { c.rgbEnabled = $on.checked; live(); };
   $pin.onchange = () => { c.rgbPin = +$pin.value; live(); };
+  $('#ledSetupBtn').onclick = () => { ledHwOpen = !ledHwOpen; refresh(); };
+  $('#ledSetupGo').onclick = () => { showView('setup'); goStep(STEPS.findIndex((s) => s.kind === 'rgb')); };
   $('#ledTestBtn').onclick = () => ledTestButton($('#ledTestBtn'), 'Test LEDs');
   $('#ledOrder').onchange = (e) => { c.ledOrder = +e.target.value; live(); };
   $('#ledClk').onchange = (e) => { c.ledClkPin = +e.target.value; if (c.ledClkPin === c.rgbPin) c.ledClkPin = PIN_NONE; live(); };
@@ -1667,7 +1675,7 @@ function buildLights() {
   // firmware before 0.34: one effect for everything (the preview and a later upgrade derive the zones from it)
   const legacyZones = () => { c.zoneFrets = effectZone(c.rgbEffect, c.rgbSpeed); c.zoneStrum = effectZone(c.rgbEffect, c.rgbSpeed); };
   $spd.oninput = () => { c.rgbSpeed = +$spd.value; legacyZones(); live(); };
-  $('#fxList').onchange = (e) => { c.rgbEffect = +e.target.value; legacyZones(); live(); };
+  $('#fxSel').onchange = (e) => { c.rgbEffect = +e.target.value; legacyZones(); live(); };
   $('#colRows').oninput = (e) => { const f = e.target.dataset.col; if (f !== undefined) { c.colors[+f] = e.target.value; c.fretPress[+f] = e.target.value; c.fret2Colors[+f] = e.target.value; live(); } };
   $('#presets').onclick = (e) => { const b = e.target.closest('[data-preset]'); if (b) { c.colors = RGB_PRESETS[+b.dataset.preset].colors.slice(); c.fretPress = c.colors.slice(); c.fret2Colors = c.colors.slice(); live(); } };
   $('#mapWizard').onclick = () => { showView('setup'); goStep(STEPS.findIndex((s) => s.kind === 'ledmap')); };
