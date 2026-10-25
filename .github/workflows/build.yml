@@ -38,10 +38,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Toolchain
+        timeout-minutes: 20
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc-arm-none-eabi \
-            libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          # the Ubuntu mirrors sometimes stall a download forever: time each try out and retry
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for try in 1 2 3; do
+            timeout 360 sudo apt-get $APT update && timeout 360 sudo apt-get $APT install -y --no-install-recommends \
+              cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib && break
+            [ $try = 3 ] && exit 1
+            echo "apt try $try failed, retrying"; sleep 15
+          done
           # Bluetooth GATT database hash (BTstack compile_gatt.py)
           python3 -m pip install --quiet pycryptodomex || pip3 install --quiet --break-system-packages pycryptodomex
 
