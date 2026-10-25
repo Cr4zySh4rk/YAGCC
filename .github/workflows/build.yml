@@ -134,6 +134,8 @@ jobs:
           touch site/.nojekyll
           # cache-bust: every deploy gets new asset URLs, so browsers never mix old JS with new HTML
           find site -name '*.html' -o -name '*.js' | xargs sed -i "s/?v=dev/?v=${GITHUB_SHA::7}/g"
+          # the page compares its own build (meta yagcc-build) with this file to offer a reload when it's stale
+          echo "{\"build\":\"?v=${GITHUB_SHA::7}\"}" > site/version.json
           ls -la site/downloads
 
       - uses: actions/configure-pages@v5

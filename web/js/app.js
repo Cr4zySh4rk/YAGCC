@@ -285,6 +285,27 @@ async function checkFirmware() {
   $('#fwLater').onclick = () => { store.set('yacc.fwSkip', `${latest.major}.${latest.minor}`); banner.hidden = true; };
 }
 
+// ------------------------------------------------------------------ configurator updates
+// GitHub Pages lets browsers keep the page for up to 10 minutes after a deploy. Each deploy writes version.json
+// (and stamps this page's build into the yagcc-build meta tag), so a page older than the live one offers a reload.
+const SITE_BUILD = document.querySelector('meta[name="yagcc-build"]')?.content || '';
+async function checkSite() {
+  if (!SITE_BUILD || SITE_BUILD.endsWith('=dev')) return;   // local copy
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    const v = r.ok ? await r.json() : null;
+    if (!v?.build || v.build === SITE_BUILD) return;
+    const b = $('#siteBanner');
+    b.innerHTML = `<div class="fw-inner"><span><b>The configurator was updated.</b> Reload the page to get the newest version.</span>
+      <span class="row"><button class="btn primary small" id="siteReload">Reload</button></span></div>`;
+    b.hidden = false;
+    $('#siteReload').onclick = () => location.reload();
+  } catch { /* offline */ }
+}
+checkSite();
+setInterval(checkSite, 10 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkSite(); });
+
 function goUpdate() {
   const key = BOARD_KEYS[state.info?.board];
   const sel = $('#boardSel');
