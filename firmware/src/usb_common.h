@@ -47,6 +47,7 @@
 #define VREQ_BTLOGFL  0x3A   // IN  : Bluetooth log kept in flash (test builds), OUT: erase it
 #define VREQ_RUMBLE   0x3B   // OUT : wValue = ms to run the rumble motor (test)
 #define VREQ_LEDTEST  0x38   // OUT : wValue = chain position to light white, 0xFFFF = back to normal
+#define VREQ_LEDPREVIEW 0x3C   // OUT, no data: wValue bits 0..4 frets held, 5 strum up, 6 strum down, 7 star power, 8..15 whammy 0..255; wIndex 1 = preview on, 0 = off
 
 #define XINPUT_REPORT_LEN 20
 #define PS3_REPORT_LEN    27

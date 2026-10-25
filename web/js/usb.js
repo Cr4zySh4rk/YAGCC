@@ -40,8 +40,8 @@ export class YaccDevice extends EventTarget {
     return r.data;
   }
 
-  async _out(request, value = 0, data) {
-    const setup = { requestType: 'vendor', recipient: 'interface', request, value, index: IFACE };
+  async _out(request, value = 0, data, index = IFACE) {
+    const setup = { requestType: 'vendor', recipient: 'interface', request, value, index };
     const r = data ? await this.dev.controlTransferOut(setup, data) : await this.dev.controlTransferOut(setup);
     if (r.status !== 'ok') throw new Error(`Control OUT 0x${request.toString(16)} ${r.status}`);
   }
@@ -58,6 +58,8 @@ export class YaccDevice extends EventTarget {
   async defaults() { await this._out(VREQ.DEFAULTS); }
   async rumbleTest(ms = 400) { await this._out(VREQ.RUMBLE, ms); }
   async ledTest(i) { await this._out(VREQ.LEDTEST, i < 0 ? 0xffff : i); }
+  // Lights page preview on the real LEDs (firmware 0.35+): bits 0..4 frets, 5 strum up, 6 down, 7 star power, 8..15 whammy
+  async ledPreview(bits, on) { await this._out(VREQ.LEDPREVIEW, bits & 0xffff, undefined, on ? 1 : 0); }
   async reboot(bootsel = false) { await this._out(VREQ.REBOOT, bootsel ? 1 : 0); }
 
   // Continuous status polling; dispatches 'status' events and 'lost' if the device vanishes

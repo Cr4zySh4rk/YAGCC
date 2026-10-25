@@ -108,7 +108,8 @@ function previewHtml() {
     <div class="lfx-starnote" id="lfxStarNote" hidden><span id="lfxGlowT">Star power glow is off on the guitar — turn it on</span>
       <label class="switch"><input type="checkbox" id="lfxGlowSw" data-b="rgbStarPower" aria-labelledby="lfxGlowT"><i></i></label></div>
     <p class="dim small lfx-starnote" id="lfxZoneNote" hidden>Star power is set to show on no LEDs. Pick where under More options, Star power.</p>
-    <p class="dim small" id="lfxHint">Click, tap or hold the frets and strum buttons to try your settings. It also follows the real guitar.</p>`;
+    <p class="dim small" id="lfxHint">Click, tap or hold the frets and strum buttons to try your settings. It also follows the real guitar.</p>
+    <p class="dim small" id="lfxFwNote" hidden></p>`;
 }
 
 function controlsHtml() {
@@ -234,6 +235,7 @@ function wire() {
     if (t.closest('#lfxPressWhite') && v7()) { const c = S.ctx.state.cfg; c.fretPress = Array(5).fill('#ffffff'); c.zoneFrets.same = false; changed(true); return; }
     if (t.closest('#lfxPressBright') && v7()) { const c = S.ctx.state.cfg; c.fretPress = c.colors.map(brighter); c.zoneFrets.same = false; changed(true); return; }
     if (t.closest('#studioOn')) S.ctx.turnOn();
+    if (t.closest('#lfxUpd')) S.ctx.goUpdate?.();
   });
   root.addEventListener('toggle', (e) => { if (e.target.id === 'lfxMore') { S.moreOpen = e.target.open; writeMore(S.moreOpen); } }, true);
   // the preview's hold buttons: pointer or keyboard, held while pressed
@@ -311,6 +313,11 @@ function sync() {
   $('#lfxPerLed', root).disabled = !l.strum;
   // preview: layout, off notice, star button and its notes
   $('#studioOff', root).hidden = !!c.rgbEnabled;
+  const fwn = $('#lfxFwNote', root), pok = !!S.ctx.fwPreview?.();
+  if (fwn && fwn._ok !== pok) {
+    fwn._ok = pok; fwn.hidden = false;
+    fwn.innerHTML = pok ? 'Your guitar\'s LEDs follow the preview while you use it.' : 'Update to firmware 0.35 to see the preview on the guitar\'s LEDs too. <button type="button" class="btn small" id="lfxUpd">Update firmware</button>';
+  }
   $('#lfxStarBtn', root).setAttribute('aria-pressed', S.star);
   $('#lfxStarBtn', root).classList.toggle('on', S.star);
   $('#lfxStarNote', root).hidden = !S.star || !!c.rgbStarPower;
@@ -375,9 +382,35 @@ function liveInput(now) {
   };
 }
 
+// The preview's own inputs mirrored to the guitar's LEDs (firmware 0.35+, VREQ_LEDPREVIEW). Changes go out at most every
+// 50 ms (the latest wins), a keep-alive every 400 ms while anything is active, and one "off" when it all goes quiet.
+const PV = { bits: 0, on: false, at: -1e9, busy: false };
+function pvSend(bits, on, now) {
+  PV.bits = bits; PV.on = on; PV.at = now; PV.busy = true;
+  try { Promise.resolve(S?.ctx.preview?.(bits, on)).catch(() => {}).finally(() => { PV.busy = false; }); } catch { PV.busy = false; }
+}
+function pvOff() { if (PV.on) { PV.on = false; PV.bits = 0; try { Promise.resolve(S?.ctx.preview?.(0, false)).catch(() => {}); } catch { /* gone */ } } }
+function pvPump(now) {
+  if (!S.ctx.fwPreview?.()) { PV.on = false; return; }
+  const m = S.manual, held = (k) => !!m.down[k] || now < (m.until[k] || 0);
+  let bits = 0;
+  for (let f = 0; f < 5; f++) if (held('f' + f)) bits |= 1 << f;
+  if (held('up')) bits |= 32;
+  if (held('down')) bits |= 64;
+  if (S.star) bits |= 128;
+  bits |= Math.round(Math.min(1, Math.max(0, m.whammy)) * 255) << 8;
+  const since = now - PV.at;
+  if (PV.busy && since < 2000) return;
+  if (bits !== PV.bits || (bits && !PV.on)) { if (since >= 50 && (bits || PV.on)) pvSend(bits, !!bits, now); }
+  else if (bits && since >= 400) pvSend(bits, true, now);
+}
+addEventListener('pagehide', pvOff);
+document.addEventListener('visibilitychange', () => { if (document.hidden) pvOff(); });
+
 function frameLoop(now) {
-  if (!S || !S.root.isConnected || S.ctx.state.view !== 'lights') { if (S) S.raf = 0; return; }
+  if (!S || !S.root.isConnected || S.ctx.state.view !== 'lights') { if (S) S.raf = 0; pvOff(); return; }
   S.raf = requestAnimationFrame(frameLoop);
+  pvPump(performance.now());
   const c = S.ctx.state.cfg;
   S.engine.setConfig(c);
   const f = S.engine.tick(now, liveInput(now));

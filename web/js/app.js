@@ -1726,6 +1726,7 @@ function buildLights() {
   buildStudio({
     state, changed: () => { applyColors(); refreshChain(); pushCfg(); }, toast, advRefresh,
     whammy: (s) => liveWhammy(s), turnOn: () => { c.rgbEnabled = true; live(); },
+    fwPreview: () => fwAtLeast(35), preview: (bits, on) => state.dev?.ledPreview(bits, on), goUpdate: () => goUpdate(),
   });
   refresh();
 }

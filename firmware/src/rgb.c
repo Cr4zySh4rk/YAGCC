@@ -31,6 +31,16 @@ static volatile uint8_t bt_led;
 static volatile uint32_t bt_connected_at;
 
 void rgb_set_star_power(bool on) { star_power = on; }
+
+// Lights page preview (VREQ_LEDPREVIEW): the page's clicked frets / strum / star / whammy act as extra inputs while
+// requests keep arriving (it lapses 1 s after the last one, so a closed page can't leave it stuck).
+static volatile uint16_t pv_bits;
+static volatile bool pv_on;
+static volatile uint32_t pv_at;
+void rgb_preview(uint16_t bits, bool on) { pv_bits = bits; pv_at = time_us_32(); pv_on = on; }
+static uint16_t pv(void) { return pv_on && time_us_32() - pv_at < 1000000u ? pv_bits : 0; }
+static bool pv_active(void) { return pv_on && time_us_32() - pv_at < 1000000u; }
+static bool fn_in(int f) { return input_func(f) || (f < 5 ? (pv() >> f) & 1 : f == F_STRUM_UP ? (pv() >> 5) & 1 : f == F_STRUM_DOWN ? (pv() >> 6) & 1 : 0); }
 void rgb_set_whammy(uint16_t w) { whammy_in = w; }
 void rgb_set_player_star(bool pressed) { pstar_in = pressed; }
 void rgb_set_charging(bool on) { charging = on; }
@@ -263,11 +273,11 @@ static int build_lights(light_t *l, int *chain) {
                 const uint8_t *c = (s && (g_cfg.led_flags & LEDF_FRET2_OWN)) ? g_cfg.fret2_color[f] : g_cfg.colors[f];
                 const uint8_t *p = (zf->zflags & ZF_SAME) ? c : g_cfg.fret_press[f];
                 l[n++] = (light_t){ s ? g_cfg.led_map2[f] : g_cfg.led_map[f], c[0], c[1], c[2], p[0], p[1], p[2],
-                                    (uint8_t)f, (int8_t)f, input_func(f), s != 0 };
+                                    (uint8_t)f, (int8_t)f, fn_in(f), s != 0 };
             }
     static const uint8_t white3[3] = {255, 255, 255};
     bool white = !g_cfg.strum_color[0] && !g_cfg.strum_color[1] && !g_cfg.strum_color[2];
-    bool up = input_func(F_STRUM_UP), dn = input_func(F_STRUM_DOWN);
+    bool up = fn_in(F_STRUM_UP), dn = fn_in(F_STRUM_DOWN);
     if (up) last_up = true; else if (dn) last_up = false;
     for (int i = 0; i < g_cfg.strum_leds && i < MAX_STRUM_LEDS; i++) {
         uint8_t role = strum_led_role(&g_cfg, i);
@@ -489,13 +499,17 @@ static void press_light(uint16_t *o, const light_t *l, const led_zone_t *z, cons
 
 static void render(const light_t *L, int n, px_t *px, uint8_t bright, uint32_t t) {
     const yacc_config_t *c = &g_cfg;
-    bool star = star_power && (c->flags & CFG_FLAG_RGB_STARPOWER);
-    uint32_t w = whammy_in > 32767 ? 32767 : whammy_in, w8 = w >> 7;
-    bool ps = pstar_in;
+    bool pva = pv_active();
+    bool pstar = pva && ((pv_bits >> 7) & 1);
+    bool star = (star_power && (c->flags & CFG_FLAG_RGB_STARPOWER)) || pstar;
+    uint32_t w = whammy_in > 32767 ? 32767 : whammy_in;
+    if (pva && (uint32_t)(pv_bits >> 8) * 32767u / 255u > w) w = (uint32_t)(pv_bits >> 8) * 32767u / 255u;
+    uint32_t w8 = w >> 7;
+    bool ps = pstar_in || pstar;
 
     // any input restarts the sleep timer; the star flash fires on the player's star power press
     uint16_t mask = ps ? 1u << NUM_FUNCS : 0;
-    for (int f = 0; f < NUM_FUNCS; f++) if (input_func(f)) mask |= 1u << f;
+    for (int f = 0; f < NUM_FUNCS; f++) if (fn_in(f)) mask |= 1u << f;
     int32_t dw = (int32_t)w - w_ref;
     if (mask != in_mask || dw > 400 || dw < -400) { in_mask = mask; w_ref = (int32_t)w; last_in = t; }
     if (ps && !ps_prev && (c->led_flags & LEDF_STAR_FLASH)) { flash_t0 = t; flash_on = true; }

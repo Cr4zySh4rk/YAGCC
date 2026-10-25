@@ -16,4 +16,5 @@ void rgb_set_charging(bool on);             // powered but no USB host (e.g. a c
 void rgb_set_star_power(bool on);           // game says star power / overdrive is active                 // true while the PIO drives this GPIO
 void rgb_set_whammy(uint16_t w);            // 0..32767, the bar and tilt-whammy combined
 void rgb_set_player_star(bool pressed);     // the player's star power button / tilt is pressed (LEDF_STAR_FLASH)
+void rgb_preview(uint16_t bits, bool on); // Lights page preview: bits 0..4 frets, 5 strum up, 6 down, 7 star, 8..15 whammy
 #endif
