@@ -21,6 +21,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,6 +31,7 @@ jobs:
 
   firmware:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -37,31 +39,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Toolchain
-        timeout-minutes: 20
+      # No apt: the Ubuntu mirrors kept stalling the install for 20+ minutes. The Arm toolchain comes from
+      # the GitHub Actions cache (downloaded from Arm once), ninja from PyPI, cmake is on the runner.
+      - name: Arm toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        timeout-minutes: 10
+        with:
+          release: '13.3.Rel1'
+
+      # the runner's own Python (in its tool cache, nothing to download); system pip refuses --user on Ubuntu 24.04
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Build tools
+        timeout-minutes: 5
         run: |
-          # the Ubuntu mirrors sometimes stall a download forever: time each try out and retry
-          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
           for try in 1 2 3; do
-            timeout 360 sudo apt-get $APT update && timeout 360 sudo apt-get $APT install -y --no-install-recommends \
-              cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib && break
-            [ $try = 3 ] && exit 1
-            echo "apt try $try failed, retrying"; sleep 15
+            timeout 120 python -m pip install --quiet ninja pycryptodomex && break
+            [ $try = 3 ] && exit 1; sleep 10
           done
-          # Bluetooth GATT database hash (BTstack compile_gatt.py)
-          python3 -m pip install --quiet pycryptodomex || pip3 install --quiet --break-system-packages pycryptodomex
+          ninja --version; cmake --version | head -1; arm-none-eabi-gcc --version | head -1
+
+      - name: Cache Pico SDK
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/pico-sdk
+            ${{ runner.temp }}/btstack
+          key: pico-sdk-${{ env.PICO_SDK_VERSION }}-${{ hashFiles('firmware/CMakeLists.txt') }}
+          restore-keys: pico-sdk-${{ env.PICO_SDK_VERSION }}-
 
       - name: Pico SDK
+        timeout-minutes: 10
         run: |
-          git clone --depth 1 -b ${PICO_SDK_VERSION} https://github.com/raspberrypi/pico-sdk "$RUNNER_TEMP/pico-sdk"
-          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1 lib/tinyusb lib/btstack lib/cyw43-driver lib/lwip
+          retry() { for try in 1 2 3; do timeout 300 "$@" && return 0; echo "retry $try: $*"; sleep 10; done; return 1; }
+          if [ ! -f "$RUNNER_TEMP/pico-sdk/pico_sdk_init.cmake" ]; then
+            rm -rf "$RUNNER_TEMP/pico-sdk"
+            retry git clone -q --depth 1 -b ${PICO_SDK_VERSION} https://github.com/raspberrypi/pico-sdk "$RUNNER_TEMP/pico-sdk"
+            retry git -C "$RUNNER_TEMP/pico-sdk" submodule update -q --init --depth 1 lib/tinyusb lib/btstack lib/cyw43-driver lib/lwip
+          fi
           # Bluetooth: Santroller's BTstack fork, at the commit firmware/CMakeLists.txt names (YACC_BTSTACK_COMMIT)
           BTSTACK_COMMIT=$(sed -n 's/^set(YACC_BTSTACK_COMMIT \([0-9a-f]*\))/\1/p' firmware/CMakeLists.txt)
-          git init -q "$RUNNER_TEMP/btstack"
-          git -C "$RUNNER_TEMP/btstack" fetch -q --depth 1 https://github.com/sanjay900/btstack "$BTSTACK_COMMIT"
-          git -C "$RUNNER_TEMP/btstack" checkout -q FETCH_HEAD
+          if [ "$(git -C "$RUNNER_TEMP/btstack" rev-parse HEAD 2>/dev/null)" != "$BTSTACK_COMMIT" ]; then
+            rm -rf "$RUNNER_TEMP/btstack"; git init -q "$RUNNER_TEMP/btstack"
+            retry git -C "$RUNNER_TEMP/btstack" fetch -q --depth 1 https://github.com/sanjay900/btstack "$BTSTACK_COMMIT"
+            git -C "$RUNNER_TEMP/btstack" checkout -q FETCH_HEAD
+          fi
 
       - name: Build
+        timeout-minutes: 15
         run: |
           cmake -S firmware -B build -G Ninja -DPICO_BOARD=${{ matrix.board }} -DPICO_SDK_PATH="$RUNNER_TEMP/pico-sdk" -DPICO_BTSTACK_PATH="$RUNNER_TEMP/btstack"
           cmake --build build
@@ -72,6 +99,9 @@ jobs:
           cp build/yacc.uf2 out/yagcc-${{ matrix.board }}.uf2
           cp build/nuke/yacc_nuke.uf2 out/nuke-${{ matrix.board }}.uf2
 
+      - name: Size
+        run: arm-none-eabi-size build/yacc.elf | tee -a "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ matrix.board }}
@@ -81,6 +111,7 @@ jobs:
     needs: [test, firmware]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
