@@ -109,7 +109,7 @@ function zonePanel(zn) {
 }
 function fretColours() {
   return `<div id="lfxFretCols" class="lfx-colgrid" role="group" aria-label="Fret colours"></div>
-    ${toggle('lfxFretSame', 'zoneFrets.same', 'Pressed colour = idle colour', 'The fret keeps its own colour when pressed. Turn off to pick a different pressed colour for each fret.')}
+    ${toggle('lfxFretSame', 'zoneFrets.same', 'Pressed colour = idle colour', 'The fret keeps its own colour when pressed. Turn off, or just pick a pressed colour above, to give each fret its own pressed colour.')}
     <div class="row lfx-quick"><button type="button" class="btn small" id="lfxPressWhite">Pressed = white</button><button type="button" class="btn small" id="lfxPressBright">Pressed = brighter</button></div>
     ${toggle('lfxFret2', 'fret2Own', 'Second LED has its own colour', 'With two LEDs per fret, give the second one a colour of its own.', 'id="lfxFret2Row" data-adv')}
     <h4 class="lfx-sub">Colour palettes</h4><div class="presets" id="lfxPalettes"></div>`;
@@ -118,10 +118,11 @@ function strumColours() {
   return `<p class="dim small" id="lfxStrumNone" hidden>No strum LEDs in the layout yet. Add them under <b>LED layout</b> below.</p>
     ${toggle('lfxPerLed', 'zoneStrum.perLed', 'Each strum LED its own colour', 'Pick a separate idle colour for every strum LED, or one colour for all of them.')}
     <div id="lfxStrumCols" class="lfx-colgrid" role="group" aria-label="Strum bar colours"></div>
+    ${toggle('lfxStrumSame', 'zoneStrum.same', 'Pressed colour = idle colour', 'The LED keeps its idle colour when strummed. Turn off, or just pick a strum up / down colour below, to light each direction in its own colour.')}
     <div class="lfx-colgrid" role="group" aria-label="Strum pressed colours">
       <span class="lfx-lbl">Strum up colour</span>${picker('strumUpColor', 'Strum up colour')}
       <span class="lfx-lbl">Strum down colour</span>${picker('strumDownColor', 'Strum down colour')}</div>
-    ${toggle('lfxStrumSame', 'zoneStrum.same', 'Pressed colour = idle colour', 'The LED keeps its idle colour when strummed. Turn off to use the up and down colours above.')}
+    <p class="dim small lfx-warn" id="lfxStrumPressNote" hidden>The reaction picked above (<b>No reaction</b>, <b>Dim</b> or <b>Go dark</b>) doesn't use a pressed colour: pick <b>Light up</b>, <b>Flash &amp; fade</b> or another one to see the up / down colours.</p>
     <p class="dim small">Which LEDs follow strum up, strum down or both is set under <b>LED layout</b> below.</p>`;
 }
 
@@ -193,7 +194,12 @@ function wire() {
     const el = e.target;
     if (el.dataset?.b && (el.type === 'range' || el.type === 'color')) {
       if (!v7() && !['rgbStarPower', 'rgbBootFlash'].includes(el.dataset.b)) return;
-      setPath(S.ctx.state.cfg, el.dataset.b, readControl(el)); changed();
+      const c = S.ctx.state.cfg;
+      setPath(c, el.dataset.b, readControl(el));
+      let flip = false;
+      if (/^fretPress\./.test(el.dataset.b) && c.zoneFrets.same) { c.zoneFrets.same = false; flip = true; }
+      if (/^strum(Up|Down)Color$/.test(el.dataset.b) && c.zoneStrum.same) { c.zoneStrum.same = false; flip = true; }
+      changed(flip);
     }
   });
   root.addEventListener('change', (e) => {
@@ -287,7 +293,7 @@ function sync(structural = false) {
     $(`#lfx-${zn}-fade`, root).hidden = !press.fade;
   }
   $('#lfx-star-speed', root).hidden = !(c.starAnim === STAR.PULSE || c.starAnim === STAR.STROBE);
-  $$('[data-pcol]', root).forEach((e) => { e.disabled = !!c.zoneFrets.same; e.classList.toggle('dim-col', !!c.zoneFrets.same); });
+  $$('[data-pcol]', root).forEach((e) => { e.classList.toggle('dim-col', !!c.zoneFrets.same); });   // still clickable: picking one switches "same" off
   $$('[data-c2]', root).forEach((e) => { e.disabled = !c.fret2Own; e.classList.toggle('dim-col', !c.fret2Own); });
   $('#lfxFret2Row', root).hidden = !(l.frets && l.per === 2);
   $('#lfxFret2Row', root).classList.toggle('adv-keep', !!c.fret2Own);
@@ -301,7 +307,8 @@ function sync(structural = false) {
   }
   $('#lfxStrumSame', root).disabled = !(l.strum);
   $$('#lfxStrumCols input, #lfxPerLed, #lfxStrumSame', root).forEach((e) => { if (!l.strum) e.disabled = true; });
-  $$('[data-b="strumUpColor"], [data-b="strumDownColor"]', root).forEach((e) => { e.disabled = !!c.zoneStrum.same || !l.strum; });
+  $$('[data-b="strumUpColor"], [data-b="strumDownColor"]', root).forEach((e) => { e.disabled = !l.strum; e.classList.toggle('dim-col', !!c.zoneStrum.same); });
+  { const n = $('#lfxStrumPressNote', root); if (n) n.hidden = ![0, 3, 4].includes(c.zoneStrum.press) || !l.strum; }
   // preview: layout, off notice, star button
   $('#studioOff', root).hidden = !!c.rgbEnabled;
   $('#lfxStarBtn', root).setAttribute('aria-pressed', S.star);

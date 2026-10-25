@@ -613,9 +613,9 @@ body.has-savebar #toasts { bottom: 90px; }
 .tilt-live i { width: 12px; height: 12px; border-radius: 50%; background: var(--line-2); flex: none; }
 .tilt-live.on i { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
 .tilt-live .small { font-weight: 400; }
-#tiltType .seg button small { display: block; font-weight: 400; font-size: 12px; opacity: .8; }
-#tiltType .seg button:disabled { opacity: .5; cursor: not-allowed; }
-@media (max-width: 560px) { #tiltType { flex-direction: column; align-items: stretch; } }
+.tilt-type .seg button small { display: block; font-weight: 400; font-size: 12px; opacity: .8; }
+.tilt-type .seg button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 560px) { .tilt-type { flex-direction: column; align-items: stretch; } }
 
 /* ---------- guitar stays in view while setting up ---------- */
 #setupMain .stage { --g3d-maxh: 200px; padding: 12px 18px 8px; }
@@ -724,3 +724,7 @@ body.has-savebar #toasts { bottom: 90px; }
   #studio .opt { flex-wrap: wrap; }
   .lfx-sleep { width: 100%; }
 }
+
+/* pressed-colour pickers stay usable while "same as idle" is on: picking one switches it off */
+.lfx-pick.dim-col:not(:disabled) { opacity: .55; cursor: pointer; }
+#lfxStrumPressNote { color: var(--warn); }

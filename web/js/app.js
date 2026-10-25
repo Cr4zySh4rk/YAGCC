@@ -388,7 +388,7 @@ async function autoConnect(navigate) {
 function onStatus(s) {
   state.status = s;
   if (state.view === 'lights') updateLedPreview(s);
-  if (state.view === 'tune') updateTilt(s);
+  if (state.view === 'tune') { updateTilt(s); updateTiltSwitch(s); }
   if (state.view === 'modes') updatePorts(s);
   for (const v of viewers) if (v.container.offsetParent !== null) updateViewer(v, s);
   tickStep(s);
@@ -767,12 +767,9 @@ function renderStep() {
         ${c.tiltEnabled ? `<div class="result ${have ? 'ok' : ''}" id="result" style="margin-top:12px">${have
           ? `Tilt switch on <span class="chip">GP${c.tiltPin}</span>`
           : '<span class="pulse"></span><span>Tilt the guitar up twice within 5 seconds.</span>'}</div>` : ''}
+        ${c.tiltEnabled ? `${tiltTypeHtml('tiltType')}
+          <div class="opt"><div><h3>Or choose the pin yourself</h3><p class="dim">Skips the double tilt.</p></div>${tiltPinSelect('tiltPinSel')}</div>` : ''}
         ${c.tiltEnabled && have ? `<div class="tilt-live" id="tiltLive"><i></i><span id="tiltLiveTxt">Tilt: not active</span><span class="dim small">Hold the guitar level, then tilt it up to check.</span></div>
-          <div class="opt" id="tiltType"><div><h3>Switch type</h3>
-            <p class="dim" id="tiltTypeHint">${fwAtLeast(33) ? 'If the indicator shows active while the guitar is level, pick the other one.' : 'Normally closed switches need firmware 0.33 or newer.'}</p></div>
-            <div class="seg" role="radiogroup" aria-label="Switch type">
-              <button type="button" role="radio" data-inv="0" aria-checked="${!c.tiltInvert}" class="${c.tiltInvert ? '' : 'on'}" ${fwAtLeast(33) ? '' : 'disabled'}>Normally open<small> closes when tilted</small></button>
-              <button type="button" role="radio" data-inv="1" aria-checked="${!!c.tiltInvert}" class="${c.tiltInvert ? 'on' : ''}" ${fwAtLeast(33) ? '' : 'disabled'}>Normally closed<small> opens when tilted</small></button></div></div>
           <div class="notice" id="tiltSuggest" hidden><span id="tiltSuggestTxt"></span> <button type="button" class="btn small primary" id="tiltSuggestBtn">Switch</button></div>` : ''}
         ${nav(`${c.tiltEnabled && have ? '<button class="btn quiet" id="tRedo">Re-detect</button>' : ''}<button class="btn primary" id="bSkip">Continue</button>`)}`;
       wireNav();
@@ -780,6 +777,7 @@ function renderStep() {
       $('#tiltSw').addEventListener('change', (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); renderTilt(); });
       $('#tRedo')?.addEventListener('click', () => { c.tiltPin = PIN_NONE; pushCfg(); renderTilt(); });
       card.querySelectorAll('#tiltType [data-inv]').forEach((b) => b.addEventListener('click', () => { c.tiltInvert = b.dataset.inv === '1'; pushCfg(); renderTilt(); }));
+      $('#tiltPinSel')?.addEventListener('change', (e) => { c.tiltPin = +e.target.value; pushCfg(); stepCtx.active = false; renderStepList(); renderTilt(); });
       $('#tiltSuggestBtn')?.addEventListener('click', () => { c.tiltInvert = !c.tiltInvert; pushCfg(); renderTilt(); });
     };
     renderTilt();
@@ -1027,6 +1025,42 @@ function bpTick(s) {
   }
 }
 
+// shared by the Setup tilt step and the Tune "Tilt switch" panel
+function tiltTypeHtml(id) {
+  const c = state.cfg, ok = fwAtLeast(33), dis = ok ? '' : 'disabled';
+  return `<div class="opt tilt-type" id="${id}"><div><h3>Which position counts as tilted?</h3>
+    <p class="dim" id="${id}Hint">${ok ? 'If the indicator shows active while the guitar is level, pick the other one.' : 'Normally closed switches need firmware 0.33 or newer.'}</p></div>
+    <div class="seg" role="radiogroup" aria-label="Which position counts as tilted?">
+      <button type="button" role="radio" data-inv="0" aria-checked="${!tiltInverted()}" class="${tiltInverted() ? '' : 'on'}" ${dis}>Switch closed = tilted<small> normally open</small></button>
+      <button type="button" role="radio" data-inv="1" aria-checked="${tiltInverted()}" class="${tiltInverted() ? 'on' : ''}" ${dis}>Switch open = tilted<small> normally closed</small></button></div></div>`;
+}
+function tiltPinSelect(id) {
+  const c = state.cfg, used = new Set(assignedPins().filter((p) => p !== c.tiltPin));
+  const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p));
+  return `<select id="${id}" aria-label="Tilt switch pin"><option value="255" ${c.tiltPin === PIN_NONE ? 'selected' : ''}>Not set</option>${free.map((p) => `<option value="${p}" ${p === c.tiltPin ? 'selected' : ''}>GP${p}</option>`).join('')}</select>`;
+}
+function buildTiltSwitch() {
+  const c = state.cfg, body = $('#tiltSwBody');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="opt first"><div><h3>Tilt for star power</h3><p class="dim">A tilt switch wired to a free pin triggers star power when the neck is lifted.</p></div>
+      <label class="switch"><input type="checkbox" id="tsOn" ${c.tiltEnabled ? 'checked' : ''}><i></i></label></div>
+    ${c.tiltEnabled ? `<div class="opt"><div><h3>Switch pin</h3><p class="dim">Or use Setup to find it by tilting twice.</p></div>${tiltPinSelect('tsPin')}</div>
+      ${tiltTypeHtml('tsType')}
+      <div class="tilt-live" id="tsLive"><i></i><span id="tsLiveTxt">Tilt: not active</span><span class="dim small">Hold the guitar level, then tilt it up to check.</span></div>` : ''}`;
+  $('#tsOn').onchange = (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); buildTiltSwitch(); };
+  $('#tsPin')?.addEventListener('change', (e) => { c.tiltPin = +e.target.value; pushCfg(); buildTiltSwitch(); });
+  body.querySelectorAll('#tsType [data-inv]').forEach((b) => b.addEventListener('click', () => { c.tiltInvert = b.dataset.inv === '1'; pushCfg(); buildTiltSwitch(); }));
+  if (state.status) updateTiltSwitch(state.status);
+}
+function updateTiltSwitch(s) {
+  const live = $('#tsLive');
+  if (!live) return;
+  const on = tiltSwitchActive(s);
+  live.classList.toggle('on', on);
+  $('#tsLiveTxt').textContent = on ? 'Tilt: active' : 'Tilt: not active';
+}
+
 // live "Tilt: active" indicator on the setup step, plus a suggestion when it stays on while the guitar should be level
 function tickTiltLive(s) {
   const live = $('#tiltLive');
@@ -1139,6 +1173,7 @@ function buildTune() {
     state.cfg = await state.dev.getConfig(); state.step = 0; buildUi(); takeSnapshot(); toast('Reset to defaults', 'ok');
   };
   refresh();
+  buildTiltSwitch();
   buildTilt();
   buildRumble();
 }
