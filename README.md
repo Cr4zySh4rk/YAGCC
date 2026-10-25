@@ -35,17 +35,18 @@ An earlier 5-minute walkthrough with voice-over (from v0.4; the setup flow is th
 
 ## How it works
 
-1. **Flash** – download the *flash nuke* (wipes the old firmware and settings) and the YAGCC firmware for your board, or let the page write them straight to the `RPI-RP2` drive.
-2. **Plug in** – the page detects the controller and jumps to guided setup.
-3. **Guided setup** – for every control YAGCC asks you to press it twice within a second, watches which GPIO changed, and assigns it:
-   green → red → yellow → blue → orange → strum up → strum down → star power → plus.
+1. **Install** – download the *flash nuke* (wipes the old firmware and settings) and the YAGCC firmware for your board, or let the page write them straight to the `RPI-RP2` drive.
+2. **Plug in** – the page detects the controller and points you to the next step.
+3. **Buttons** – one screen with a tile for every control (five frets, strum up / down, star power, plus). Nothing listens until you ask: click **Set** on a tile, or click the control on the guitar picture (2D or 3D), and a prompt shows that button and asks you to press it twice. **Clear** (with undo) removes an assignment, **Clear all** removes them all. **Map all buttons** / **Map the missing ones** go through the prompts in order, with Skip and Stop; it waits for you between buttons unless you tick *Go to the next button by itself*. Pressing a button that is already used offers to move it.
 4. **Whammy** – move the bar through two full sweeps; YAGCC finds the analog pin, calibrates min/max, detects direction and shows a live meter. Live readings of GP26–28 are shown, with a manual *Use pin* / *Capture rest* / *Capture full* fallback.
-5. **RGB** – say whether you wired LEDs under the frets and / or on the strum bar (0–8 strum LEDs, wired before or after the frets), give the data pin, and teach YAGCC the chain order by pressing the fret above each lit LED, or strumming for a strum LED.
+5. **RGB** – one question at a time: do you have LEDs, **which kind** (WS2812B / NeoPixel, SK6812 RGBW or APA102 / SK9822 / DotStar, told apart by the number of wires), the layout (0–8 strum LEDs, one or two per fret), the data pin (and clock pin for APA102), then a **light-them-up test**. If they stay dark, a troubleshooting panel checks the settings and lists the usual wiring mistakes. Then teach YAGCC the chain order by pressing the fret above each lit LED, or strumming for a strum LED.
 6. **Add-ons** – Bluetooth toggle (Pico W / Pico 2 W only) and an optional tilt switch (a plain digital switch such as a mercury ball switch; tilt up twice within 5 s to register it as a star-power shortcut).
-7. **Tune** – debounce time (presets or slider), combined-strum debounce, whammy smoothing, dead-zone and direction, and the **tilt sensors**, all live.
-8. **Lights** – optional RGB LEDs under the frets and on the strum bar (WS2812, SK6812 RGBW or APA102; colours, reactive effects, brightness, LED layout and order, star power glow).
-9. **Modes** – choose what the controller pretends to be, the XInput guitar type and the Fortnite Festival key bindings.
-10. **Hardware / Compatibility** – reference pages listing supported boards and parts, and what works with which game and console.
+7. **Lights** – colours, reactive effects, brightness, LED layout and order, star power glow, with a status line saying why the LEDs would be dark, a *Test LEDs* button and the same troubleshooting panel.
+8. **Modes** – choose what the controller pretends to be, the XInput guitar type and the Fortnite Festival key bindings.
+9. **Tune** – optional: debounce time (presets or slider), combined-strum debounce, whammy smoothing, dead-zone and direction, all live.
+10. **Help** – *Wiring & hardware* and *Compatibility* reference pages.
+
+Changes apply live; one bar at the bottom appears whenever something isn't saved yet, with **Save to guitar** and **Undo changes**. Expert settings (tilt sensors and accelerometer filters, rumble, PS2 / Wii ports, USB host port, Steam receiver option, Bluetooth debug log, colour order) are behind the **Advanced** switch in the header; anything already set to a non-default value stays visible.
 
 ## USB modes
 

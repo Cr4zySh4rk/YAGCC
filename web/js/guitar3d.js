@@ -30,8 +30,8 @@ const ASPECT = 1100 / 340;   // same box as the 2D drawing, so nothing jumps whe
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // state: what the real guitar is doing. The render loop eases the model towards it.
-export function createGuitar3D(host, { onReady, onFail } = {}) {
-  const st = { pressed: {}, whammy: 0, tilt: false, focus: [], colors: { ...DEFAULT_COLORS } };
+export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
+  const st = { pressed: {}, whammy: 0, tilt: false, focus: [], hover: '', colors: { ...DEFAULT_COLORS } };
   let disposed = false;
   const api = {
     setPressed(n, on) { st.pressed[n] = !!on; },
@@ -142,7 +142,7 @@ export function createGuitar3D(host, { onReady, onFail } = {}) {
       const k = still ? 1 : 1 - Math.exp(-dt * 22), kSlow = still ? 1 : 1 - Math.exp(-dt * 7);
       const t = clock.elapsedTime;
       const pulse = reduceMotion() ? 0.5 : 0.5 + 0.5 * Math.sin(t * 4.2);
-      const focus = (n) => st.focus.includes(n);
+      const focus = (n) => st.focus.includes(n) || st.hover === n;   // hovering a clickable part pulses it like a focus
       moving = st.focus.length > 0 && !reduceMotion();
 
       for (const [n, node] of Object.entries(FRETS)) {
@@ -197,6 +197,57 @@ export function createGuitar3D(host, { onReady, onFail } = {}) {
       if (want) { clock.getDelta(); renderer.setAnimationLoop(frame); } else renderer.setAnimationLoop(null);
     }
     api.dispose = () => { disposed = true; loop(); ro.disconnect(); io.disconnect(); renderer.dispose(); };
+
+    // click-to-map: a click (not a drag) on a fret, the strum bar or a button reports its FUNCS name.
+    // Meshes may be nested, so walk up the parents until one of the named nodes is found.
+    if (onPart) {
+      const NODE_FUNC = { Strummer: 'strumUp', button_Back: 'star', button_Start: 'plus', whammy_Bar: 'whammy' };
+      for (const [n, node] of Object.entries(FRETS)) NODE_FUNC[node] = n;
+      // The bundled three.js has no Raycaster, so hit-test in screen space instead: project each part's
+      // world bounding box to the canvas and take the smallest box under the pointer (a fret sits inside
+      // the neck's box, so "smallest" is the part). The strum bar splits into up (upper half) / down.
+      const corner = new T.Vector3(), box = new T.Box3();
+      const screenBox = (o, r) => {
+        box.setFromObject(o);
+        let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+        for (let i = 0; i < 8; i++) {
+          corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera);
+          const x = (corner.x + 1) / 2 * r.width, y = (1 - corner.y) / 2 * r.height;
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        }
+        return [x0, y0, x1, y1];
+      };
+      const pick = (e) => {
+        const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, pad = 4;
+        scene.updateMatrixWorld(true);
+        let best = '', area = 1e18;
+        for (const [node, name] of Object.entries(NODE_FUNC)) {
+          if (!part[node]) continue;
+          const [x0, y0, x1, y1] = screenBox(part[node], r);
+          if (px < x0 - pad || px > x1 + pad || py < y0 - pad || py > y1 + pad) continue;
+          const a = (x1 - x0) * (y1 - y0);
+          if (a < area) { area = a; best = name === 'strumUp' && py > (y0 + y1) / 2 ? 'strumDown' : name; }
+        }
+        return best;
+      };
+      let down = null, hoverRaf = 0;
+      canvas.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
+      canvas.addEventListener('pointerup', (e) => {
+        if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) { down = null; return; }   // a drag turns the model
+        down = null;
+        const n = pick(e);
+        if (n) onPart(n);
+      });
+      canvas.addEventListener('pointermove', (e) => {
+        if (down || e.pointerType === 'touch' || hoverRaf) return;
+        hoverRaf = requestAnimationFrame(() => {
+          hoverRaf = 0;
+          const n = pick(e);
+          if (n !== st.hover) { st.hover = n; needsDraw = true; canvas.style.cursor = n ? 'pointer' : ''; }
+        });
+      });
+      canvas.addEventListener('pointerleave', () => { if (st.hover) { st.hover = ''; needsDraw = true; canvas.style.cursor = ''; } });
+    }
 
     if (force3d) (window.__g3d ||= []).push({ T, scene, camera, controls, orient, part });
     size();

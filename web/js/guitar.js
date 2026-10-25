@@ -27,7 +27,7 @@ function grad(defs, id, kind, attrs, stops) {
   return g;
 }
 
-function createGuitar2D() {
+function createGuitar2D(onPart) {
   const u = ++uidCounter;
   const id = (n) => `g${u}-${n}`;
   const url = (n) => `url(#${id(n)})`;
@@ -198,6 +198,17 @@ function createGuitar2D() {
   label(286, 122, 'Strum', 'g-label body'); label(176, 276, 'Whammy', 'g-label body');
   label(600, 114, 'Tilt'); label(828, 222, 'Frets');
 
+  // click-to-map: parts the caller can map get a pointer cursor and a hover outline (CSS .clickable)
+  if (onPart) {
+    for (const [k, g] of Object.entries(parts)) {
+      if (k === 'tilt') continue;
+      g.classList.add('clickable');
+      g.setAttribute('role', 'button'); g.setAttribute('tabindex', '0');
+      g.setAttribute('aria-label', 'Map ' + k);
+      g.addEventListener('click', () => onPart(k));
+      g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPart(k); } });
+    }
+  }
   const needleSet = (on) => { needle.style.transform = on ? 'rotate(-38deg)' : 'rotate(0deg)'; };
 
   return {
@@ -225,8 +236,8 @@ function createGuitar2D() {
 }
 
 // The live view: the 3D model when WebGL is available, the drawing until it has loaded (or if it can't).
-export function createGuitar({ compact = false } = {}) {
-  const g2 = createGuitar2D();
+export function createGuitar({ compact = false, onPart = null } = {}) {
+  const g2 = createGuitar2D(onPart);
   const wrap = document.createElement('div');
   wrap.className = 'guitar-view' + (compact ? ' compact-3d' : '');
   wrap.appendChild(g2.el);
@@ -234,6 +245,7 @@ export function createGuitar({ compact = false } = {}) {
   if (webglAvailable() && !/[?&]2d\b/.test(location.search)) {
     wrap.classList.add('loading-3d');   // keep the drawing's space but don't flash it while the model loads
     const g3 = createGuitar3D(wrap, {
+      onPart,
       onReady: () => { wrap.classList.replace('loading-3d', 'is-3d'); },
       onFail: () => { wrap.classList.remove('loading-3d', 'is-3d'); },   // fall back to the drawing
     });
