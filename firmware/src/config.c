@@ -93,6 +93,7 @@ static void atilt_defaults(yacc_config_t *c) {
 static void v6_defaults(yacc_config_t *c) {
     c->fret_leds = 1;
     for (int i = 0; i < NUM_FRETS; i++) c->led_map2[i] = (uint8_t)(NUM_FRETS + i);
+    c->tilt_invert = 0;
     memset(c->reserved3, 0, sizeof(c->reserved3));
 }
 

@@ -251,7 +251,9 @@ table.sum td .dim { font-family: var(--sans); }
 .part.on .glyph.light { stroke: #10131c; }
 .part.on .glyph.light.fill { fill: #10131c; stroke: none; }
 .focus-ring { fill: none; stroke: var(--cyan); stroke-width: 2.5; stroke-dasharray: 6 5; opacity: 0; pointer-events: none; }
-.focus .focus-ring { opacity: 1; animation: dash .7s linear infinite; }
+.focus .focus-ring { opacity: 1; stroke-width: 3.5; fill: rgba(28,198,255,.16); filter: drop-shadow(0 0 5px var(--cyan)); animation: dash .7s linear infinite, ringpulse 1.1s ease-in-out infinite; }
+@keyframes ringpulse { 50% { opacity: .45; filter: drop-shadow(0 0 11px var(--cyan)); } }
+@media (prefers-reduced-motion: reduce) { .focus .focus-ring { animation: none; } }
 @keyframes dash { to { stroke-dashoffset: -22; } }
 .wh-track, .wh-fill { fill: none; stroke-width: 5; stroke-linecap: round; }
 .wh-track { stroke: rgba(0,0,0,.45); }
@@ -605,3 +607,33 @@ body.has-savebar #toasts { bottom: 90px; }
 }
 @media (max-width: 640px) { body.has-savebar #toasts { bottom: 150px; right: 12px; left: 12px; } }
 #heroConnect[hidden] { display: none; }
+
+/* ---------- tilt switch type ---------- */
+.tilt-live { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 0 0 10px; font-weight: 600; }
+.tilt-live i { width: 12px; height: 12px; border-radius: 50%; background: var(--line-2); flex: none; }
+.tilt-live.on i { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.tilt-live .small { font-weight: 400; }
+#tiltType .seg button small { display: block; font-weight: 400; font-size: 12px; opacity: .8; }
+#tiltType .seg button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 560px) { #tiltType { flex-direction: column; align-items: stretch; } }
+
+/* ---------- guitar stays in view while setting up ---------- */
+#setupMain .stage { --g3d-maxh: 200px; padding: 12px 18px 8px; }
+#setupMain .stage svg.guitar { max-height: 200px; }
+#setupMain .stage .pins { margin-top: 6px; }
+@media (min-height: 601px) {
+  #setupMain .stage { position: sticky; top: calc(var(--hdr, 61px) + 8px); z-index: 20; box-shadow: 0 0 0 1px rgba(28,198,255,.06), 0 18px 40px -12px rgba(0,0,0,.7); }
+}
+@media (max-width: 760px) {
+  #setupMain .stage { --g3d-maxh: 130px; padding: 6px 12px 4px; top: calc(var(--hdr, 61px) + 4px); }
+  #setupMain .stage svg.guitar { max-height: 130px; }
+  #setupMain .stage .pins { display: none; }
+}
+@media (max-height: 700px) { #setupMain .stage .pins { display: none; } }
+/* the guitar inside the button prompt */
+.bp-card { width: min(520px, 100%); }
+.bp-guitar { --g3d-maxh: 170px; margin: 0 0 8px; padding: 6px 10px 4px; }
+.bp-guitar svg.guitar { max-height: 150px; }
+.bp-guitar::after { display: none; }
+@media (max-width: 420px) { .bp-guitar { --g3d-maxh: 110px; padding: 4px 6px 2px; } .bp-guitar svg.guitar { max-height: 100px; } }
+@media (max-height: 560px) { .bp-guitar { --g3d-maxh: 90px; } .bp-guitar svg.guitar { max-height: 80px; } }

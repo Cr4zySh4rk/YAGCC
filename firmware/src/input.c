@@ -77,7 +77,9 @@ static inline bool deb_step(deb_t *d, bool raw, uint32_t now, uint32_t lockout, 
 static bool raw_for_slot(uint32_t all, int s) {
     uint8_t pin = (s == SLOT_TILT) ? g_cfg.tilt_pin : g_cfg.pins[s];
     if (pin >= NUM_DIGITAL_PINS || accel_pin(pin) || rumble_pin_active(pin) || ps2_out_pin(pin) || wii_out_pin(pin)) return false;
-    return !((all >> pin) & 1);       // active low
+    bool low = !((all >> pin) & 1);   // active low (to GND through the switch)
+    // a normally closed tilt switch is closed at rest and opens as the neck goes up
+    return (s == SLOT_TILT && g_cfg.tilt_invert) ? !low : low;
 }
 
 void input_poll(void) {

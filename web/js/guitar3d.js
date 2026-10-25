@@ -111,7 +111,9 @@ export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
 
     const size = () => {
       const w = host.clientWidth || 600;
-      const h = Math.round(Math.min(w / ASPECT, host.classList.contains('compact-3d') ? 230 : 1e9));
+      // --g3d-maxh (set by the page on a sticky or small stage) caps the height; the model stays fully in frame
+      const capCss = parseFloat(getComputedStyle(host).getPropertyValue('--g3d-maxh')) || 1e9;
+      const h = Math.max(60, Math.round(Math.min(w / ASPECT, host.classList.contains('compact-3d') ? 230 : 1e9, capCss)));
       renderer.setSize(w, h, false); needsDraw = true;
       canvas.style.width = '100%'; canvas.style.height = h + 'px';
       camera.aspect = w / h;
@@ -120,6 +122,7 @@ export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
       camera.updateProjectionMatrix();
     };
     const ro = new ResizeObserver(size); ro.observe(host);
+    addEventListener('resize', size);   // a media query can change the height cap without changing the width
 
     let visible = false;
     const io = new IntersectionObserver((es) => { visible = es[0].isIntersecting; loop(); });
@@ -151,7 +154,7 @@ export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
         p.position.y = ease(p.position.y, rest[node].p.y - (on ? 0.0035 : 0), k);
         const m = mats[n];
         if (on) { tint(m, st.colors[n]); m.emissiveIntensity = ease(m.emissiveIntensity, 1.4, k); }
-        else if (focus(n)) { tint(m, FOCUS_COLOR); m.emissiveIntensity = ease(m.emissiveIntensity, 0.15 + 0.45 * pulse, k); }
+        else if (focus(n)) { tint(m, FOCUS_COLOR); m.emissiveIntensity = ease(m.emissiveIntensity, 0.4 + 0.9 * pulse, k); }
         else m.emissiveIntensity = ease(m.emissiveIntensity, 0, k);
       }
       // strum bar rocks on its long axis
@@ -176,7 +179,7 @@ export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
       }
       function glow(m, on, foc, col, lvl = 0.9) {
         if (on) { tint(m, col); m.emissiveIntensity = ease(m.emissiveIntensity, lvl, k); }
-        else if (foc) { tint(m, FOCUS_COLOR); m.emissiveIntensity = ease(m.emissiveIntensity, 0.15 + 0.45 * pulse, k); }
+        else if (foc) { tint(m, FOCUS_COLOR); m.emissiveIntensity = ease(m.emissiveIntensity, 0.4 + 0.9 * pulse, k); }
         else m.emissiveIntensity = ease(m.emissiveIntensity, 0, k);
       }
       function press(p, r, m, on, foc, col) {

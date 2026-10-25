@@ -158,7 +158,7 @@ export function defaultConfig() {
   return {
     pins: Array(FUNCS.length).fill(PIN_NONE),
     whammyCh: PIN_NONE, whammyInvert: false, whammyMin: 0, whammyMax: 4095,
-    tiltPin: PIN_NONE,
+    tiltPin: PIN_NONE, tiltInvert: false,
     btEnabled: false, btDebugLog: false, tiltEnabled: false, combinedStrum: true,
     usbMode: 0, debounceMode: 0, debounce100us: 50,
     whammySmooth: 2, whammyDeadzone: 3,
@@ -251,7 +251,8 @@ export function parseConfig(dv) {
     // two LEDs per fret (version 6): count at 124, second positions at 125..129
     ...(dv.byteLength >= CFG_SIZE && dv.getUint8(4) >= 6 ? {
       fretLeds: dv.getUint8(124) === 2 ? 2 : 1, ledMap2: [0, 1, 2, 3, 4].map((i) => dv.getUint8(125 + i)),
-    } : { fretLeds: 1, ledMap2: [5, 6, 7, 8, 9] }),
+      tiltInvert: dv.getUint8(130) === 1,   // firmware 0.33: 1 = normally closed switch
+    } : { fretLeds: 1, ledMap2: [5, 6, 7, 8, 9], tiltInvert: false }),
     ...(dv.byteLength >= CFG_SIZE_V5 && dv.getUint8(4) >= 5 ? {
       atilt: [0, 1].map((i) => {
         const o = 92 + i * 8;
@@ -323,6 +324,7 @@ export function serializeConfig(c) {
   if (!v6) { dv.setUint32(124, crc32(new Uint8Array(buf, 0, 124)), true); return buf; }
   dv.setUint8(124, c.fretLeds === 2 ? 2 : 1);
   (c.ledMap2 || [5, 6, 7, 8, 9]).forEach((p, i) => dv.setUint8(125 + i, Math.min(p, MAX_LEDS - 1)));
+  dv.setUint8(130, c.tiltInvert ? 1 : 0);
   dv.setUint32(156, crc32(new Uint8Array(buf, 0, 156)), true);
   return buf;
 }

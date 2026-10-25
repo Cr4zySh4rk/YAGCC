@@ -26,6 +26,10 @@ const MODE_USE = {   // one line per mode: where you'd use it
 // macOS has no driver for Xbox 360 (XInput) controllers, so nothing on a Mac sees XInput mode
 const IS_MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || '') && !/iphone|ipad/i.test(navigator.userAgent);
 // modes this firmware has (Auto needs 0.30)
+const fwAtLeast = (n) => !!state.info && (state.info.major > 0 || state.info.minor >= n);
+// the digital tilt switch: normally open (pressed = pin low) or, with firmware 0.33+, normally closed (pressed = pin high)
+const tiltInverted = () => !!state.cfg?.tiltInvert && fwAtLeast(33);
+const tiltSwitchActive = (s, c = state.cfg) => !!c && c.tiltEnabled && c.tiltPin !== PIN_NONE && isPressed(s, c.tiltPin) !== tiltInverted();
 const availableModes = () => MODES.filter((m) => !m.min || (state.info && (state.info.major > 0 || state.info.minor >= m.min)));
 // HOST_* in firmware auto_detect.h
 const AUTO_HOSTS = ['', 'Windows', 'Xbox 360', 'Xbox One', 'PS3', 'PS4 / PS5', 'Switch', 'Wii', 'PS2', 'OG Xbox'];
@@ -215,6 +219,12 @@ document.addEventListener('click', (e) => {
 });
 setAdv(store.get('yacc.adv') === '1', false);
 
+// the sticky setup guitar sits right under the (sticky) header, whose height changes when it wraps on phones
+{
+  const hdr = document.querySelector('header.top');
+  if (hdr) new ResizeObserver(() => document.documentElement.style.setProperty('--hdr', hdr.offsetHeight + 'px')).observe(hdr);
+}
+
 // ------------------------------------------------------------------ live guitar viewers
 const viewers = [];
 function makeViewer(container, withPins = false, compact = false, onPart = null) {
@@ -242,7 +252,7 @@ function updateViewer(v, s) {
   // tilt sensors add to the whammy (the larger wins) or press tilt, as in the firmware
   const ts = tiltStates(s);
   v.g.setWhammy(Math.max(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0, ...ts.map((t) => (t.whammy ? t.value : 0))));
-  v.g.setTilt((cfg.tiltEnabled && isPressed(s, cfg.tiltPin)) || ts.some((t) => t.star));
+  v.g.setTilt(tiltSwitchActive(s, cfg) || ts.some((t) => t.star));
   if (v.pinsEl) {
     const used = new Set(assignedPins());
     [...v.pinsEl.children].forEach((d, p) => {
@@ -398,6 +408,7 @@ let ledFlow = null;  // sub-step of the guided LED question flow (kept while on 
 
 function buildUi() {
   viewers.length = 0;
+  bp.viewer = null;
   $('#stage').innerHTML = '';
   stageViewer = makeViewer($('#stage'), true, false, onGuitarPart);
   $('#tuneStage').innerHTML = '';
@@ -419,7 +430,7 @@ function stepValue(st) {
   if (st.kind === 'rgb') return c.rgbEnabled ? [['WS2812B', 'SK6812', 'APA102'][c.ledType] || 'WS2812B', c.rgbPin === PIN_NONE ? '' : 'GP' + c.rgbPin].filter(Boolean).join(' \u00b7 ') : 'off';
   if (st.kind === 'ledmap') return c.rgbEnabled ? '' : 'n/a';
   if (st.kind === 'bluetooth') return c.btEnabled ? 'on' : 'off';
-  if (st.kind === 'tilt') return c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin : 'off';
+  if (st.kind === 'tilt') return c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin + (c.tiltInvert && fwAtLeast(33) ? ' NC' : '') : 'off';
   return '';
 }
 function isStepDone(st, i) {
@@ -490,6 +501,10 @@ function renderStep() {
         ${nav(`<button class="btn ${n ? 'primary' : ''}" id="bSkip">${n ? 'Continue' : 'Skip'}</button>`)}`;
       wireNav();
       card.querySelectorAll('.bt').forEach((t) => {
+        // hovering or focusing a tile points at that control on the guitar above
+        const aim = (on) => { if (!bp.open) stageViewer?.g.setFocus(on ? [FUNCS[+t.dataset.f]] : []); };
+        t.addEventListener('mouseenter', () => aim(true)); t.addEventListener('mouseleave', () => aim(false));
+        t.addEventListener('focusin', () => aim(true)); t.addEventListener('focusout', () => aim(false));
         t.querySelector('[data-set]').onclick = (e) => bpOpen(+t.dataset.f, null, e.currentTarget);
         const cl = t.querySelector('[data-clear]');
         if (cl) cl.onclick = () => {
@@ -741,6 +756,7 @@ function renderStep() {
     const renderTilt = () => {
       const c = state.cfg;
       const have = c.tiltPin !== PIN_NONE;
+      stepCtx.activeSince = 0; stepCtx.rerender = renderTilt;
       stepCtx.detector = new PinDetector({ windowMs: 5000, minPresses: 2, exclude: assignedPins().filter((p) => p !== c.tiltPin) });
       card.innerHTML = head + `
         <div class="opt first"><div><h3>Tilt for star power</h3><p class="dim">Lifting the neck triggers star power, like on a real controller.</p></div>
@@ -748,11 +764,20 @@ function renderStep() {
         ${c.tiltEnabled ? `<div class="result ${have ? 'ok' : ''}" id="result" style="margin-top:12px">${have
           ? `Tilt switch on <span class="chip">GP${c.tiltPin}</span>`
           : '<span class="pulse"></span><span>Tilt the guitar up twice within 5 seconds.</span>'}</div>` : ''}
+        ${c.tiltEnabled && have ? `<div class="tilt-live" id="tiltLive"><i></i><span id="tiltLiveTxt">Tilt: not active</span><span class="dim small">Hold the guitar level, then tilt it up to check.</span></div>
+          <div class="opt" id="tiltType"><div><h3>Switch type</h3>
+            <p class="dim" id="tiltTypeHint">${fwAtLeast(33) ? 'If the indicator shows active while the guitar is level, pick the other one.' : 'Normally closed switches need firmware 0.33 or newer.'}</p></div>
+            <div class="seg" role="radiogroup" aria-label="Switch type">
+              <button type="button" role="radio" data-inv="0" aria-checked="${!c.tiltInvert}" class="${c.tiltInvert ? '' : 'on'}" ${fwAtLeast(33) ? '' : 'disabled'}>Normally open<small> closes when tilted</small></button>
+              <button type="button" role="radio" data-inv="1" aria-checked="${!!c.tiltInvert}" class="${c.tiltInvert ? 'on' : ''}" ${fwAtLeast(33) ? '' : 'disabled'}>Normally closed<small> opens when tilted</small></button></div></div>
+          <div class="notice" id="tiltSuggest" hidden><span id="tiltSuggestTxt"></span> <button type="button" class="btn small primary" id="tiltSuggestBtn">Switch</button></div>` : ''}
         ${nav(`${c.tiltEnabled && have ? '<button class="btn quiet" id="tRedo">Re-detect</button>' : ''}<button class="btn primary" id="bSkip">Continue</button>`)}`;
       wireNav();
       stepCtx.active = c.tiltEnabled && !have;
       $('#tiltSw').addEventListener('change', (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); renderTilt(); });
       $('#tRedo')?.addEventListener('click', () => { c.tiltPin = PIN_NONE; pushCfg(); renderTilt(); });
+      card.querySelectorAll('#tiltType [data-inv]').forEach((b) => b.addEventListener('click', () => { c.tiltInvert = b.dataset.inv === '1'; pushCfg(); renderTilt(); }));
+      $('#tiltSuggestBtn')?.addEventListener('click', () => { c.tiltInvert = !c.tiltInvert; pushCfg(); renderTilt(); });
     };
     renderTilt();
   } else {
@@ -761,7 +786,7 @@ function renderStep() {
     const pinOr = (txt, none = 'not set') => txt ? txt : `<span class="dim">${none}</span>`;
     const rows = FUNCS.map((f, i) => `<tr><td>${btnName(i)}</td><td>${pinOr(c.pins[i] === PIN_NONE ? '' : 'GP' + c.pins[i])}</td>${act('b' + i, c.pins[i] !== PIN_NONE ? 'b' + i : '')}</tr>`).join('') +
       `<tr><td>Whammy</td><td>${pinOr(c.whammyCh === PIN_NONE ? '' : 'GP' + (26 + c.whammyCh))}</td>${act('whammy')}</tr>
-       <tr><td>Tilt switch</td><td>${pinOr(c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin : '', 'off')}</td>${act('tilt', c.tiltEnabled || c.tiltPin !== PIN_NONE ? 'tilt' : '')}</tr>
+       <tr><td>Tilt switch</td><td>${pinOr(c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin + (c.tiltInvert && fwAtLeast(33) ? ' \u00b7 normally closed' : '') : '', 'off')}</td>${act('tilt', c.tiltEnabled || c.tiltPin !== PIN_NONE ? 'tilt' : '')}</tr>
        <tr><td>RGB LEDs</td><td>${pinOr(c.rgbEnabled && c.rgbPin !== PIN_NONE ? 'GP' + c.rgbPin : '', 'off')}</td>${act('rgb')}</tr>
        <tr><td>Bluetooth</td><td>${c.btEnabled ? 'on' : 'off'}</td>${act('bluetooth')}</tr>`;
     card.innerHTML = head + `<table class="sum">${rows}</table>
@@ -864,6 +889,7 @@ function bpClose(restoreFocus = true) {
   clearTimeout(bp.timer);
   bp.open = false;
   bp.root?.remove(); bp.root = null;
+  bp.viewer?.container.remove();
   document.body.classList.remove('bp-lock');
   stageViewer?.g.setFocus(STEPS[state.step]?.focus || []);
   if (restoreFocus) (document.querySelector(bp.restore || '#_none') || (bp.opener?.isConnected ? bp.opener : null))?.focus();
@@ -934,7 +960,7 @@ function bpRender() {
   const keepOpen = root.querySelector('.bp-manual')?.open ?? bp.manualOpen;
   root.innerHTML = `<div class="bp-card ph-${bp.phase}" role="dialog" aria-modal="true" aria-labelledby="bpTitle" tabindex="-1" style="--c:${col}">
       ${bp.queue ? `<div class="bp-count">Button ${bp.qi + 1} of ${bp.queue.length}</div>` : ''}
-      <div class="bp-icon">${btnIcon(f)}</div>
+      <div class="bp-gslot"></div>
       <h2 class="bp-title" id="bpTitle">${verb} ${what}</h2>
       ${body}
       <div class="bp-acts">${acts}<span class="bp-grow"></span>${bp.queue ? '<button class="btn quiet" id="bpStop">Stop</button>' : ''}<button class="btn quiet" id="bpCancel">${bp.phase === 'result' ? 'Close' : 'Cancel'}</button></div>
@@ -943,6 +969,16 @@ function bpRender() {
       ${bp.queue ? `<label class="bp-auto"><input type="checkbox" id="bpAuto" ${bpAuto() ? 'checked' : ''}> Go to the next button by itself</label>` : ''}
     </div>`;
   const q = (id) => root.querySelector(id);
+  // the guitar picture lives in the dialog: one lazily built viewer, moved into each fresh render
+  if (!bp.viewer) {
+    const holder = document.createElement('div');
+    holder.className = 'stage compact bp-guitar';
+    bp.viewer = makeViewer(holder, false, true);
+    bp.viewer.g.setFretColors(c.rgbEnabled ? c.colors : FRET_DEFAULT_COLORS);
+  }
+  q('.bp-gslot').appendChild(bp.viewer.container);
+  bp.viewer.g.setFocus([FUNCS[f]]);
+  if (state.status) updateViewer(bp.viewer, state.status);
   q('#bpCancel').onclick = () => bpClose();
   q('#bpStop')?.addEventListener('click', () => bpClose());
   q('#bpSkip')?.addEventListener('click', bpNext);
@@ -985,6 +1021,25 @@ function bpTick(s) {
       : { bad: 1, text: `<span class="chip">GP${r.used[0]}</span> is used for something else (tilt, LEDs, ports...). Press a different control.` };
     const el = bp.root.querySelector('.bp-msg');
     if (el) { el.className = 'bp-msg bad'; el.innerHTML = bp.msg.text; }
+  }
+}
+
+// live "Tilt: active" indicator on the setup step, plus a suggestion when it stays on while the guitar should be level
+function tickTiltLive(s) {
+  const live = $('#tiltLive');
+  if (!live) return;
+  const on = tiltSwitchActive(s);
+  live.classList.toggle('on', on);
+  $('#tiltLiveTxt').textContent = on ? 'Tilt: active' : 'Tilt: not active';
+  const sug = $('#tiltSuggest');
+  if (!sug || !fwAtLeast(33)) return;
+  const now = performance.now();
+  if (!on) { stepCtx.activeSince = 0; sug.hidden = true; return; }
+  stepCtx.activeSince ||= now;
+  if (now - stepCtx.activeSince > 1500) {
+    $('#tiltSuggestTxt').textContent = state.cfg.tiltInvert ? 'Still active with the guitar level? This may be a normally open switch.' : 'Still active with the guitar level? This looks like a normally closed switch.';
+    $('#tiltSuggestBtn').textContent = state.cfg.tiltInvert ? 'Switch to normally open' : 'Switch to normally closed';
+    sug.hidden = false;
   }
 }
 
@@ -1040,12 +1095,14 @@ function tickStep(s) {
       next();
       break;
     }
-  } else if (step.kind === 'tilt' && stepCtx.active && stepCtx.detector) {
+  } else if (step.kind === 'tilt' && !stepCtx.active) {
+    tickTiltLive(s);
+  } else if (step.kind === 'tilt' && stepCtx.detector) {
     const r = stepCtx.detector.feed(s);
     if (!r) return;
     if (r.pin !== undefined) {
-      state.cfg.tiltPin = r.pin; pushCfg(); stepCtx.active = false;
-      setResult('ok', `Tilt switch on <span class="chip">GP${r.pin}</span>`);
+      state.cfg.tiltPin = r.pin; pushCfg(); stepCtx.active = false; renderStepList();
+      stepCtx.rerender?.();
       toast('Tilt switch registered', 'ok');
     } else if (r.ambiguous) setResult('bad', 'Several inputs moved at once. Tilt only the guitar.');
     else if (r.used) setResult('bad', `<span class="chip">GP${r.used[0]}</span> is already used by another control.`);

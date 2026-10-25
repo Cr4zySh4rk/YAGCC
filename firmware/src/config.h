@@ -182,7 +182,8 @@ typedef struct __attribute__((packed)) {
     // config version 6 (firmware 0.31)
     uint8_t  fret_leds;           // 124     LEDs under each fret: 1 or 2
     uint8_t  led_map2[NUM_FRETS]; // 125..129 chain position of each fret's second LED (fret_leds = 2)
-    uint8_t  reserved3[26];       // 130..155
+    uint8_t  tilt_invert;         // 130     1 = normally closed tilt switch: tilt is pressed while the switch is OPEN (0.33)
+    uint8_t  reserved3[25];       // 131..155
     uint32_t crc;                 // 156     crc32 of bytes 0..155
 } yacc_config_t;
 

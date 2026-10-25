@@ -6,7 +6,7 @@ export const BACKUP_FORMAT = 1;
 
 export const SECTIONS = [
   { id: 'wiring', name: 'Wiring', desc: 'Button pins, whammy calibration, tilt switch, Bluetooth, USB host port',
-    keys: ['pins', 'whammyCh', 'whammyInvert', 'whammyMin', 'whammyMax', 'tiltPin', 'tiltEnabled', 'btEnabled', 'hostPin'] },
+    keys: ['pins', 'whammyCh', 'whammyInvert', 'whammyMin', 'whammyMax', 'tiltPin', 'tiltEnabled', 'tiltInvert', 'btEnabled', 'hostPin'] },
   { id: 'tilt', name: 'Tilt sensors', desc: 'Analog tilt sensors, accelerometer pins, calibration and filters',
     keys: ['atilt', 'accelSda', 'accelScl', 'accelGate', 'accelMedian', 'accelLowpass'] },
   { id: 'ports', name: 'Console ports', desc: 'PS2 controller port and Wii extension pins',
@@ -59,7 +59,7 @@ const CHECK = {
 };
 export const LABELS = {
   pins: 'button pins', whammyCh: 'whammy pin', whammyMin: 'whammy range', whammyMax: 'whammy range', whammyInvert: 'whammy direction',
-  tiltPin: 'tilt pin', tiltEnabled: 'tilt switch', btEnabled: 'Bluetooth', hostPin: 'USB host pins',
+  tiltPin: 'tilt pin', tiltEnabled: 'tilt switch', tiltInvert: 'tilt switch type', btEnabled: 'Bluetooth', hostPin: 'USB host pins',
   debounceMode: 'debounce type', debounce100us: 'debounce time', combinedStrum: 'shared strum lockout', whammySmooth: 'whammy smoothing', whammyDeadzone: 'whammy dead zone',
   rgbEnabled: 'LEDs on/off', rgbBootFlash: 'mode flash', rgbPin: 'LED data pin', rgbBrightness: 'brightness', rgbEffect: 'effect', rgbSpeed: 'effect speed',
   ledMap: 'LED order', ledMap2: 'second fret LEDs', fretLeds: 'LEDs per fret', noFretLeds: 'fret LEDs on/off', strumLeds: 'strum LED count', strumMap: 'strum LED order', strumColor: 'strum LED colour', strumRoles: 'strum LED roles', colors: 'fret colours', ledType: 'LED type', ledOrder: 'colour order', ledClkPin: 'LED clock pin', rgbStarPower: 'star power glow',
