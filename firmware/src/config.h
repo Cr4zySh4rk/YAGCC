@@ -62,10 +62,11 @@ enum {
 };
 
 #define YACC_CFG_MAGIC   0x43434159u  // "YAGCC" little endian
-#define YACC_CFG_VERSION 6
+#define YACC_CFG_VERSION 7
 #define YACC_CFG_V3_SIZE 64
 #define YACC_CFG_V4_SIZE 96           // firmware 0.11 .. 0.28: no analog tilt sensors
 #define YACC_CFG_V5_SIZE 128          // firmware 0.29 .. 0.30: one LED per fret
+#define YACC_CFG_V6_SIZE 160          // firmware 0.31 .. 0.33: two LEDs per fret, tilt invert
 
 // Analog tilt sensors (firmware 0.29+): up to two, each on its own analog input, each either adding to the
 // whammy or pressing tilt / star power past a calibrated angle. They work alongside the whammy bar, the
@@ -109,6 +110,27 @@ enum {
     NUM_EFX
 };
 
+// LED engine v2 (config version 7, firmware 0.34). Keep in sync with web/js/protocol.js
+enum { IDLE_OFF = 0, IDLE_SOLID, IDLE_BREATHE, IDLE_HEARTBEAT, IDLE_RAINBOW, IDLE_RAINBOW_WAVE, IDLE_COLOR_WAVE,
+       IDLE_SPARKLE, IDLE_CHASE, IDLE_FIRE, IDLE_HUE_DRIFT, NUM_IDLE };
+enum { PRESS_NONE = 0, PRESS_COLOR, PRESS_FLASH_FADE, PRESS_DIM, PRESS_OFF, PRESS_STROBE, PRESS_RIPPLE,
+       PRESS_RAINBOW, PRESS_SPARK, PRESS_SWEEP, NUM_PRESS };
+enum { STAR_PULSE = 0, STAR_SOLID, STAR_RAINBOW, STAR_STROBE, STAR_CHASE, STAR_FIRE, STAR_SPARKLE, NUM_STAR };
+enum { WFX_NONE = 0, WFX_BRIGHT, WFX_PULSE, WFX_HUE, WFX_WAVE, NUM_WFX };
+#define ZF_SAME    (1u << 0)   // the pressed colour is the LED's idle colour
+#define ZF_PER_LED (1u << 1)   // strum zone: each LED has its own idle colour
+#define LEDF_FRET2_OWN   (1u << 0)   // a fret's second LED has its own idle colour (fret2_color)
+#define LEDF_STAR_FLASH  (1u << 1)   // white flash when the player presses star power
+typedef struct __attribute__((packed)) {
+    uint8_t idle;         // IDLE_*
+    uint8_t idle_level;   // 0..100 %
+    uint8_t press;        // PRESS_*
+    uint8_t speed;        // 1..10
+    uint8_t fade;         // 1..10
+    uint8_t zflags;       // ZF_*
+    uint8_t rsv[2];
+} led_zone_t;
+
 // LED chip types
 enum { LED_WS2812 = 0, LED_SK6812_RGBW = 1, LED_APA102 = 2, NUM_LED_TYPES };
 // colour order on the wire for WS2812-style chips
@@ -119,7 +141,7 @@ enum { XI_GUITAR_HERO = 0, XI_ROCK_BAND = 1 };
 enum { KEY_GREEN = 0, KEY_RED, KEY_YELLOW, KEY_BLUE, KEY_ORANGE, KEY_STRUM_UP, KEY_STRUM_DOWN,
        KEY_STAR, KEY_PLUS, KEY_TILT, KEY_WHAMMY, NUM_KEYS };
 
-// 128 bytes on the wire and in flash (96 up to config version 4). Keep in sync with web/js/protocol.js
+// 256 bytes on the wire and in flash (one flash page; 160 up to config version 6, 128 for v5, 96 for v4). Keep in sync with web/js/protocol.js
 typedef struct __attribute__((packed)) {
     uint32_t magic;               // 0
     uint8_t  version;             // 4
@@ -184,19 +206,38 @@ typedef struct __attribute__((packed)) {
     uint8_t  led_map2[NUM_FRETS]; // 125..129 chain position of each fret's second LED (fret_leds = 2)
     uint8_t  tilt_invert;         // 130     1 = normally closed tilt switch: tilt is pressed while the switch is OPEN (0.33)
     uint8_t  reserved3[25];       // 131..155
-    uint32_t crc;                 // 156     crc32 of bytes 0..155
+    // config version 7 (firmware 0.34): LED engine v2
+    led_zone_t zone_frets;        // 156..163
+    led_zone_t zone_strum;        // 164..171
+    uint8_t  fret_press[NUM_FRETS][3];   // 172..186 colour a pressed fret shows
+    uint8_t  fret2_color[NUM_FRETS][3];  // 187..201 idle colour of each fret's second LED (LEDF_FRET2_OWN)
+    uint8_t  strum_led_color[MAX_STRUM_LEDS][3]; // 202..225 idle colour of strum LED 1..8 (ZF_PER_LED)
+    uint8_t  strum_up_color[3];   // 226..228
+    uint8_t  strum_down_color[3]; // 229..231
+    uint8_t  star_color[3];       // 232..234
+    uint8_t  star_anim;           // 235     STAR_*
+    uint8_t  star_zones;          // 236     bit0 frets, bit1 strum
+    uint8_t  whammy_fx;           // 237     WFX_*
+    uint8_t  whammy_zones;        // 238     bit0 frets, bit1 strum
+    uint8_t  led_flags;           // 239     LEDF_*
+    uint8_t  sleep_min;           // 240     0 = never, 1..30
+    uint8_t  star_speed;          // 241     1..10
+    uint8_t  reserved4[10];       // 242..251
+    uint32_t crc;                 // 252     crc32 of bytes 0..251
 } yacc_config_t;
 
 #ifdef __cplusplus
-static_assert(sizeof(yacc_config_t) == 160, "config size");
+static_assert(sizeof(yacc_config_t) == 256, "config size");
+static_assert(sizeof(led_zone_t) == 8, "led zone size");
 static_assert(sizeof(atilt_cfg_t) == 8, "analog tilt config size");
 #else
-_Static_assert(sizeof(yacc_config_t) == 160, "config size");
+_Static_assert(sizeof(yacc_config_t) == 256, "config size");
+_Static_assert(sizeof(led_zone_t) == 8, "led zone size");
 _Static_assert(sizeof(atilt_cfg_t) == 8, "analog tilt config size");
 #endif
 
-// Upgrade a version 4 (96 byte) config to the current layout; false if src isn't a valid v4 config
-bool config_from_old(const uint8_t *src, uint16_t len, yacc_config_t *dst);   // a v4 (96) or v5 (128 byte) config
+// Upgrade an older config (v4/v5/v6) to the current layout; false if src isn't a valid one
+bool config_from_old(const uint8_t *src, uint16_t len, yacc_config_t *dst);   // a v4 (96), v5 (128) or v6 (160 byte) config
 
 extern yacc_config_t g_cfg;
 
@@ -218,6 +259,7 @@ static inline uint8_t strum_led_role(const yacc_config_t *c, int i) {
 }
 
 void config_defaults(yacc_config_t *c);
+void led_zones_from_efx(yacc_config_t *c);   // rgb_effect / rgb_speed -> both zones (old configurators)
 void config_load(void);
 bool config_save(void);
 bool config_validate(const yacc_config_t *c);

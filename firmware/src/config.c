@@ -65,6 +65,12 @@ bool config_validate(const yacc_config_t *c) {
         c->rumble_strength < 10 || c->rumble_strength > 100) return false;
     if (c->fret_leds < 1 || c->fret_leds > 2) return false;
     for (int i = 0; i < NUM_FRETS; i++) if (c->led_map2[i] >= MAX_LEDS) return false;
+    const led_zone_t *z = &c->zone_frets;
+    for (int i = 0; i < 2; i++, z++)
+        if (z->idle >= NUM_IDLE || z->idle_level > 100 || z->press >= NUM_PRESS || z->speed < 1 || z->speed > 10 ||
+            z->fade < 1 || z->fade > 10 || z->zflags > 3) return false;
+    if (c->star_anim >= NUM_STAR || c->star_zones > 3 || c->whammy_fx >= NUM_WFX || c->whammy_zones > 3 ||
+        c->led_flags > 3 || c->sleep_min > 30 || c->star_speed < 1 || c->star_speed > 10) return false;
     return true;
 }
 
@@ -90,6 +96,17 @@ static void atilt_defaults(yacc_config_t *c) {
     c->wii_sda = c->wii_scl = PIN_NONE;
 }
 
+// old rgb_effect / rgb_speed -> both zones: idle, idle_level, press (all with ZF_SAME, speed = fade = rgb_speed)
+void led_zones_from_efx(yacc_config_t *c) {
+    static const uint8_t tab[NUM_EFX][3] = {
+        {IDLE_SOLID, 100, PRESS_NONE}, {IDLE_SOLID, 100, PRESS_DIM}, {IDLE_SOLID, 100, PRESS_OFF},
+        {IDLE_SOLID, 25, PRESS_COLOR}, {IDLE_SOLID, 11, PRESS_FLASH_FADE}, {IDLE_BREATHE, 100, PRESS_COLOR},
+        {IDLE_RAINBOW, 60, PRESS_COLOR}};
+    uint8_t e = c->rgb_effect < NUM_EFX ? c->rgb_effect : EFX_BRIGHT;
+    led_zone_t z = {tab[e][0], tab[e][1], tab[e][2], c->rgb_speed, c->rgb_speed, ZF_SAME, {0, 0}};
+    c->zone_frets = c->zone_strum = z;
+}
+
 static void v6_defaults(yacc_config_t *c) {
     c->fret_leds = 1;
     for (int i = 0; i < NUM_FRETS; i++) c->led_map2[i] = (uint8_t)(NUM_FRETS + i);
@@ -97,19 +114,31 @@ static void v6_defaults(yacc_config_t *c) {
     memset(c->reserved3, 0, sizeof(c->reserved3));
 }
 
+// LED engine v2 fields (config version 7); colors[] and rgb_effect/rgb_speed must be set already
+static void v7_defaults(yacc_config_t *c) {
+    memcpy(c->fret_press, c->colors, sizeof(c->colors));
+    memcpy(c->fret2_color, c->colors, sizeof(c->colors));
+    memset(c->strum_led_color, 255, sizeof(c->strum_led_color));
+    static const uint8_t tail[] = {0, 200, 255,  255, 60, 200,  0x40, 0xE0, 0xFF,  STAR_PULSE, 3, WFX_NONE, 3, 0, 0, 5};
+    memcpy(c->strum_up_color, tail, sizeof(tail));     // strum_up/down, star_color, star_anim .. star_speed
+    memset(c->reserved4, 0, sizeof(c->reserved4));
+    led_zones_from_efx(c);
+}
+
 // Every field keeps its offset from one version to the next; the ones a version didn't have get their defaults
 bool config_from_old(const uint8_t *src, uint16_t len, yacc_config_t *dst) {
     uint32_t magic, crc;
     memcpy(&magic, src, 4);
     uint8_t ver = src[4];
-    uint16_t body = ver == 4 ? YACC_CFG_V4_SIZE - 4 : ver == 5 ? YACC_CFG_V5_SIZE - 4 : 0;
+    uint16_t body = ver == 4 ? YACC_CFG_V4_SIZE - 4 : ver == 5 ? YACC_CFG_V5_SIZE - 4 : ver == 6 ? YACC_CFG_V6_SIZE - 4 : 0;
     if (magic != YACC_CFG_MAGIC || !body || len < body + 4) return false;
     memcpy(&crc, src + body, 4);
     if (crc != crc32(src, body)) return false;
     memset(dst, 0, sizeof(*dst));
     memcpy(dst, src, body);
     if (ver == 4) atilt_defaults(dst);   // the v5 fields
-    v6_defaults(dst);
+    if (ver < 6) v6_defaults(dst);
+    v7_defaults(dst);                    // includes the zones, derived from rgb_effect / rgb_speed
     config_seal(dst);
     return config_validate(dst);
 }
@@ -157,6 +186,7 @@ void config_defaults(yacc_config_t *c) {
     config_keyboard_preset(c, 1);          // Fortnite Festival Pro guitar keys
     atilt_defaults(c);
     v6_defaults(c);
+    v7_defaults(c);
     config_seal(c);
 }
 
@@ -164,8 +194,8 @@ void config_load(void) {
     const yacc_config_t *flash = (const yacc_config_t *)(XIP_BASE + CFG_OFFSET);
     yacc_config_t tmp;
     memcpy(&tmp, flash, sizeof(tmp));
-    if (!config_validate(&tmp) && tmp.magic == YACC_CFG_MAGIC && (tmp.version == 4 || tmp.version == 5)) {
-        // v4 (96 bytes, firmware up to 0.28) / v5 (128 bytes, 0.29-0.30) -> v6: the newer fields start off
+    if (!config_validate(&tmp) && tmp.magic == YACC_CFG_MAGIC && (tmp.version >= 4 && tmp.version <= 6)) {
+        // v4 (96 bytes, firmware up to 0.28) / v5 (128, 0.29-0.30) / v6 (160, 0.31-0.33) -> v7: the newer fields start off
         yacc_config_t up;
         if (config_from_old((const uint8_t *)flash, sizeof(yacc_config_t), &up)) tmp = up;
     }
@@ -176,6 +206,7 @@ void config_load(void) {
         config_defaults(&def);
         memcpy(&tmp, flash, 58);           // up to and including cfg_rev
         memcpy((uint8_t *)&tmp + 58, (uint8_t *)&def + 58, sizeof(tmp) - 58);
+        v7_defaults(&tmp);                 // the v7 tail follows this config's colours / effect
         config_seal(&tmp);
     }
     if (config_validate(&tmp)) {
@@ -210,6 +241,7 @@ void config_load(void) {
     }
 }
 
+_Static_assert(sizeof(yacc_config_t) <= FLASH_PAGE_SIZE, "config must fit one flash page");
 typedef struct {
     uint8_t page[FLASH_PAGE_SIZE];
 } write_job_t;

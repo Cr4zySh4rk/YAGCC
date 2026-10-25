@@ -1,6 +1,6 @@
 // Backup and restore of the controller's settings as a JSON file (in the spirit of GP2040-CE's
 // "Data Backup and Restoration"): pick which sections to save or restore.
-import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, BOARDS, MODES } from './protocol.js?v=dev';
+import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX } from './protocol.js?v=dev';
 
 export const BACKUP_FORMAT = 1;
 
@@ -15,15 +15,21 @@ export const SECTIONS = [
     keys: ['rumblePin', 'rumbleFlags', 'rumbleStrength'] },
   { id: 'tuning', name: 'Tuning', desc: 'Debounce, shared strum lockout, whammy smoothing and dead zone',
     keys: ['debounceMode', 'debounce100us', 'combinedStrum', 'whammySmooth', 'whammyDeadzone'] },
-  { id: 'lights', name: 'Lights', desc: 'LED type and pins, colours, effect, brightness, LED order',
+  { id: 'lights', name: 'Lights', desc: 'LED type and pins, colours, animations, strum bar, star power and whammy effects, brightness, LED order',
     keys: ['rgbEnabled', 'rgbBootFlash', 'rgbPin', 'rgbBrightness', 'rgbEffect', 'rgbSpeed', 'ledMap', 'colors', 'ledType', 'ledOrder', 'ledClkPin', 'rgbStarPower',
-      'noFretLeds', 'strumLeds', 'strumMap', 'strumColor', 'strumRoles', 'fretLeds', 'ledMap2'] },
+      'noFretLeds', 'strumLeds', 'strumMap', 'strumColor', 'strumRoles', 'fretLeds', 'ledMap2',
+      'zoneFrets', 'zoneStrum', 'fretPress', 'fret2Colors', 'fret2Own', 'strumLedColors', 'strumUpColor', 'strumDownColor',
+      'starColor', 'starAnim', 'starZones', 'starSpeed', 'whammyFx', 'whammyZones', 'starFlash', 'sleepMin'] },
   { id: 'modes', name: 'Modes', desc: 'Default mode, hold-a-fret modes, XInput type, keyboard bindings',
     keys: ['usbMode', 'bootModes', 'xinputType', 'starDpadLeft', 'xinputOpts', 'keys'] },
 ];
 
 const isPin = (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < NUM_DIGITAL_PINS);
 const isByte = (v) => Number.isInteger(v) && v >= 0 && v <= 255;
+const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+const isHex = (v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+const isZone = (z) => !!z && typeof z === 'object' && isInt(z.idle, 0, NUM_IDLE - 1) && isInt(z.idleLevel, 0, 100) && isInt(z.press, 0, NUM_PRESS - 1) &&
+  isInt(z.speed, 1, 10) && isInt(z.fade, 1, 10) && typeof z.same === 'boolean' && typeof z.perLed === 'boolean';
 const CHECK = {
   pins: (v) => Array.isArray(v) && v.length === FUNCS.length && v.every(isPin),
   whammyCh: (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < 3),
@@ -46,6 +52,11 @@ const CHECK = {
   strumRoles: (v) => Array.isArray(v) && v.length === 8 && v.every((r) => Number.isInteger(r) && r >= 0 && r <= 2),
   strumColor: (v) => /^#[0-9a-f]{6}$/i.test(v),
   colors: (v) => Array.isArray(v) && v.length === 5 && v.every((c) => /^#[0-9a-f]{6}$/i.test(c)),
+  zoneFrets: isZone, zoneStrum: isZone,
+  fretPress: (v) => Array.isArray(v) && v.length === 5 && v.every(isHex), fret2Colors: (v) => Array.isArray(v) && v.length === 5 && v.every(isHex),
+  strumLedColors: (v) => Array.isArray(v) && v.length === 8 && v.every(isHex), strumUpColor: isHex, strumDownColor: isHex, starColor: isHex,
+  starAnim: (v) => isInt(v, 0, NUM_STAR - 1), whammyFx: (v) => isInt(v, 0, NUM_WFX - 1), starZones: (v) => isInt(v, 0, 3), whammyZones: (v) => isInt(v, 0, 3),
+  starSpeed: (v) => isInt(v, 1, 10), sleepMin: (v) => isInt(v, 0, 30), fret2Own: (v) => typeof v === 'boolean', starFlash: (v) => typeof v === 'boolean',
   keys: (v) => Array.isArray(v) && v.length === 11 && v.every(isByte),
   atilt: (v) => Array.isArray(v) && v.length === 2 && v.every((s) => s && (s.src === PIN_NONE || (Number.isInteger(s.src) && s.src >= 0 && s.src < 9)) &&
     (s.target === 0 || s.target === 1) && typeof s.invert === 'boolean' && Number.isInteger(s.threshold) && s.threshold >= 1 && s.threshold <= 99 &&
@@ -62,6 +73,9 @@ export const LABELS = {
   tiltPin: 'tilt pin', tiltEnabled: 'tilt switch', tiltInvert: 'tilt switch type', btEnabled: 'Bluetooth', hostPin: 'USB host pins',
   debounceMode: 'debounce type', debounce100us: 'debounce time', combinedStrum: 'shared strum lockout', whammySmooth: 'whammy smoothing', whammyDeadzone: 'whammy dead zone',
   rgbEnabled: 'LEDs on/off', rgbBootFlash: 'mode flash', rgbPin: 'LED data pin', rgbBrightness: 'brightness', rgbEffect: 'effect', rgbSpeed: 'effect speed',
+  zoneFrets: 'fret animation', zoneStrum: 'strum bar animation', fretPress: 'fret pressed colours', fret2Colors: 'second fret LED colours', fret2Own: 'second LED own colour',
+  strumLedColors: 'strum LED colours', strumUpColor: 'strum up colour', strumDownColor: 'strum down colour', starColor: 'star power colour', starAnim: 'star power animation',
+  starZones: 'star power zones', starSpeed: 'star power speed', whammyFx: 'whammy effect', whammyZones: 'whammy zones', starFlash: 'star power flash', sleepMin: 'LED sleep timer',
   ledMap: 'LED order', ledMap2: 'second fret LEDs', fretLeds: 'LEDs per fret', noFretLeds: 'fret LEDs on/off', strumLeds: 'strum LED count', strumMap: 'strum LED order', strumColor: 'strum LED colour', strumRoles: 'strum LED roles', colors: 'fret colours', ledType: 'LED type', ledOrder: 'colour order', ledClkPin: 'LED clock pin', rgbStarPower: 'star power glow',
   atilt: 'tilt sensors', rumblePin: 'rumble motor pin', ps2Pins: 'PS2 port pins', wiiSda: 'Wii extension SDA', wiiScl: 'Wii extension SCL', rumbleFlags: 'rumble triggers', rumbleStrength: 'rumble strength', accelSda: 'accelerometer SDA pin', accelScl: 'accelerometer SCL pin', accelGate: 'gravity gate', accelMedian: 'median filter', accelLowpass: 'low pass filter',
   usbMode: 'default mode', bootModes: 'hold-a-fret modes', xinputType: 'XInput guitar type', starDpadLeft: 'star power on D-pad left', xinputOpts: 'Steam-friendly XInput', keys: 'keyboard bindings',

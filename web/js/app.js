@@ -1,6 +1,6 @@
 import {
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
-  DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness,
+  DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
   ATILT_SOURCES, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
 } from './protocol.js?v=dev';
@@ -8,6 +8,7 @@ import { YaccDevice, webusbSupported } from './usb.js?v=dev';
 import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
 import { createGuitar } from './guitar.js?v=dev';
 import { renderHardware, renderCompat } from './pages.js?v=dev';
+import { buildStudio, syncStudio, studioAdvNames } from './studio.js?v=dev';
 import { SECTIONS, makeBackup, backupFileName, readBackup, applyBackup, download } from './backup.js?v=dev';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -204,6 +205,8 @@ function advRefresh() {
   hint('#modesAdvHint', advOn(), [!rx && 'Steam receiver option', !ports && 'PS2 / Wii ports', !host && 'USB host port'].filter(Boolean));
   const order = keep('#ledOrderRow', c.ledType === 2 || c.ledOrder !== 0);
   hint('#ledAdvHint', advOn() || order || c.ledType === 1 || !c.rgbEnabled, ['colour order']);
+  const studioNames = (c.cfgVersion ?? 0) >= 7 && c.rgbEnabled ? studioAdvNames() : [];
+  hint('#lfxAdvHint', advOn(), studioNames);
 }
 $('#advSw').addEventListener('change', (e) => {
   setAdv(e.target.checked);
@@ -1403,6 +1406,18 @@ function buildBackup() {
 }
 
 // ------------------------------------------------------------------ lights
+function liveWhammy(s, cfg = state.cfg) {
+  const ts = tiltStates(s);
+  return Math.max(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0, ...ts.map((t) => (t.whammy ? t.value : 0)));
+}
+// colours of the LED order chips follow the config
+function refreshChain() {
+  const c = state.cfg;
+  document.querySelectorAll('#mapView .led').forEach((el) => {
+    const col = el.dataset.fret !== undefined ? c.colors[+el.dataset.fret] : c.zoneStrum?.perLed ? c.strumLedColors[+el.dataset.strum] : c.strumColor;
+    el.style.setProperty('--c', col); el.querySelector('b').style.background = col;
+  });
+}
 function applyColors() {
   const cols = state.cfg.rgbEnabled ? state.cfg.colors : FRET_DEFAULT_COLORS;
   for (const v of viewers) v.g.setFretColors(cols);
@@ -1592,20 +1607,19 @@ function buildLights() {
     for (const o of $pin.options) o.disabled = c.ledType === 2 && +o.value !== PIN_NONE && +o.value === c.ledClkPin;
     $('#ledClkRow').classList.toggle('warn', c.ledType === 2 && c.rgbEnabled && c.ledClkPin === PIN_NONE);
     $('#ledClkHint').textContent = c.ledType === 2 && c.ledClkPin === PIN_NONE ? 'Choose the clock pin: APA102 LEDs stay dark without it.' : "Wired to the first LED's clock input (CI / CKI).";
-    $('#rgbSp').checked = !!c.rgbStarPower;
     $pin.value = String(c.rgbPin);
     $bri.max = maxBrightness(c); c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
     $bri.value = c.rgbBrightness; $('#rgbBriVal').textContent = c.rgbBrightness;
     $('#rgbBriNote').innerHTML = brightNote(c);
-    $('#rgbFlash').checked = c.rgbBootFlash;
     $spd.value = c.rgbSpeed; $('#fxSpeedVal').textContent = c.rgbSpeed;
     document.querySelectorAll('input[name=fx]').forEach((r) => { r.checked = +r.value === c.rgbEffect; });
     document.querySelectorAll('[data-col]').forEach((i) => { i.value = c.colors[+i.dataset.col]; $(`[data-hex="${i.dataset.col}"]`).textContent = c.colors[+i.dataset.col].toUpperCase(); });
-    for (const id of ['#rgbOpts', '#fxCard', '#colCard', '#mapCard', '#strumCard']) $(id).classList.toggle('rgb-disabled', !c.rgbEnabled);
-    $('#colCard').classList.toggle('rgb-disabled', !c.rgbEnabled || !!c.noFretLeds);
+    for (const id of ['#rgbOpts', '#legacyCard', '#mapCard', '#strumCard']) $(id).classList.toggle('rgb-disabled', !c.rgbEnabled);
+    $('#legacyCard').hidden = (c.cfgVersion ?? 0) >= 7;
     $('#mapView').innerHTML = chainLabels(c).map((l, p) => `${p ? '<span class="arrow">→</span>' : ''}<div class="led" ${l.fret !== undefined ? `data-fret="${l.fret}"` : `data-strum="${l.strum}"`} style="--c:${l.color}"><b style="background:${l.color}"></b>LED ${p + 1}<br>${l.name}</div>`).join('')
       || '<p class="dim">No LEDs set up: choose fret and / or strum LEDs under LED layout.</p>';
     applyColors();
+    syncStudio();
   };
   const live = () => { refresh(); pushCfg(); };
 
@@ -1614,20 +1628,21 @@ function buildLights() {
   $('#ledTestBtn').onclick = () => ledTestButton($('#ledTestBtn'), 'Test LEDs');
   $('#ledOrder').onchange = (e) => { c.ledOrder = +e.target.value; live(); };
   $('#ledClk').onchange = (e) => { c.ledClkPin = +e.target.value; if (c.ledClkPin === c.rgbPin) c.ledClkPin = PIN_NONE; live(); };
-  $('#rgbSp').onchange = (e) => { c.rgbStarPower = e.target.checked; live(); };
   $bri.oninput = () => { c.rgbBrightness = +$bri.value; live(); };
-  $('#rgbFlash').onchange = (e) => { c.rgbBootFlash = e.target.checked; live(); };
-  $spd.oninput = () => { c.rgbSpeed = +$spd.value; live(); };
-  $('#fxList').onchange = (e) => { c.rgbEffect = +e.target.value; live(); };
-  $('#colRows').oninput = (e) => { const f = e.target.dataset.col; if (f !== undefined) { c.colors[+f] = e.target.value; live(); } };
-  $('#presets').onclick = (e) => { const b = e.target.closest('[data-preset]'); if (b) { c.colors = RGB_PRESETS[+b.dataset.preset].colors.slice(); live(); } };
+  // firmware before 0.34: one effect for everything (the preview and a later upgrade derive the zones from it)
+  const legacyZones = () => { c.zoneFrets = effectZone(c.rgbEffect, c.rgbSpeed); c.zoneStrum = effectZone(c.rgbEffect, c.rgbSpeed); };
+  $spd.oninput = () => { c.rgbSpeed = +$spd.value; legacyZones(); live(); };
+  $('#fxList').onchange = (e) => { c.rgbEffect = +e.target.value; legacyZones(); live(); };
+  $('#colRows').oninput = (e) => { const f = e.target.dataset.col; if (f !== undefined) { c.colors[+f] = e.target.value; c.fretPress[+f] = e.target.value; c.fret2Colors[+f] = e.target.value; live(); } };
+  $('#presets').onclick = (e) => { const b = e.target.closest('[data-preset]'); if (b) { c.colors = RGB_PRESETS[+b.dataset.preset].colors.slice(); c.fretPress = c.colors.slice(); c.fret2Colors = c.colors.slice(); live(); } };
   $('#mapWizard').onclick = () => { showView('setup'); goStep(STEPS.findIndex((s) => s.kind === 'ledmap')); };
   // LED layout: fret / strum LEDs, wiring order, strum colour and what each strum LED follows
   const drawLayout = () => {
     $('#layoutOpts').innerHTML = ledLayoutControls(c, 'lt');
     wireLedLayout(c, () => { drawLayout(); live(); }, 'lt');
     const n = c.strumLeds || 0;
-    $('#strumOpts').innerHTML = n ? `<div class="col-row"><span>Strum LED colour</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>
+    const oldFw = (c.cfgVersion ?? 0) < 7;   // firmware 0.34+ sets the strum colours in the lighting studio
+    $('#strumOpts').innerHTML = n ? `${oldFw ? `<div class="col-row"><span>Strum LED colour</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>` : ''}
       ${n > 1 ? `<div class="opt"><div><h3>Quick setup</h3><p class="dim">What the strum LEDs light up on. Fine-tune each one below.</p></div>
         <span class="row"><button class="btn small" data-rp="both">All: up and down</button><button class="btn small" data-rp="half">First half up, second half down</button><button class="btn small" data-rp="alt">Alternate up / down</button></span></div>` : ''}
       ${[...Array(n).keys()].map((k) => `<div class="opt"><div><h3>Strum LED ${k + 1}</h3><p class="dim">Lights up on</p></div>
@@ -1644,6 +1659,10 @@ function buildLights() {
     };
   };
   drawLayout();
+  buildStudio({
+    state, changed: () => { applyColors(); refreshChain(); pushCfg(); }, toast, advRefresh,
+    whammy: (s) => liveWhammy(s), turnOn: () => { c.rgbEnabled = true; live(); },
+  });
   refresh();
 }
 

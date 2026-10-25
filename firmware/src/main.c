@@ -104,6 +104,8 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             if (config_from_old((const uint8_t *)&cfg_rx, cfg_rx_len, &up)) {
                 memcpy((uint8_t *)&up + cfg_rx_len - 4, (const uint8_t *)&g_cfg + cfg_rx_len - 4,
                        sizeof(up) - cfg_rx_len);   // every field past its layout, up to the crc
+                // an older configurator that changed the effect or speed still gets what it asked for
+                if (up.rgb_effect != g_cfg.rgb_effect || up.rgb_speed != g_cfg.rgb_speed) led_zones_from_efx(&up);
                 config_seal(&up);
                 cfg_rx = up;
             }
@@ -143,7 +145,8 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             config_seal(&g_cfg);
             return reply(rhport, req, &g_cfg, sizeof(g_cfg));
         case VREQ_SETCFG:
-            if (req->wLength != sizeof(cfg_rx) && req->wLength != YACC_CFG_V5_SIZE && req->wLength != YACC_CFG_V4_SIZE) return false;
+            if (req->wLength != sizeof(cfg_rx) && req->wLength != YACC_CFG_V6_SIZE && req->wLength != YACC_CFG_V5_SIZE &&
+                req->wLength != YACC_CFG_V4_SIZE) return false;
             cfg_rx_len = req->wLength;
             memset(&cfg_rx, 0, sizeof(cfg_rx));
             return tud_control_xfer(rhport, req, &cfg_rx, cfg_rx_len);
@@ -220,6 +223,8 @@ static void read_pad(pad_t *s) {
         }
     }
     if (s->tilt) s->star = true;
+    rgb_set_whammy((uint16_t)s->whammy);
+    rgb_set_player_star(s->star);
 }
 
 // ---------------------------------------------------------------- game feedback (rumble channel)

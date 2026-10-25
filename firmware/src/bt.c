@@ -611,7 +611,12 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     s_want_window = open_window && !pair;
 
     // identity of the running mode
-    snprintf(s_name, sizeof(s_name), "YAGCC %s", mode_short(s_mode));
+    {   // "YAGCC <mode>": built by hand, snprintf would pull the whole printf engine into the image
+        size_t n = 0;
+        for (const char *p = "YAGCC "; *p && n < sizeof(s_name) - 1; p++) s_name[n++] = *p;
+        for (const char *p = mode_short(s_mode); *p && n < sizeof(s_name) - 1; p++) s_name[n++] = *p;
+        s_name[n] = 0;
+    }
     s_appearance = s_mode == MODE_KEYBOARD ? 0x03C1 : 0x03C4;   // HID keyboard / HID gamepad
     build_descriptor();
     uint16_t vid, pid, ver;

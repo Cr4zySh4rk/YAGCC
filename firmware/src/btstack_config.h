@@ -6,8 +6,9 @@
 #define ENABLE_LE_PERIPHERAL
 #define ENABLE_LE_DATA_LENGTH_EXTENSION   // as Santroller; hosts may ask for longer packets
 #define ENABLE_LE_SECURE_CONNECTIONS   // stored-key pairing, what Windows / Android / iOS expect for HID
-#define ENABLE_LOG_ERROR
-#define ENABLE_PRINTF_HEXDUMP   // needed by the SDK's hci dump file (no output: stdio goes nowhere)
+// no ENABLE_LOG_ERROR: our hci_dump sink (bt.c s_pdu_dump) drops text messages, so the log_error() strings would only
+// cost flash
+#define ENABLE_PRINTF_HEXDUMP   // needed to compile the SDK's hci dump file (no output: stdio goes nowhere)
 
 #define HCI_OUTGOING_PRE_BUFFER_SIZE 4
 #define HCI_ACL_PAYLOAD_SIZE (1021 + 4)   // classic ACL packets (DH5) can be this long

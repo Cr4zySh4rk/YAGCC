@@ -145,6 +145,124 @@ const hex2 = (n) => n.toString(16).padStart(2, '0');
 export const rgbToHex = (r, g, b) => '#' + hex2(r) + hex2(g) + hex2(b);
 export const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) || 0);
 
+// ---------------------------------------------------------------- LED engine v2 (config version 7, firmware 0.34+)
+// Enum values match firmware/src/config.h (see led_v2_spec.md). `speed` / `fade` say which sliders a type uses.
+export const IDLE = { OFF: 0, SOLID: 1, BREATHE: 2, HEARTBEAT: 3, RAINBOW: 4, RAINBOW_WAVE: 5, COLOR_WAVE: 6, SPARKLE: 7, CHASE: 8, FIRE: 9, HUE_DRIFT: 10 };
+export const PRESS = { NONE: 0, COLOR: 1, FLASH_FADE: 2, DIM: 3, OFF: 4, STROBE: 5, RIPPLE: 6, RAINBOW: 7, SPARK: 8, SWEEP: 9 };
+export const STAR = { PULSE: 0, SOLID: 1, RAINBOW: 2, STROBE: 3, CHASE: 4, FIRE: 5, SPARKLE: 6 };
+export const WFX = { NONE: 0, BRIGHT: 1, PULSE: 2, HUE: 3, WAVE: 4 };
+export const ZF_SAME = 1, ZF_PER_LED = 2;
+export const LEDF_FRET2_OWN = 1, LEDF_STAR_FLASH = 2;
+export const IDLE_ANIMS = [
+  { id: 0, name: 'Off', desc: 'Dark until something happens.' },
+  { id: 1, name: 'Solid', desc: 'A steady glow in the LED colour.' },
+  { id: 2, name: 'Breathe', desc: 'Slowly swells and fades, each LED a little out of step.', speed: true },
+  { id: 3, name: 'Heartbeat', desc: 'Two soft thumps, then a rest, like a pulse.', speed: true },
+  { id: 4, name: 'Rainbow', desc: 'Every LED cycles through all the colours (ignores the LED colour).', speed: true, ownColor: true },
+  { id: 5, name: 'Rainbow wave', desc: 'A rainbow that rolls along the row (ignores the LED colour).', speed: true, ownColor: true },
+  { id: 6, name: 'Colour wave', desc: 'A wave of brightness rolls along the row in the LED colours.', speed: true },
+  { id: 7, name: 'Sparkle', desc: 'A dim glow with random white twinkles. Speed sets how often.', speed: true },
+  { id: 8, name: 'Chase', desc: 'A bright spot runs around the row with a soft tail.', speed: true },
+  { id: 9, name: 'Fire', desc: 'Flickers like embers, every LED on its own.' },
+  { id: 10, name: 'Hue drift', desc: 'The LED colours slowly slide round the colour wheel.', speed: true },
+];
+export const PRESS_FX = [
+  { id: 0, name: 'No reaction', desc: 'Pressing changes nothing.' },
+  { id: 1, name: 'Light up', desc: 'Full brightness while held, back to idle on release.' },
+  { id: 2, name: 'Flash & fade', desc: 'Flashes on press, then fades back slowly. Fade time sets how slowly.', fade: true },
+  { id: 3, name: 'Dim', desc: 'Dims while held.' },
+  { id: 4, name: 'Go dark', desc: 'Goes dark while held.' },
+  { id: 5, name: 'Strobe', desc: 'Flickers on and off while held. Speed sets how fast.', speed: true },
+  { id: 6, name: 'Ripple', desc: 'A wave spreads out to the neighbouring LEDs.', fade: true },
+  { id: 7, name: 'Random colour', desc: 'Each press lights a different random colour, then fades.', fade: true },
+  { id: 8, name: 'White spark', desc: 'A quick white flash, then the pressed colour, fading on release.', fade: true },
+  { id: 9, name: 'Sweep', desc: 'A comet shoots across the row. On the strum bar it follows the strum direction.', fade: true },
+];
+export const STAR_ANIMS = [
+  { id: 0, name: 'Pulse', desc: 'A steady pulse in the star power colour (the classic look).', speed: true },
+  { id: 1, name: 'Solid', desc: 'Held at full brightness in the star power colour.' },
+  { id: 2, name: 'Rainbow', desc: 'A fast rainbow wave rolls along the LEDs.', ownColor: true },
+  { id: 3, name: 'Strobe', desc: 'Quick on / off flashes.', speed: true },
+  { id: 4, name: 'Chase', desc: 'A bright spot runs along the LEDs.' },
+  { id: 5, name: 'Fire', desc: 'Flickering flames in the star power colour.' },
+  { id: 6, name: 'Sparkle', desc: 'A soft glow with white twinkles.' },
+];
+export const WHAMMY_FX = [
+  { id: 0, name: 'Nothing', desc: 'The whammy bar does not change the lights.' },
+  { id: 1, name: 'Brightness', desc: 'The harder you push the whammy bar, the brighter the LEDs (dimmer at rest).' },
+  { id: 2, name: 'Flutter', desc: 'LEDs shimmer faster the harder you push.' },
+  { id: 3, name: 'Colour shift', desc: 'Colours slide round the colour wheel as you push.' },
+  { id: 4, name: 'Wave', desc: 'A ripple of dimming runs along the LEDs as you push.' },
+];
+export const NUM_IDLE = IDLE_ANIMS.length, NUM_PRESS = PRESS_FX.length, NUM_STAR = STAR_ANIMS.length, NUM_WFX = WHAMMY_FX.length;
+
+// old rgb_effect -> zone (both zones get it; speed = fade = rgb_speed)
+export const LEGACY_ZONES = [
+  { idle: IDLE.SOLID, idleLevel: 100, press: PRESS.NONE },        // STATIC
+  { idle: IDLE.SOLID, idleLevel: 100, press: PRESS.DIM },         // DIM
+  { idle: IDLE.SOLID, idleLevel: 100, press: PRESS.OFF },         // OFF
+  { idle: IDLE.SOLID, idleLevel: 25, press: PRESS.COLOR },        // BRIGHT
+  { idle: IDLE.SOLID, idleLevel: 11, press: PRESS.FLASH_FADE },   // FADE
+  { idle: IDLE.BREATHE, idleLevel: 100, press: PRESS.COLOR },     // BREATHE
+  { idle: IDLE.RAINBOW, idleLevel: 60, press: PRESS.COLOR },      // RAINBOW
+];
+export const effectZone = (efx, speed = 5) => {
+  const r = LEGACY_ZONES[efx] || LEGACY_ZONES[3], s = Math.max(1, Math.min(10, speed | 0 || 5));
+  return { ...r, speed: s, fade: s, same: true, perLed: false };
+};
+// the legacy row a fret zone matches exactly, or -1
+export const zoneEffect = (z) => LEGACY_ZONES.findIndex((r) => r.idle === z.idle && r.idleLevel === z.idleLevel && r.press === z.press) >= 0 && z.same && !z.perLed
+  ? LEGACY_ZONES.findIndex((r) => r.idle === z.idle && r.idleLevel === z.idleLevel && r.press === z.press) : -1;
+
+export function defaultLedV2(colors, efx, speed) {
+  const z = effectZone(efx, speed);
+  return {
+    zoneFrets: { ...z }, zoneStrum: { ...z },
+    fretPress: colors.slice(), fret2Colors: colors.slice(), fret2Own: false,
+    strumLedColors: Array(MAX_STRUM_LEDS).fill('#ffffff'), strumUpColor: '#00c8ff', strumDownColor: '#ff3cc8',
+    starColor: '#40e0ff', starAnim: STAR.PULSE, starZones: 3, starSpeed: 5, whammyFx: WFX.NONE, whammyZones: 3, starFlash: false, sleepMin: 0,
+  };
+}
+const clampInt = (v, lo, hi, d) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : d);
+function parseZone(dv, o) {
+  const f = dv.getUint8(o + 5);
+  return {
+    idle: Math.min(dv.getUint8(o), NUM_IDLE - 1), idleLevel: Math.min(100, dv.getUint8(o + 1)), press: Math.min(dv.getUint8(o + 2), NUM_PRESS - 1),
+    speed: clampInt(dv.getUint8(o + 3), 1, 10, 5), fade: clampInt(dv.getUint8(o + 4), 1, 10, 5), same: !!(f & ZF_SAME), perLed: !!(f & ZF_PER_LED),
+  };
+}
+const rd3 = (dv, o) => rgbToHex(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2));
+function parseLedV2(dv) {
+  const flags = dv.getUint8(239);
+  return {
+    zoneFrets: parseZone(dv, 156), zoneStrum: parseZone(dv, 164),
+    fretPress: [0, 1, 2, 3, 4].map((i) => rd3(dv, 172 + i * 3)), fret2Colors: [0, 1, 2, 3, 4].map((i) => rd3(dv, 187 + i * 3)),
+    strumLedColors: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => rd3(dv, 202 + i * 3)),
+    strumUpColor: rd3(dv, 226), strumDownColor: rd3(dv, 229), starColor: rd3(dv, 232),
+    starAnim: Math.min(dv.getUint8(235), NUM_STAR - 1), starZones: dv.getUint8(236) & 3, whammyFx: Math.min(dv.getUint8(237), NUM_WFX - 1), whammyZones: dv.getUint8(238) & 3,
+    fret2Own: !!(flags & LEDF_FRET2_OWN), starFlash: !!(flags & LEDF_STAR_FLASH),
+    sleepMin: Math.min(30, dv.getUint8(240)), starSpeed: clampInt(dv.getUint8(241), 1, 10, 5),
+  };
+}
+function writeZone(dv, o, z) {
+  const d = effectZone(3, 5);
+  dv.setUint8(o, clampInt(z.idle, 0, NUM_IDLE - 1, d.idle)); dv.setUint8(o + 1, clampInt(z.idleLevel, 0, 100, d.idleLevel)); dv.setUint8(o + 2, clampInt(z.press, 0, NUM_PRESS - 1, d.press));
+  dv.setUint8(o + 3, clampInt(z.speed, 1, 10, 5)); dv.setUint8(o + 4, clampInt(z.fade, 1, 10, 5)); dv.setUint8(o + 5, (z.same ? ZF_SAME : 0) | (z.perLed ? ZF_PER_LED : 0));
+}
+const wr3 = (dv, o, hex) => { const [r, g, b] = hexToRgb(hex || '#000000'); dv.setUint8(o, r); dv.setUint8(o + 1, g); dv.setUint8(o + 2, b); };
+function serializeLedV2(dv, c) {
+  const d = defaultLedV2(c.colors, c.rgbEffect, c.rgbSpeed);
+  writeZone(dv, 156, c.zoneFrets || d.zoneFrets); writeZone(dv, 164, c.zoneStrum || d.zoneStrum);
+  (c.fretPress || d.fretPress).forEach((h, i) => wr3(dv, 172 + i * 3, h));
+  (c.fret2Colors || d.fret2Colors).forEach((h, i) => wr3(dv, 187 + i * 3, h));
+  (c.strumLedColors || d.strumLedColors).slice(0, 8).forEach((h, i) => wr3(dv, 202 + i * 3, h));
+  wr3(dv, 226, c.strumUpColor ?? d.strumUpColor); wr3(dv, 229, c.strumDownColor ?? d.strumDownColor); wr3(dv, 232, c.starColor ?? d.starColor);
+  dv.setUint8(235, clampInt(c.starAnim, 0, NUM_STAR - 1, 0)); dv.setUint8(236, (c.starZones ?? 3) & 3);
+  dv.setUint8(237, clampInt(c.whammyFx, 0, NUM_WFX - 1, 0)); dv.setUint8(238, (c.whammyZones ?? 3) & 3);
+  dv.setUint8(239, (c.fret2Own ? LEDF_FRET2_OWN : 0) | (c.starFlash ? LEDF_STAR_FLASH : 0));
+  dv.setUint8(240, clampInt(c.sleepMin, 0, 30, 0)); dv.setUint8(241, clampInt(c.starSpeed, 1, 10, 5));
+}
+
 export function crc32(bytes) {
   let c = 0xffffffff;
   for (let i = 0; i < bytes.length; i++) {
@@ -170,6 +288,7 @@ export function defaultConfig() {
     ledMap: [0, 1, 2, 3, 4], colors: FRET_DEFAULT_COLORS.slice(),
     noFretLeds: false, strumLeds: 0, strumMap: [200, 201, 202, 203, 204, 205, 206, 207], strumColor: '#ffffff', strumRoles: [0, 0, 0, 0, 0, 0, 0, 0],
     cfgVersion: CFG_VERSION, ...defaultTiltSensors(),
+    ...defaultLedV2(FRET_DEFAULT_COLORS, 3, 5),
   };
 }
 
@@ -210,19 +329,21 @@ export function tiltValue(raw, s) {
   return s.invert ? 1 - v : v;
 }
 
-export const CFG_SIZE = 160;      // config version 6 (firmware 0.31+); 0.29-0.30 send 128 bytes (v5), older 96 (v4)
+export const CFG_SIZE = 256;      // config version 7 (firmware 0.34+, LED engine v2); 0.31-0.33 send 160 bytes (v6), 0.29-0.30 128 (v5), older 96 (v4)
+export const CFG_SIZE_V6 = 160;
 export const CFG_SIZE_V5 = 128;
 export const CFG_SIZE_V4 = 96;
-export const CFG_VERSION = 6;
+export const CFG_VERSION = 7;
 
 export function parseConfig(dv) {
   if (dv.getUint32(0, true) !== 0x43434159) throw new Error('Bad config magic');
   const flags = dv.getUint8(21);
+  const v7 = dv.byteLength >= CFG_SIZE && dv.getUint8(4) >= 7;
   const pins = [];
   for (let i = 0; i < FUNCS.length; i++) pins.push(dv.getUint8(5 + i));
   const bootModes = [];
   for (let i = 0; i < NUM_FRETS; i++) bootModes.push(dv.getUint8(28 + i));
-  return {
+  const out = {
     pins,
     whammyCh: dv.getUint8(14), whammyInvert: !!dv.getUint8(15),
     whammyMin: dv.getUint16(16, true), whammyMax: dv.getUint16(18, true),
@@ -249,7 +370,7 @@ export function parseConfig(dv) {
     cfgVersion: dv.getUint8(4),
     // tilt sensors (version 5): 2 x 8 bytes at 92, then accelerometer pins and filters at 108
     // two LEDs per fret (version 6): count at 124, second positions at 125..129
-    ...(dv.byteLength >= CFG_SIZE && dv.getUint8(4) >= 6 ? {
+    ...(dv.byteLength >= CFG_SIZE_V6 && dv.getUint8(4) >= 6 ? {
       fretLeds: dv.getUint8(124) === 2 ? 2 : 1, ledMap2: [0, 1, 2, 3, 4].map((i) => dv.getUint8(125 + i)),
       tiltInvert: dv.getUint8(130) === 1,   // firmware 0.33: 1 = normally closed switch
     } : { fretLeds: 1, ledMap2: [5, 6, 7, 8, 9], tiltInvert: false }),
@@ -264,16 +385,20 @@ export function parseConfig(dv) {
       ps2Pins: [117, 118, 119, 120, 121].map((o) => dv.getUint8(o)), wiiSda: dv.getUint8(122), wiiScl: dv.getUint8(123),
     } : defaultTiltSensors()),
   };
+  // LED engine v2 (version 7): older firmware has none of it, so fill in defaults and derive the zones from the old effect
+  const colors = out.colors;
+  Object.assign(out, v7 ? parseLedV2(dv) : defaultLedV2(colors, out.rgbEffect, out.rgbSpeed));
+  return out;
 }
 
 // Written in the layout the controller sent (version 4 / 96 bytes for firmware before 0.29)
 export function serializeConfig(c) {
   const ver = Math.min(CFG_VERSION, c.cfgVersion ?? CFG_VERSION);
-  const v5 = ver >= 5, v6 = ver >= 6;
-  const buf = new ArrayBuffer(v6 ? CFG_SIZE : v5 ? CFG_SIZE_V5 : CFG_SIZE_V4);
+  const v5 = ver >= 5, v6 = ver >= 6, v7 = ver >= 7;
+  const buf = new ArrayBuffer(v7 ? CFG_SIZE : v6 ? CFG_SIZE_V6 : v5 ? CFG_SIZE_V5 : CFG_SIZE_V4);
   const dv = new DataView(buf);
   dv.setUint32(0, 0x43434159, true);
-  dv.setUint8(4, v6 ? 6 : v5 ? 5 : 4);
+  dv.setUint8(4, v7 ? 7 : v6 ? 6 : v5 ? 5 : 4);
   c.pins.forEach((p, i) => dv.setUint8(5 + i, p));
   dv.setUint8(14, c.whammyCh);
   dv.setUint8(15, c.whammyInvert ? 1 : 0);
@@ -289,7 +414,8 @@ export function serializeConfig(c) {
   c.bootModes.forEach((m, i) => dv.setUint8(28 + i, m));
   dv.setUint8(33, c.rgbPin);
   dv.setUint8(34, Math.max(0, Math.min(255, c.rgbBrightness)));
-  dv.setUint8(35, c.rgbEffect);
+  // v7: the legacy effect row the fret zone matches exactly (so older tools still show something sensible), else unchanged
+  { const ze = v7 && c.zoneFrets ? zoneEffect(c.zoneFrets) : -1; dv.setUint8(35, ze >= 0 ? ze : c.rgbEffect); }
   dv.setUint8(36, Math.max(1, Math.min(10, c.rgbSpeed)));
   c.ledMap.forEach((m, i) => dv.setUint8(37 + i, m));
   c.colors.forEach((col, i) => { const [r, g, b] = hexToRgb(col); dv.setUint8(42 + i * 3, r); dv.setUint8(43 + i * 3, g); dv.setUint8(44 + i * 3, b); });
@@ -325,7 +451,9 @@ export function serializeConfig(c) {
   dv.setUint8(124, c.fretLeds === 2 ? 2 : 1);
   (c.ledMap2 || [5, 6, 7, 8, 9]).forEach((p, i) => dv.setUint8(125 + i, Math.min(p, MAX_LEDS - 1)));
   dv.setUint8(130, c.tiltInvert ? 1 : 0);
-  dv.setUint32(156, crc32(new Uint8Array(buf, 0, 156)), true);
+  if (!v7) { dv.setUint32(156, crc32(new Uint8Array(buf, 0, 156)), true); return buf; }
+  serializeLedV2(dv, c);
+  dv.setUint32(252, crc32(new Uint8Array(buf, 0, 252)), true);
   return buf;
 }
 

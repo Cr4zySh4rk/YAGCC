@@ -6,6 +6,11 @@ set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards)
 # Usage:  cmake -B build -DPICO_BOARD=pico_w -DPICO_SDK_PATH=/path/to/pico-sdk
 include(pico_sdk_import.cmake)
 
+# Size-optimised build. The SDK defaults to Release (-O3); flash space matters more than raw speed here. Code that
+# needs speed keeps it: Pico-PIO-USB sets -O3 itself (#pragma GCC optimize), the rest is in RAM or I/O bound.
+set(CMAKE_C_FLAGS_RELEASE "-Os -g -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-Os -g -DNDEBUG")
+set(CMAKE_ASM_FLAGS_RELEASE "-g -DNDEBUG")
 project(yacc C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -30,7 +35,7 @@ endif()
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 33)
+set(YACC_VERSION_MINOR 34)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")
@@ -91,6 +96,23 @@ add_executable(yacc
   lib/xsm3/xsm3.c
 )
 
+# Timing-sensitive emulation code (PSX SPI/ACK interrupt handlers, Wii extension I2C responses, PIO USB CRC) stays
+# at -O2 even though everything else is -Os; Pico-PIO-USB's own files are -O3 through #pragma GCC optimize.
+set_property(SOURCE
+  lib/psx_emulation/pio_spi.c
+  lib/psx_emulation/psx_emulation.cpp
+  lib/wii_extension_emulation/wii_extension_backend.c
+  lib/wii_extension_emulation/wii_extension_emulation.cpp
+  lib/pico_pio_usb/src/usb_crc.c
+  APPEND PROPERTY COMPILE_OPTIONS -O2)
+
+# No stdio driver is ever linked, so printf() output goes nowhere: compile every printf() in our sources and the
+# vendored libraries away (src/yacc_noprintf.h) so the printf engine and stdio are not linked in.
+file(GLOB_RECURSE YACC_ALL_SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/src/*.c ${CMAKE_CURRENT_LIST_DIR}/src/*.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/lib/*.c ${CMAKE_CURRENT_LIST_DIR}/lib/*.cpp)
+set_property(SOURCE ${YACC_ALL_SOURCES} APPEND PROPERTY COMPILE_OPTIONS -include ${CMAKE_CURRENT_LIST_DIR}/src/yacc_noprintf.h)
+
 pico_generate_pio_header(yacc ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
 pico_generate_pio_header(yacc ${CMAKE_CURRENT_LIST_DIR}/lib/psx_emulation/pio_spi.pio)
 
@@ -103,7 +125,19 @@ target_compile_definitions(yacc PRIVATE
   # Core 1 never runs, so saving to flash only has to mask interrupts on core 0. Without this, linking
   # pico_multicore (pulled in by the USB host and radio libraries) makes flash_safe_execute() refuse to run.
   PICO_FLASH_ASSUME_CORE1_SAFE=1
+  # the only printf-family user left is snprintf-style formatting inside BTstack (SDP records, GATT strings): ints and
+  # strings only, so the float / exponent / long long / ptrdiff code is dead weight
+  PICO_PRINTF_SUPPORT_FLOAT=0
+  PICO_PRINTF_SUPPORT_EXPONENTIAL=0
 )
+target_link_options(yacc PRIVATE --specs=nano.specs)
+option(YACC_LTO "Link-time optimisation" OFF)
+if(YACC_LTO)
+  target_compile_options(yacc PRIVATE -flto=auto -fno-fat-lto-objects)
+  target_link_options(yacc PRIVATE -flto=auto -Os)
+  file(GLOB_RECURSE YACC_NOLTO_SOURCES ${PICO_SDK_PATH}/src/rp2_common/pico_*/*.c ${PICO_SDK_PATH}/src/common/pico_*/*.c)
+  set_property(SOURCE ${YACC_NOLTO_SOURCES} APPEND PROPERTY COMPILE_OPTIONS -fno-lto)
+endif()
 
 target_link_libraries(yacc
   pico_stdlib
@@ -150,6 +184,14 @@ if(PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w")
   # logging is switched on in the configurator (config flag CFG_FLAG_BT_DEBUG_LOG, off by default).
   target_compile_definitions(yacc PRIVATE YACC_BT_LOG_FLASH=1)
   pico_btstack_make_gatt_header(yacc PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src/yagcc.gatt)
+  # The CYW43 driver and its Bluetooth transport print diagnostics with printf() as well (to no stdio driver, so
+  # nowhere): strip those the same way. The driver's CYW43_PRINTF macro and the HCI shared-bus transport use plain printf.
+  file(GLOB YACC_CYW43_SOURCES
+    ${PICO_SDK_PATH}/lib/cyw43-driver/src/*.c
+    ${PICO_SDK_PATH}/src/rp2_common/pico_cyw43_driver/*.c
+    ${PICO_SDK_PATH}/src/rp2_common/pico_cyw43_driver/cybt_shared_bus/*.c
+    ${PICO_SDK_PATH}/src/common/pico_util/*.c)
+  set_property(SOURCE ${YACC_CYW43_SOURCES} APPEND PROPERTY COMPILE_OPTIONS -include ${CMAKE_CURRENT_LIST_DIR}/src/yacc_noprintf.h)
 endif()
 
 # ---- flash nuke -------------------------------------------------------------
