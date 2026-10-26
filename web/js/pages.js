@@ -93,7 +93,7 @@ export const HARDWARE = [
   { group: 'input', name: 'Analog tilt sensors', bus: 'ADC (GP26–28)', status: 'ok',
     points: ['Up to two, each on the whammy or star power', 'Calibrated rest and tilted positions, adjustable star power angle'] },
   { group: 'input', name: 'I2C accelerometers (LIS3DH, SC7A20, LIS3DSH, ADXL345, MPU-6050)', bus: 'I2C', status: 'ok',
-    points: ['Found automatically on the SDA / SCL pins you pick', 'Any axis on the whammy or star power', 'Low pass, median and gravity gate filters', 'LIS3DH aux ADC inputs usable as analog sensors', 'Two accelerometers on one bus (firmware 0.36+): wire both to the same SDA / SCL / 3V3 / GND and give the second a different address (ADXL345: SDO to 3V3 → 0x1D, the first SDO to GND → 0x53; LIS3DH: SA0/SDO high → 0x19; MPU-6050: AD0 high → 0x69)'] },
+    points: ['Found automatically on the SDA / SCL pins you pick; Guided setup on the Tune page picks the axis for you (capture level, then tilted)', 'Any axis on the whammy or star power', 'Low pass, median and gravity gate filters', 'LIS3DH aux ADC inputs usable as analog sensors', 'Two accelerometers on one bus (firmware 0.36+): wire both to the same SDA / SCL / 3V3 / GND and give the second a different address (ADXL345: SDO to 3V3 → 0x1D, the first SDO to GND → 0x53; LIS3DH: SA0/SDO high → 0x19; MPU-6050: AD0 high → 0x69)'] },
   { group: 'input', name: 'MPR121 capacitive touch (World Tour slider)', bus: 'I2C', status: 'planned', points: ['Touch slider as tap frets'] },
   { group: 'input', name: 'CD4051 / CD4067 multiplexers, key matrices, ADS1115', bus: 'GPIO / I2C', status: 'planned', points: ['More inputs from fewer pins'] },
   // necks & adapters

@@ -1301,6 +1301,18 @@ function tiltStates(s) {
   });
 }
 
+// Quick setup: raw captures live here, never in cfg
+const qt = { target: 1, chosen: false, chip: 0, level: null, tilted: null };
+let qtSlot = -1, tiltKey = '';
+const isAxisSrc = (src) => (src >= 3 && src <= 5) || (src >= 9 && src <= 11);
+const axisIdx = (src) => (src >= 9 ? src - 9 : src - 3);
+const quickSlotFor = (c, target) => c.atilt.findIndex((t) => isAxisSrc(t.src) && t.target === target);
+const accStatusText = (s, on) => !on ? 'Pick the pins your accelerometer is wired to.'
+  : !s?.accelType ? 'Looking for the accelerometer… check the wiring (SDA/SCL, power, CS to 3V3).'
+  : '✓ ' + (ACCEL_TYPES[s.accelType] || 'Accelerometer') + ' found';
+const tiltStateText = (src, t) => src === PIN_NONE ? 'off' : t.value == null ? (t.raw == null ? 'no reading' : 'calibrate') : t.whammy ? 'whammy ' + Math.round(t.value * 100) + ' %' : t.star ? 'STAR POWER' : 'level';
+const tiltKeyOf = (s) => `${!!s?.accelType}|${!!s?.accel2Type}`;
+
 function buildTilt() {
   const c = state.cfg, body = $('#tiltBody');
   if (!body) return;
@@ -1325,10 +1337,49 @@ function buildTilt() {
     }).join('');
   };
   const restOf = (t) => (t.invert ? t.max : t.min), tiltOf = (t) => (t.invert ? t.min : t.max);
+  // ---- quick setup state
+  const st0 = state.status;
+  tiltKey = tiltKeyOf(st0);
+  const found = accelOn && !!st0?.accelType;
+  const found2 = found && two && !!st0.accel2Type;
+  if (!qt.chosen) {
+    if (quickSlotFor(c, 1) >= 0) qt.target = 1; else if (quickSlotFor(c, 0) >= 0) qt.target = 0;
+  }
+  if (!found2) qt.chip = 0;
+  qtSlot = found ? quickSlotFor(c, qt.target) : -1;
+  const stage = qtSlot >= 0 ? 'result' : qt.level ? 'tilted' : 'level';
+  const qs = qtSlot >= 0 ? c.atilt[qtSlot] : null;
+  const qsChip = qs ? (qs.src >= 9 ? 2 : 1) : 0;
+  const quick = !found ? '' : `
+    <div class="tilt-quick" id="tiltQuick">
+      <h3>Guided setup</h3>
+      <ol class="tilt-steps">
+        <li class="done"><span class="n">✓</span><div><b>What should tilting do?</b>
+          <div class="seg" role="group" aria-label="What should tilting do"><button data-qt="1" class="${qt.target === 1 ? 'on' : ''}">Star power</button><button data-qt="0" class="${qt.target === 0 ? 'on' : ''}">Whammy</button></div>
+          ${found2 ? `<div class="dim small">Which sensor?</div><div class="seg" role="group" aria-label="Which sensor"><button data-qc="0" class="${qt.chip === 0 ? 'on' : ''}">Chip 1</button><button data-qc="1" class="${qt.chip === 1 ? 'on' : ''}">Chip 2</button></div>` : ''}
+        </div></li>
+        <li class="${stage === 'result' || qt.level ? 'done' : 'active'}"><span class="n">${stage === 'result' || qt.level ? '✓' : '2'}</span><div><b>Hold the guitar level, the way you play</b>
+          ${stage === 'result' ? '' : '<div><button class="btn small" id="qCapLevel">Capture level</button></div>'}</div></li>
+        <li class="${stage === 'result' ? 'done' : qt.level ? 'active' : ''}"><span class="n">${stage === 'result' ? '✓' : '3'}</span><div><b>Tilt the neck up, like you would for star power</b>
+          ${stage === 'result' ? '' : `<div><button class="btn small" id="qCapTilt" ${qt.level ? '' : 'disabled'}>Capture tilted</button></div>`}</div></li>
+        ${stage === 'result' ? `
+        <li class="done"><span class="n">✓</span><div>
+          <b>Done. ${qt.target === 1 ? 'Tilt the neck to try star power.' : 'Tilt the guitar to move the whammy.'}</b>
+          <div class="tilt-meter"><div class="bar" id="qBar"><i></i></div>${qt.target === 1 ? `<span class="thr" id="qThrMark" style="left:${qs.threshold}%"></span>` : ''}</div>
+          <div class="tilt-readout"><span><span class="tilt-state" id="qSt">–</span></span><span id="qUsing">Using Accelerometer${found2 || qsChip === 2 ? ' ' + qsChip : ''} ${'XYZ'[axisIdx(qs.src)]} axis.</span></div>
+          ${qt.target === 1 ? `<div class="slider-row"><label for="qThr">Star power at</label><output class="val" id="qThrV">${qs.threshold} %</output><input type="range" id="qThr" min="5" max="95" step="1" value="${qs.threshold}"></div>` : '<p class="dim small">Adds to the whammy bar: whichever is further wins.</p>'}
+          <div><button class="btn small" id="qRedo">Redo</button></div>
+        </div></li>` : ''}
+      </ol>
+      ${stage === 'result' ? '' : `<div class="tilt-axes" aria-label="Live reading">${['X', 'Y', 'Z'].map((a, i) => `<div>${a} <span id="qV${i}">–</span><div class="bar"><i id="qB${i}"></i></div></div>`).join('')}</div>`}
+    </div>`;
   body.innerHTML = `
     <div class="tilt-accel">
       <div class="opt first"><div><h3>Accelerometer</h3><p class="dim">I²C module: SDA on the even pin, SCL on the next one, VCC to 3V3(OUT), GND to GND.</p></div>
         <select id="accPins"><option value="255">None</option>${pairs.map((p) => `<option value="${p}">SDA GP${p}, SCL GP${p + 1}</option>`).join('')}</select></div>
+      <p class="acc-status" id="accStatus" role="status"></p>
+      ${quick}
+      ${found ? '<p class="dim small" style="margin:12px 0 0">Or set everything by hand below.</p>' : ''}
       <p class="dim small" style="margin:6px 0 0" id="accTwoHint">Two accelerometers: wire both to the same SDA / SCL / 3V3 / GND; give the second a different address (ADXL345: SDO to 3V3 → 0x1D, the first SDO to GND → 0x53; LIS3DH: SA0/SDO high → 0x19; MPU-6050: AD0 high → 0x69).${two ? '' : ' Needs firmware 0.36 or newer.'}</p>
       ${accelOn ? `
       <div class="tilt-readout" style="margin-top:8px"><span>${two ? 'Chip 1' : 'Chip'}: <b id="accType">looking…</b>${two ? ' · Chip 2: <b id="acc2Type">looking…</b>' : ''}</span><span class="dim">1 g = 1024 counts, 2048 = level</span></div>
@@ -1401,12 +1452,54 @@ function buildTilt() {
       live(); buildTilt();
     }));
   });
+  // ---- quick setup handlers
+  const chipRaw = (st, chip) => { const r = chip ? st?.accel2Raw : st?.accelRaw; return r && r.slice(0, 3).every((v) => v !== undefined && v !== 0xffff) ? r.slice(0, 3) : null; };
+  body.querySelectorAll('[data-qt]').forEach((b) => (b.onclick = () => { qt.target = +b.dataset.qt; qt.chosen = true; buildTilt(); }));
+  body.querySelectorAll('[data-qc]').forEach((b) => (b.onclick = () => { qt.chip = +b.dataset.qc; qt.level = qt.tilted = null; buildTilt(); }));
+  const capL = $('#qCapLevel'), capT = $('#qCapTilt');
+  const grab = () => { const r = chipRaw(state.status, qt.chip); if (!r) toast('No reading from the accelerometer yet. Check the wiring.', 'bad'); return r; };
+  if (capL) capL.onclick = () => { const r = grab(); if (!r) return; qt.level = r; qt.tilted = null; buildTilt(); };
+  if (capT) capT.onclick = () => {
+    const r = grab(); if (!r || !qt.level) return;
+    qt.tilted = r;
+    const diff = r.map((v, i) => Math.abs(v - qt.level[i]));
+    const ax = diff.indexOf(Math.max(...diff));
+    if (diff[ax] < 100) { qt.tilted = null; toast('Barely moved. Tilt the neck further and capture again.', 'bad'); buildTilt(); return; }
+    const want = qt.target, srcId = (qt.chip ? 9 : 3) + ax;
+    let slot = c.atilt.findIndex((t) => t.target === want && t.src !== PIN_NONE);
+    if (slot < 0) slot = c.atilt.findIndex((t) => t.src === PIN_NONE);
+    if (slot < 0) slot = 0;
+    const lv = qt.level[ax], tl = r[ax];
+    Object.assign(c.atilt[slot], { src: srcId, target: want, min: Math.min(lv, tl), max: Math.max(lv, tl), invert: lv > tl });
+    if (want === 1) c.atilt[slot].threshold = 50;
+    qt.level = qt.tilted = null;
+    live(); buildTilt();
+  };
+  const redo = $('#qRedo');
+  if (redo) redo.onclick = () => { qt.level = qt.tilted = null; if (qtSlot >= 0) c.atilt[qtSlot].src = PIN_NONE; live(); buildTilt(); };
+  const qthr = $('#qThr');
+  if (qthr) {
+    qthr.oninput = () => { const t = c.atilt[qtSlot]; t.threshold = +qthr.value; $('#qThrV').textContent = t.threshold + ' %'; $('#qThrMark').style.left = t.threshold + '%'; live(); };
+    qthr.onchange = () => buildTilt();   // refresh the fine-tune card too
+  }
   if (state.status) updateTilt(state.status);
 }
 
 function updateTilt(s) {
   const c = state.cfg;
   if (!c?.atilt || (c.cfgVersion ?? 0) < 5 || !$('#tiltBody')) return;
+  if ($('#accPins') && tiltKeyOf(s) !== tiltKey) { buildTilt(); return; }   // chip found / lost: quick setup appears or goes
+  const accOn = c.accelSda !== PIN_NONE && i2cPinsOk(c.accelSda, c.accelScl);
+  const stEl = $('#accStatus');
+  if (stEl) { stEl.textContent = accStatusText(s, accOn); stEl.classList.toggle('ok', accOn && !!s.accelType); }
+  if ($('#qV0')) {
+    const r = qt.chip ? s.accel2Raw : s.accelRaw;
+    for (let i = 0; i < 3; i++) {
+      const v = r?.[i], ok = v !== undefined && v !== 0xffff;
+      $('#qV' + i).textContent = ok ? ((v - 2048) / 1024).toFixed(2) + ' g' : '–';
+      $('#qB' + i).style.width = ok ? (v / 40.95).toFixed(1) + '%' : '0';
+    }
+  }
   const ty = $('#accType');
   if (ty) {
     ty.textContent = s.accelType ? ACCEL_TYPES[s.accelType] || 'unknown' : 'none found, check the wiring';
@@ -1427,11 +1520,19 @@ function updateTilt(s) {
       $('#acc2B' + i).style.width = ok ? (v / 40.95).toFixed(1) + '%' : '0';
     }
   }
-  tiltStates(s).forEach((t, i) => {
+  const sts = tiltStates(s);
+  const qSt = $('#qSt'), qBar = $('#qBar');
+  if (qSt && qtSlot >= 0 && sts[qtSlot]) {
+    const t = sts[qtSlot];
+    qSt.textContent = tiltStateText(c.atilt[qtSlot].src, t);
+    qSt.classList.toggle('on', !!t.star || (t.whammy && t.value > 0));
+    if (qBar) { qBar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; qBar.classList.toggle('on', !!t.star); }
+  }
+  sts.forEach((t, i) => {
     const st = $('#tSt' + i), bar = $('#tBar' + i), raw = $('#tRaw' + i);
     if (!st) return;
     const src = c.atilt[i].src;
-    st.textContent = src === PIN_NONE ? 'off' : t.value == null ? (t.raw == null ? 'no reading' : 'calibrate') : t.whammy ? 'whammy ' + Math.round(t.value * 100) + ' %' : t.star ? 'STAR POWER' : 'level';
+    st.textContent = tiltStateText(src, t);
     st.classList.toggle('on', !!t.star || (t.whammy && t.value > 0));
     if (raw) raw.textContent = t.raw ?? '–';
     if (bar) { bar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; bar.classList.toggle('on', !!t.star); }
@@ -1728,7 +1829,7 @@ function buildLights() {
     const n = c.strumLeds || 0;
     const oldFw = (c.cfgVersion ?? 0) < 7;   // firmware 0.34+ sets the strum colours in the lighting studio
     $('#strumOpts').innerHTML = n ? `${oldFw ? `<div class="col-row"><span>Strum LED colour</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>` : ''}
-      ${n > 1 ? `<div class="opt"><div><h3>Quick setup</h3><p class="dim">What the strum LEDs light up on. Fine-tune each one below.</p></div>
+      ${n > 1 ? `<div class="opt"><div><h3>Guided setup</h3><p class="dim">What the strum LEDs light up on. Fine-tune each one below.</p></div>
         <span class="row"><button class="btn small" data-rp="both">All: up and down</button><button class="btn small" data-rp="half">First half up, second half down</button><button class="btn small" data-rp="alt">Alternate up / down</button></span></div>` : ''}
       ${[...Array(n).keys()].map((k) => `<div class="opt"><div><h3>Strum LED ${k + 1}</h3><p class="dim">Lights up on</p></div>
         <select data-role="${k}">${STRUM_ROLES.map((r) => `<option value="${r.id}" ${c.strumRoles[k] === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}</select></div>`).join('')}` : '';
