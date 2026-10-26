@@ -85,6 +85,10 @@ static uint8_t ep_in, ep_out;
 static CFG_TUSB_MEM_ALIGN uint8_t epout_buf[64];
 static CFG_TUSB_MEM_ALIGN uint8_t epin_buf[64];
 static XGIPProtocol *inXGIP, *outXGIP;
+// Fragments of a chunked message get their own parser: a parse of any ordinary packet (input, keepalive, LED) resets
+// the parser, so one arriving between two fragments would drop the half-built message (Santroller 0dbb322b).
+static XGIPProtocol *inChunkXGIP;
+static inline bool gip_is_fragment(const uint8_t *p, uint16_t len) { return len >= 2 && (p[1] & 0x80); }   // GipHeader_t.chunked
 static bool waiting_ack;
 static uint32_t waiting_ack_since, announce_timer, keep_alive_timer, last_queue_send;
 static uint8_t keep_alive_seq = 1, report_seq = 0, keycode_seq = 0;
@@ -113,7 +117,7 @@ static bool send_usb(const uint8_t *r, uint16_t len) {
 }
 
 void xbone_init(void) {
-    if (!inXGIP) { inXGIP = new XGIPProtocol(); outXGIP = new XGIPProtocol(); }
+    if (!inXGIP) { inXGIP = new XGIPProtocol(); outXGIP = new XGIPProtocol(); inChunkXGIP = new XGIPProtocol(); }
     queue_init(&relayToDevice, sizeof(relay_packet_t), 24);
     queue_init(&relayToConsole, sizeof(relay_packet_t), 24);
     buf_reset(&consoleBuffer); buf_reset(&dongleBuffer);
@@ -132,7 +136,7 @@ uint16_t xbone_dev_open(uint8_t rhport, tusb_desc_interface_t const *itf, uint16
     TU_VERIFY(max_len >= len, 0);
     TU_ASSERT(usbd_open_edpt_pair(rhport, tu_desc_next((uint8_t const *)itf), 2, TUSB_XFER_INTERRUPT, &ep_out, &ep_in), 0);
     usbd_edpt_xfer(rhport, ep_out, epout_buf, sizeof(epout_buf));
-    if (inXGIP) { inXGIP->reset(); outXGIP->reset(); }
+    if (inXGIP) { inXGIP->reset(); outXGIP->reset(); inChunkXGIP->reset(); }
     drvState = READY_ANNOUNCE;
     announce_timer = now_ms();
     authCompleted = false;
@@ -150,16 +154,17 @@ static void load_descriptor_reply(uint8_t seq) {
 bool xbone_dev_xfer(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t bytes) {
     (void)result;
     if (ep_addr != ep_out || !inXGIP) return true;
-    inXGIP->parse(epout_buf, (uint16_t)bytes);
-    uint8_t command = inXGIP->getCommand();
+    XGIPProtocol *in = gip_is_fragment(epout_buf, (uint16_t)bytes) ? inChunkXGIP : inXGIP;
+    in->parse(epout_buf, (uint16_t)bytes);
+    uint8_t command = in->getCommand();
 
     if ((command == GIP_AUTH || command == GIP_FINAL_AUTH) && !deviceMounted) consoleAuthOrphaned = true;
 
     // Raw relay of auth traffic; the controller on the host port generates the ACKs
     if (passthrough_enabled && xbone_is_auth_packet(epout_buf, (uint16_t)bytes)) {
         passthrough = true;
-        if ((command == GIP_AUTH || command == GIP_FINAL_AUTH) && !inXGIP->getChunked() &&
-            inXGIP->getDataLength() == sizeof(authReady) && memcmp(inXGIP->getData(), authReady, sizeof(authReady)) == 0) {
+        if ((command == GIP_AUTH || command == GIP_FINAL_AUTH) && !in->getChunked() &&
+            in->getDataLength() == sizeof(authReady) && memcmp(in->getData(), authReady, sizeof(authReady)) == 0) {
             authCompleted = true;
             drvState = AUTH_DONE;
         }
@@ -167,28 +172,28 @@ bool xbone_dev_xfer(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint3
         p.len = bytes > 64 ? 64 : (uint16_t)bytes;
         memcpy(p.data, epout_buf, p.len);
         queue_try_add(&relayToDevice, &p);
-        inXGIP->reset();
+        in->reset();
         usbd_edpt_xfer(rhport, ep_out, epout_buf, sizeof(epout_buf));
         return true;
     }
 
-    if (inXGIP->ackRequired()) queue_report(inXGIP->generateAckPacket(), inXGIP->getPacketLength());
+    if (in->ackRequired()) queue_report(in->generateAckPacket(), in->getPacketLength());
 
     if (command == GIP_ACK_RESPONSE) {
         waiting_ack = false;
     } else if (command == GIP_DEVICE_DESCRIPTOR) {
-        load_descriptor_reply(inXGIP->getSequence());
+        load_descriptor_reply(in->getSequence());
     } else if (command == GIP_CMD_LED_ON) {
-        if (drvState == WAIT_DESCRIPTOR_REQUEST) load_descriptor_reply(inXGIP->getSequence());
+        if (drvState == WAIT_DESCRIPTOR_REQUEST) load_descriptor_reply(in->getSequence());
     } else if (command == GIP_AUTH || command == GIP_FINAL_AUTH) {
-        if (inXGIP->getDataLength() == 2 && memcmp(inXGIP->getData(), authReady, sizeof(authReady)) == 0) {
+        if (in->getDataLength() == 2 && memcmp(in->getData(), authReady, sizeof(authReady)) == 0) {
             authCompleted = true;
             drvState = AUTH_DONE;
         }
-        if (!inXGIP->getChunked() || inXGIP->endOfChunk()) {
-            buf_set(&consoleBuffer, inXGIP->getData(), inXGIP->getDataLength(), inXGIP->getSequence(), inXGIP->getCommand());
+        if (!in->getChunked() || in->endOfChunk()) {
+            buf_set(&consoleBuffer, in->getData(), in->getDataLength(), in->getSequence(), in->getCommand());
             xboneState = CONSOLE_TO_DONGLE;
-            inXGIP->reset();
+            in->reset();
         }
     }
     usbd_edpt_xfer(rhport, ep_out, epout_buf, sizeof(epout_buf));
@@ -219,7 +224,7 @@ bool xbone_dev_control(uint8_t rhport, uint8_t stage, tusb_control_request_t con
 static uint8_t x_dev = 0, x_inst = 0;
 static bool x_mounted, heard_from_device, init_kicked, relay_manufacturer, dongle_detected;
 static uint32_t mount_time, last_host_send;
-static XGIPProtocol hostIn, hostOut;
+static XGIPProtocol hostIn, hostChunkIn, hostOut;
 static relay_packet_t hq[QDEPTH];
 static uint8_t hq_head, hq_count;
 static uint8_t manufacturer_desc[64];
@@ -250,7 +255,7 @@ static void manufacturer_cb(tuh_xfer_t *xfer) {
 
 void xbone_host_mount(uint8_t dev_addr, uint8_t instance) {
     x_dev = dev_addr; x_inst = instance;
-    hostIn.reset(); hostOut.reset();
+    hostIn.reset(); hostChunkIn.reset(); hostOut.reset();
     uint16_t vid = 0, pid = 0;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
     relay_manufacturer = false;
@@ -271,7 +276,7 @@ void xbone_host_unmount(uint8_t dev_addr) {
     x_mounted = false;
     deviceMounted = false;
     hq_head = hq_count = 0;
-    hostIn.reset(); hostOut.reset();
+    hostIn.reset(); hostChunkIn.reset(); hostOut.reset();
     passthrough_enabled = passthrough = false;
     relay_packet_t p;
     while (queue_try_remove(&relayToDevice, &p)) {}
@@ -288,15 +293,16 @@ void xbone_host_report(uint8_t dev_addr, uint8_t instance, const uint8_t *report
         queue_try_add(&relayToConsole, &p);
         return;
     }
-    hostIn.parse(report, len);
-    if (!hostIn.validate()) { hostIn.reset(); return; }
+    XGIPProtocol &in = gip_is_fragment(report, len) ? hostChunkIn : hostIn;   // see inChunkXGIP
+    in.parse(report, len);
+    if (!in.validate()) { in.reset(); return; }
     heard_from_device = true;
-    if (hostIn.ackRequired()) host_queue(hostIn.generateAckPacket(), hostIn.getPacketLength());
+    if (in.ackRequired()) host_queue(in.generateAckPacket(), in.getPacketLength());
 
-    switch (hostIn.getCommand()) {
+    switch (in.getCommand()) {
         case GIP_ANNOUNCE:
-            if (hostIn.getDataLength() >= 12) {
-                uint16_t avid = hostIn.getData()[8] | (hostIn.getData()[9] << 8);
+            if (in.getDataLength() >= 12) {
+                uint16_t avid = in.getData()[8] | (in.getData()[9] << 8);
                 if (avid == 0x33DF) { dongle_detected = true; update_path(); }   // Mayflash
             }
             hostOut.reset();
@@ -304,7 +310,7 @@ void xbone_host_report(uint8_t dev_addr, uint8_t instance, const uint8_t *report
             host_queue(hostOut.generatePacket(), hostOut.getPacketLength());
             break;
         case GIP_DEVICE_DESCRIPTOR:
-            if (hostIn.endOfChunk() && !dongle_ready) {
+            if (in.endOfChunk() && !dongle_ready) {
                 hostOut.reset(); hostOut.setAttributes(GIP_POWER_MODE_DEVICE_CONFIG, 2, 1, false, 0);
                 hostOut.setData(XBOXONE_POWER_ON, sizeof(XBOXONE_POWER_ON));
                 host_queue(hostOut.generatePacket(), hostOut.getPacketLength());
@@ -322,10 +328,10 @@ void xbone_host_report(uint8_t dev_addr, uint8_t instance, const uint8_t *report
             break;
         case GIP_AUTH:
         case GIP_FINAL_AUTH:
-            if (!hostIn.getChunked() || hostIn.endOfChunk()) {
-                buf_set(&dongleBuffer, hostIn.getData(), hostIn.getDataLength(), hostIn.getSequence(), hostIn.getCommand());
+            if (!in.getChunked() || in.endOfChunk()) {
+                buf_set(&dongleBuffer, in.getData(), in.getDataLength(), in.getSequence(), in.getCommand());
                 xboneState = DONGLE_TO_CONSOLE;
-                hostIn.reset();
+                in.reset();
             }
             break;
         default:

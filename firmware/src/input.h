@@ -17,7 +17,9 @@ const uint8_t *input_press_counts(void);   // NUM_DIGITAL_PINS falling-edge coun
 
 // Logical (user-tunable debounce) state of each control
 bool input_func(int f);              // 0..NUM_FUNCS-1
-bool input_tilt(void);
+bool input_tilt(void);               // the debounced tilt switch pin itself
+bool input_tilt_star(void);          // a tilt input acting as star power is active (switch and / or sensors)
+bool atilt_press(bool was_on, int32_t v, uint8_t threshold_pct);   // sensor press with 4 % hysteresis
 
 uint16_t input_adc(uint8_t ch);      // filtered raw 12-bit
 int16_t input_whammy(void);          // calibrated 0..32767

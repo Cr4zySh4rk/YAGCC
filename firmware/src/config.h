@@ -79,6 +79,7 @@ enum {
 #define RUMBLE_FLAG_MISS (1u << 2)   // short buzz on a missed note (games that report it)   // XInput: never present as a wireless receiver slot on Windows
 
 #define NUM_ATILT 2
+// target: whammy, or a thresholded press of the function chosen in tilt_func[1 + i] (star power by default)
 enum { ATILT_WHAMMY = 0, ATILT_STAR = 1 };
 // where a tilt sensor reads from: an analog input, or one axis of the I2C accelerometer
 // (or one of a LIS3DH's three auxiliary ADC inputs, for analog sensors wired to the accelerometer board)
@@ -225,7 +226,11 @@ typedef struct __attribute__((packed)) {
     uint8_t  led_flags;           // 239     LEDF_*
     uint8_t  sleep_min;           // 240     0 = never, 1..30
     uint8_t  star_speed;          // 241     1..10
-    uint8_t  reserved4[10];       // 242..251
+    // tilt inputs as buttons (firmware 0.41): what each of the three tilt inputs presses; 0 = star power (the default,
+    // and what every older config holds here), n = function F_* index n-1. Sensors only use it when `target` is
+    // ATILT_STAR ("press"); with ATILT_WHAMMY it is ignored. Older configurators leave these bytes alone.
+    uint8_t  tilt_func[1 + NUM_ATILT]; // 242 tilt switch, 243 sensor 1, 244 sensor 2
+    uint8_t  reserved4[7];        // 245..251
     uint32_t crc;                 // 252     crc32 of bytes 0..251
 } yacc_config_t;
 
@@ -238,6 +243,13 @@ _Static_assert(sizeof(yacc_config_t) == 256, "config size");
 _Static_assert(sizeof(led_zone_t) == 8, "led zone size");
 _Static_assert(sizeof(atilt_cfg_t) == 8, "analog tilt config size");
 #endif
+
+// The F_* function a tilt input presses (tilt_func byte: 0 = star power, n = function n-1). Out-of-range bytes
+// are rejected by config_validate; this clamps to star power anyway.
+static inline int tilt_func_of(uint8_t b) { return b == 0 || b > NUM_FUNCS ? F_STAR : b - 1; }
+static inline int tilt_sw_func(const yacc_config_t *c) { return tilt_func_of(c->tilt_func[0]); }
+// function sensor i presses, or -1 when it feeds the whammy
+static inline int atilt_func(const yacc_config_t *c, int i) { return c->atilt[i].target == ATILT_WHAMMY ? -1 : tilt_func_of(c->tilt_func[1 + i]); }
 
 // Upgrade an older config (v4/v5/v6) to the current layout; false if src isn't a valid one
 bool config_from_old(const uint8_t *src, uint16_t len, yacc_config_t *dst);   // a v4 (96), v5 (128) or v6 (160 byte) config

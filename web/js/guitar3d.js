@@ -154,7 +154,8 @@ export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
         p.position.y = ease(p.position.y, rest[node].p.y - (on ? 0.0035 : 0), k);
         const m = mats[n];
         if (on) { tint(m, st.colors[n]); m.emissiveIntensity = ease(m.emissiveIntensity, 1.4, k); }
-        else if (focus(n)) { tint(m, FOCUS_COLOR); m.emissiveIntensity = ease(m.emissiveIntensity, 0.4 + 0.9 * pulse, k); }
+        else if (focus(n)) { tint(m, st.colors[n]);   // the fret being asked for glows in its own colour
+           m.emissiveIntensity = ease(m.emissiveIntensity, 0.4 + 0.9 * pulse, k); }
         else m.emissiveIntensity = ease(m.emissiveIntensity, 0, k);
       }
       // strum bar rocks on its long axis
@@ -252,7 +253,7 @@ export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
       canvas.addEventListener('pointerleave', () => { if (st.hover) { st.hover = ''; needsDraw = true; canvas.style.cursor = ''; } });
     }
 
-    if (force3d) (window.__g3d ||= []).push({ T, scene, camera, controls, orient, part });
+    if (force3d) (window.__g3d ||= []).push({ T, scene, camera, controls, orient, part, mats });
     size();
     host.appendChild(canvas);
     onReady?.(canvas);

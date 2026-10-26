@@ -7,6 +7,8 @@
 #include "hardware/structs/watchdog.h"
 #include "hardware/clocks.h"
 #include "tusb.h"
+#include "device/dcd.h"
+#include "hardware/structs/usb.h"
 
 #include "usb_common.h"
 #include "config.h"
@@ -208,6 +210,47 @@ typedef struct {
     int16_t whammy;     // 0..32767
 } pad_t;
 
+// ---------------------------------------------------------------- USB suspend / remote wakeup
+// The host suspends the bus when it sleeps. A press on a fret / strum / star / plus then wakes it up (Santroller
+// does the same). Only a press while suspended acts, so nothing is sent while the host is awake. Reports,
+// LEDs and Bluetooth are untouched: the main loop keeps running, the endpoints are just not ready.
+static volatile bool g_usb_suspended;
+void tud_suspend_cb(bool remote_wakeup_en) { (void)remote_wakeup_en; g_usb_suspended = true; }
+void tud_resume_cb(void) { g_usb_suspended = false; }
+
+// Buttons that wake the host, as a bitmask (the whammy bar and tilt swing don't: they would wake it by accident)
+static uint8_t wake_buttons(const pad_t *s) {
+    return (uint8_t)((s->green ? 1 : 0) | (s->red ? 2 : 0) | (s->yellow ? 4 : 0) | (s->blue ? 8 : 0) |
+                     (s->orange ? 16 : 0) | (s->strum_up ? 32 : 0) | (s->strum_down ? 64 : 0) |
+                     (s->star ? 128 : 0));
+}
+
+// A new press since the last call (a held button does not repeat)
+static bool wake_pressed(uint8_t now, uint8_t *prev, bool plus, bool *prev_plus) {
+    bool pressed = (now & (uint8_t)~*prev) != 0 || (plus && !*prev_plus);
+    *prev = now; *prev_plus = plus;
+    return pressed;
+}
+
+static void wake_task(const pad_t *s) {
+    static uint8_t prev; static bool prev_plus;
+    bool pressed = wake_pressed(wake_buttons(s), &prev, s->plus, &prev_plus);
+    // The Xbox 360 suspends the bus without ever sending SET_FEATURE(DEVICE_REMOTE_WAKEUP) and without TinyUSB
+    // reporting the suspend (the bus is idle before the first configuration), but still powers on when a wired pad
+    // signals resume (Santroller xinput_device.cpp / usb_descriptors.cpp). So for a wired XInput pad that is not on
+    // Windows, read the SIE and resume regardless of the host's setting. Only once the host has configured us.
+    static bool configured;
+    if (tud_mounted()) configured = true;
+    bool is360 = g_usb_mode == MODE_XINPUT && !g_xinput_wireless && !g_host_windows;
+    bool sie = configured && is360 && (usb_hw->sie_status & USB_SIE_STATUS_SUSPENDED_BITS);
+    static uint64_t last_try;
+    uint64_t t = time_us_64();
+    if (!pressed || !(g_usb_suspended || sie) || t - last_try < 50000) return;
+    last_try = t;
+    if (configured && is360) dcd_remote_wakeup(0);      // regardless of the host's setting
+    else tud_remote_wakeup();      // fails harmlessly when the host didn't enable remote wakeup before suspending
+}
+
 static void read_pad(pad_t *s) {
     s->green  = input_func(F_GREEN);
     s->red    = input_func(F_RED);
@@ -218,23 +261,14 @@ static void read_pad(pad_t *s) {
     s->strum_down = input_func(F_STRUM_DOWN);
     s->plus = input_func(F_PLUS);
     s->star = input_func(F_STAR);
-    s->tilt = (g_cfg.flags & CFG_FLAG_TILT_ENABLED) && g_cfg.tilt_pin != PIN_NONE && input_tilt();
+    s->tilt = input_tilt_star();     // tilt switch / sensors acting as star power (others press their own button in input_func)
     s->whammy = input_whammy();
-    // analog tilt sensors / accelerometer axes: each adds to the whammy (the larger wins, so the bar and a
-    // tilt-whammy can be used together) or presses tilt past its threshold, with 4 % hysteresis
-    static bool atilt_on[NUM_ATILT];
+    // analog tilt sensors / accelerometer axes set to whammy: the larger wins, so the bar and a tilt-whammy can be used together
     for (int i = 0; i < NUM_ATILT; i++) {
         int32_t v = input_atilt(i);
-        if (v < 0) { atilt_on[i] = false; continue; }
-        const atilt_cfg_t *a = &g_cfg.atilt[i];
-        if (a->target == ATILT_WHAMMY) {
-            if (v < (32767 * (int32_t)g_cfg.whammy_deadzone) / 100) v = 0;
-            if (v > s->whammy) s->whammy = (int16_t)v;
-        } else {
-            int32_t on = (32767 * (int32_t)a->threshold) / 100, off = on - 32767 * 4 / 100;
-            atilt_on[i] = atilt_on[i] ? v > off : v >= on;
-            if (atilt_on[i]) s->tilt = true;
-        }
+        if (v < 0 || g_cfg.atilt[i].target != ATILT_WHAMMY) continue;
+        if (v < (32767 * (int32_t)g_cfg.whammy_deadzone) / 100) v = 0;
+        if (v > s->whammy) s->whammy = (int16_t)v;
     }
     if (s->tilt) s->star = true;
     rgb_set_whammy((uint16_t)s->whammy);
@@ -310,9 +344,16 @@ static uint16_t build_ps3(const pad_t *s, uint8_t *out) {
     out[2] = hat;
     out[3] = 0x80;                // left stick x
     out[4] = 0x80;                // left stick y
-    out[5] = (uint8_t)(s->whammy >> 7);   // whammy
+    // Real GH guitars rest the whammy at 0x80 and go up to 0xFF (Santroller 24e78967: 0x80 + (v >> 9) of 16 bits)
+    out[5] = (uint8_t)(0x80 + (s->whammy >> 8));   // whammy is 0..32767: 0x80..0xFF
     out[6] = 0x80;                // touch slider idle
-    // out[7..18] pressure bytes stay 0
+    // Fret pressures are 0 or 0xFF like a real guitar (Santroller 6f3d291f): yellow, (left, unused), green / strum
+    // up, orange / strum down, blue, red. A fret sharing a byte with its strum direction reads 0 when both are held.
+    out[7]  = s->yellow ? 0xFF : 0x00;
+    out[9]  = (s->green  != (s->strum_up   && !s->strum_down)) ? 0xFF : 0x00;
+    out[10] = (s->orange != (s->strum_down && !s->strum_up))   ? 0xFF : 0x00;
+    out[11] = s->blue ? 0xFF : 0x00;
+    out[12] = s->red ? 0xFF : 0x00;
     // accelerometer words centred (tilt, z, y, unused)
     for (int i = 0; i < 4; i++) {
         out[19 + 2 * i] = 0x00;
@@ -373,10 +414,10 @@ static uint16_t build_keyboard(const pad_t *s, uint8_t *out) {
 // ---- Nintendo Switch (HORIPAD layout), 8 byte report
 static uint16_t build_switch(const pad_t *s, uint8_t *out) {
     uint16_t b = 0;
-    if (s->yellow) b |= 1u << 0;   // Y
+    if (s->blue)   b |= 1u << 0;   // Y   (yellow is X and blue is Y, as in Santroller beb9b937)
     if (s->red)    b |= 1u << 1;   // B
     if (s->green)  b |= 1u << 2;   // A
-    if (s->blue)   b |= 1u << 3;   // X
+    if (s->yellow) b |= 1u << 3;   // X
     if (s->orange) b |= 1u << 4;   // L
     if (s->tilt)   b |= 1u << 5;   // R
     if (s->star)   b |= 1u << 8;   // minus
@@ -388,7 +429,9 @@ static uint16_t build_switch(const pad_t *s, uint8_t *out) {
     else if (s->strum_down && !s->strum_up) hat = 0x04;
     out[2] = hat;
     out[3] = 0x80; out[4] = 0x80;
-    out[5] = (uint8_t)(s->whammy >> 7);   // right stick X = whammy
+    // right stick X = whammy: rests at the stick centre and pushes down toward the minimum (Santroller beb9b937)
+    uint8_t wh = (uint8_t)(0x80 - (s->whammy >> 8));   // 0..32767 -> 0x80..0x01
+    out[5] = wh ? wh : 0x01;
     out[6] = 0x80;
     out[7] = 0x00;
     return SWITCH_REPORT_LEN;
@@ -853,6 +896,7 @@ int main(void) {
 
         pad_t st;
         read_pad(&st);
+        wake_task(&st);
         uint8_t wii_ext[WII_EXT_REPORT_LEN];               // the Wii guitar extension: wired, or over Bluetooth
         build_wii_ext(&st, wii_ext);
         {   // PS2 controller port: answers only while a console polls it (needs PIO1, so not with the host port)

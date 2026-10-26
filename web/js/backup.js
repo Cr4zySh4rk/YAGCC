@@ -6,9 +6,9 @@ export const BACKUP_FORMAT = 1;
 
 export const SECTIONS = [
   { id: 'wiring', name: 'Wiring', desc: 'Button pins, whammy calibration, tilt switch, Bluetooth, USB host port',
-    keys: ['pins', 'whammyCh', 'whammyInvert', 'whammyMin', 'whammyMax', 'tiltPin', 'tiltEnabled', 'tiltInvert', 'btEnabled', 'hostPin'] },
+    keys: ['pins', 'whammyCh', 'whammyInvert', 'whammyMin', 'whammyMax', 'tiltPin', 'tiltEnabled', 'tiltInvert', 'tiltFunc', 'btEnabled', 'hostPin'] },
   { id: 'tilt', name: 'Tilt sensors', desc: 'Analog tilt sensors, accelerometer pins, calibration and filters',
-    keys: ['atilt', 'accelSda', 'accelScl', 'accelGate', 'accelMedian', 'accelLowpass'] },
+    keys: ['atilt', 'tiltFunc', 'accelSda', 'accelScl', 'accelGate', 'accelMedian', 'accelLowpass'] },
   { id: 'ports', name: 'Console ports', desc: 'PS2 controller port and Wii extension pins',
     keys: ['ps2Pins', 'wiiSda', 'wiiScl'] },
   { id: 'rumble', name: 'Rumble', desc: 'Rumble motor pin, strength and what makes it buzz',
@@ -35,6 +35,7 @@ const CHECK = {
   whammyCh: (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < 3),
   whammyMin: (v) => Number.isInteger(v) && v >= 0 && v <= 4095,
   whammyMax: (v) => Number.isInteger(v) && v >= 0 && v <= 4095,
+  tiltFunc: (v) => Array.isArray(v) && v.length === 3 && v.every((f) => Number.isInteger(f) && f >= 0 && f < FUNCS.length),
   tiltPin: isPin, rgbPin: isPin, ledClkPin: isPin, hostPin: isPin,
   debounce100us: (v) => Number.isInteger(v) && v >= 0 && v <= 250,
   whammySmooth: (v) => Number.isInteger(v) && v >= 0 && v <= 6,
@@ -70,7 +71,7 @@ const CHECK = {
 };
 export const LABELS = {
   pins: 'button pins', whammyCh: 'whammy pin', whammyMin: 'whammy range', whammyMax: 'whammy range', whammyInvert: 'whammy direction',
-  tiltPin: 'tilt pin', tiltEnabled: 'tilt switch', tiltInvert: 'tilt switch type', btEnabled: 'Bluetooth', hostPin: 'USB host pins',
+  tiltPin: 'tilt pin', tiltEnabled: 'tilt switch', tiltInvert: 'tilt switch type', tiltFunc: 'tilt inputs as buttons', btEnabled: 'Bluetooth', hostPin: 'USB host pins',
   debounceMode: 'debounce type', debounce100us: 'debounce time', combinedStrum: 'shared strum lockout', whammySmooth: 'whammy smoothing', whammyDeadzone: 'whammy dead zone',
   rgbEnabled: 'LEDs on/off', rgbBootFlash: 'mode flash', rgbPin: 'LED data pin', rgbBrightness: 'brightness', rgbEffect: 'effect', rgbSpeed: 'effect speed',
   zoneFrets: 'fret animation', zoneStrum: 'strum bar animation', fretPress: 'fret pressed colours', fret2Colors: 'second fret LED colours', fret2Own: 'second LED own colour',

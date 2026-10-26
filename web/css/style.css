@@ -255,6 +255,11 @@ table.sum td .dim { font-family: var(--sans); }
 .focus-ring { fill: none; stroke: var(--cyan); stroke-width: 2.5; stroke-dasharray: 6 5; opacity: 0; pointer-events: none; }
 .focus .focus-ring { opacity: 1; stroke-width: 3.5; fill: rgba(28,198,255,.16); filter: drop-shadow(0 0 5px var(--cyan)); animation: dash .7s linear infinite, ringpulse 1.1s ease-in-out infinite; }
 @keyframes ringpulse { 50% { opacity: .45; filter: drop-shadow(0 0 11px var(--cyan)); } }
+/* the fret being asked for lights up in its own colour (--c follows the LED colours) instead of blue */
+.part.fret.focus .focus-ring { stroke: var(--c); fill: color-mix(in srgb, var(--c) 22%, transparent); filter: drop-shadow(0 0 5px var(--c)); animation: dash .7s linear infinite, fretpulse 1.1s ease-in-out infinite; }
+.part.fret.clickable:hover .focus-ring { stroke: var(--c); }
+@keyframes fretpulse { 50% { opacity: .45; filter: drop-shadow(0 0 11px var(--c)); } }
+@media (prefers-reduced-motion: reduce) { .part.fret.focus .focus-ring { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .focus .focus-ring { animation: none; } }
 @keyframes dash { to { stroke-dashoffset: -22; } }
 .wh-track, .wh-fill { fill: none; stroke-width: 5; stroke-linecap: round; }
@@ -395,6 +400,8 @@ footer a { color: var(--dim); }
 .tilt-steps li.done .n { border-color: var(--ok); color: var(--ok); }
 .tilt-steps .seg { margin: 6px 0 4px; }
 .tilt-steps .btn { margin-top: 6px; }
+.tilt-steps select { max-width: 100%; margin: 4px 0; }
+.tilt-card .opt select, #tsFunc { min-width: 0; max-width: 100%; }
 .tilt-quick > .tilt-axes { margin-top: 14px; }
 
 /* ---------- backup ---------- */
@@ -456,6 +463,7 @@ pre.btlog { margin: 10px 0 0; padding: 12px 14px; max-height: 260px; overflow: a
 .bt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .bt { --c: var(--blue); display: grid; justify-items: center; gap: 6px; padding: 12px 10px 12px; border-radius: var(--r); background: var(--inset); border: 1px solid var(--line); text-align: center; transition: border-color .08s, box-shadow .08s, background .08s; }
 .bt.set { border-color: var(--line-2); }
+.bt.fret.aim { border-color: var(--c); background: color-mix(in srgb, var(--c) 10%, var(--inset)); }
 .bt.held { border-color: var(--c); background: color-mix(in srgb, var(--c) 16%, var(--inset)); box-shadow: 0 0 14px color-mix(in srgb, var(--c) 55%, transparent); }
 .bt-ic svg { width: 40px; height: 40px; display: block; }
 .bt-name { font: 600 15px var(--sans); }
@@ -481,6 +489,7 @@ body.bp-lock { overflow: hidden; }
 .bp-sub { color: var(--dim); font-size: 18px; margin: 0 0 12px; }
 .bp-listen { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 8px; }
 .bp-dots { display: inline-flex; gap: 6px; }
+.bp-card.fret .bp-dots i { background: var(--c); }
 .bp-dots i { width: 12px; height: 12px; border-radius: 50%; background: var(--cyan); animation: bpdot 1.2s infinite; }
 .bp-dots i:nth-child(2) { animation-delay: .6s; }
 @keyframes bpdot { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }

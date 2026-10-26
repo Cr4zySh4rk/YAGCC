@@ -371,14 +371,15 @@ function paintLed(el, px) {
 function liveInput(now) {
   const ctx = S.ctx, c = ctx.state.cfg, s = ctx.state.status, m = S.manual;
   const real = (pin) => !!s && pin !== undefined && isPressed(s, pin);
+  const tf = s && ctx.tiltFuncs ? ctx.tiltFuncs(s) : new Set();   // frets / strum held by a tilt input (firmware 0.41+)
   const held = (k) => !!m.down[k] || now < (m.until[k] || 0);
   const starNow = real(c.pins[7]);
   const starPressed = (starNow && !S.prevStar) || m.starPressed;
   S.prevStar = starNow; m.starPressed = false;
   const real_w = s ? ctx.whammy(s) : 0;
   return {
-    frets: [0, 1, 2, 3, 4].map((f) => held('f' + f) || real(c.pins[f])),
-    up: held('up') || real(c.pins[5]), down: held('down') || real(c.pins[6]),
+    frets: [0, 1, 2, 3, 4].map((f) => held('f' + f) || real(c.pins[f]) || tf.has(f)),
+    up: held('up') || real(c.pins[5]) || tf.has(5), down: held('down') || real(c.pins[6]) || tf.has(6),
     star: S.star, forceStar: true, starPressed, whammy: Math.max(m.whammy, real_w),
   };
 }

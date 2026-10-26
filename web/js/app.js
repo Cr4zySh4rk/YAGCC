@@ -2,7 +2,7 @@ import {
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
-  ATILT_SOURCES, ACCEL2_MIN_MINOR, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
+  ATILT_SOURCES, ACCEL2_MIN_MINOR, TILT_FUNC_MIN_MINOR, FUNC_STAR, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
 } from './protocol.js?v=dev';
 import { YaccDevice, webusbSupported } from './usb.js?v=dev';
 import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
@@ -31,6 +31,26 @@ const fwAtLeast = (n) => !!state.info && (state.info.major > 0 || state.info.min
 // the digital tilt switch: normally open (pressed = pin low) or, with firmware 0.33+, normally closed (pressed = pin high)
 const tiltInverted = () => !!state.cfg?.tiltInvert && fwAtLeast(33);
 const tiltSwitchActive = (s, c = state.cfg) => !!c && c.tiltEnabled && c.tiltPin !== PIN_NONE && isPressed(s, c.tiltPin) !== tiltInverted();
+// firmware 0.41+: each tilt input (switch, sensor 1, sensor 2) can press any function, not just star power
+const tiltFuncOk = () => fwAtLeast(TILT_FUNC_MIN_MINOR);
+const tiltFuncOf = (i, c = state.cfg) => (tiltFuncOk() ? c?.tiltFunc?.[i] ?? FUNC_STAR : FUNC_STAR);
+// <option>s of the "Acts as" pickers: inputs grouped as Frets / Strum / Buttons (star power first, whammy optional)
+function tiltFuncOptions(sel, whammy) {
+  const o = (v, name) => `<option value="${v}" ${String(sel) === String(v) ? 'selected' : ''}>${name}</option>`;
+  const grp = (label, ids) => `<optgroup label="${label}">${ids.map((f) => o(f, funcName(f))).join('')}</optgroup>`;
+  const star = o(FUNC_STAR, 'Star power');
+  const more = tiltFuncOk() ? grp('Frets', [0, 1, 2, 3, 4]) + grp('Strum', [5, 6]) + grp('Buttons', [FUNCS.indexOf('plus')]) : '';
+  return (whammy ? o('w', 'Whammy') : '') + star + more;
+}
+// the functions the tilt inputs hold down right now (never star power: that keeps its own tilt path), for live views
+function tiltFuncSet(s, c = state.cfg) {
+  const out = new Set();
+  if (!c || !s || !tiltFuncOk()) return out;
+  const sw = tiltFuncOf(0, c);
+  if (sw !== FUNC_STAR && tiltSwitchActive(s, c)) out.add(sw);
+  tiltStates(s).forEach((t) => { if (t.press && t.func !== FUNC_STAR) out.add(t.func); });
+  return out;
+}
 const availableModes = () => MODES.filter((m) => !m.min || (state.info && (state.info.major > 0 || state.info.minor >= m.min)));
 // HOST_* in firmware auto_detect.h
 const AUTO_HOSTS = ['', 'Windows', 'Xbox 360', 'Xbox One', 'PS3', 'PS4 / PS5', 'Switch', 'Wii', 'PS2', 'OG Xbox'];
@@ -251,14 +271,15 @@ function makeViewer(container, withPins = false, compact = false, onPart = null)
 function updateViewer(v, s) {
   const cfg = state.cfg;
   if (!cfg || !s) return;
+  const tf = tiltFuncSet(s, cfg);
   FUNCS.forEach((name, i) => {
-    v.g.setMapped(name, cfg.pins[i] !== PIN_NONE);
-    v.g.setPressed(name, isPressed(s, cfg.pins[i]));
+    v.g.setMapped(name, cfg.pins[i] !== PIN_NONE || tf.has(i));
+    v.g.setPressed(name, isPressed(s, cfg.pins[i]) || tf.has(i));
   });
   // tilt sensors add to the whammy (the larger wins) or press tilt, as in the firmware
   const ts = tiltStates(s);
   v.g.setWhammy(Math.max(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0, ...ts.map((t) => (t.whammy ? t.value : 0))));
-  v.g.setTilt(tiltSwitchActive(s, cfg) || ts.some((t) => t.star));
+  v.g.setTilt((tiltSwitchActive(s, cfg) && tiltFuncOf(0, cfg) === FUNC_STAR) || ts.some((t) => t.star));   // a tilt acting as another input lights that input instead
   if (v.pinsEl) {
     const used = new Set(assignedPins());
     [...v.pinsEl.children].forEach((d, p) => {
@@ -509,7 +530,7 @@ function renderStep() {
       const c = state.cfg, n = c.pins.filter((p) => p !== PIN_NONE).length;
       const tiles = FUNCS.map((f, i) => {
         const pin = c.pins[i], nm = btnName(i);
-        return `<div class="bt ${pin !== PIN_NONE ? 'set' : ''}" data-f="${i}" style="--c:${btnColor(i)}">
+        return `<div class="bt ${pin !== PIN_NONE ? 'set' : ''} ${i < NUM_FRETS ? 'fret' : ''}" data-f="${i}" style="--c:${btnColor(i)}">
           <div class="bt-ic">${btnIcon(i)}</div><div class="bt-name">${nm}</div>
           <div class="bt-pin">${pin !== PIN_NONE ? `<span class="chip">GP${pin}</span>` : '<span class="dim">Not set</span>'}</div>
           <div class="bt-act"><button class="btn small" data-set aria-label="${pin !== PIN_NONE ? 'Change' : 'Set'} ${nm}">${pin !== PIN_NONE ? 'Change' : 'Set'}</button>${pin !== PIN_NONE ? `<button class="btn small quiet" data-clear aria-label="Clear ${nm}">Clear</button>` : ''}</div></div>`;
@@ -528,7 +549,7 @@ function renderStep() {
       wireNav();
       card.querySelectorAll('.bt').forEach((t) => {
         // hovering or focusing a tile points at that control on the guitar above
-        const aim = (on) => { if (!bp.open) stageViewer?.g.setFocus(on ? [FUNCS[+t.dataset.f]] : []); };
+        const aim = (on) => { t.classList.toggle('aim', on); if (!bp.open) stageViewer?.g.setFocus(on ? [FUNCS[+t.dataset.f]] : []); };
         t.addEventListener('mouseenter', () => aim(true)); t.addEventListener('mouseleave', () => aim(false));
         t.addEventListener('focusin', () => aim(true)); t.addEventListener('focusout', () => aim(false));
         t.querySelector('[data-set]').onclick = (e) => bpOpen(+t.dataset.f, null, e.currentTarget);
@@ -845,7 +866,8 @@ function setResult(kind, html) {
 let btnUndo = null;        // {label, pins:{func:pin}} - what "Undo" restores after a Clear
 let btnRedraw = () => {};  // re-renders whatever shows the mapping (Buttons tiles or the review table)
 const btnName = (i) => (i < NUM_FRETS ? funcName(i) + ' fret' : funcName(i));
-const btnColor = (i) => (i < NUM_FRETS ? FRET_COLORS[i] : i === 7 ? '#facc15' : i === 8 ? '#38e1c6' : '#7c8cff');
+// frets use the colours the guitar picture shows: the configured LED colours when the LEDs are on, else the standard ones
+const btnColor = (i) => (i < NUM_FRETS ? (state.cfg?.rgbEnabled && state.cfg.colors?.[i]) || FRET_COLORS[i] : i === 7 ? '#facc15' : i === 8 ? '#38e1c6' : '#7c8cff');
 
 // Simple icons of each control (48x48), used on the tiles and big in the prompt
 function btnIcon(i) {
@@ -982,7 +1004,7 @@ function bpRender() {
   if (bp.phase === 'listen' && bp.queue) acts = `<button class="btn" id="bpSkip">Skip</button>`;
   const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !assignedPins().includes(p) || p === c.pins[f]);
   const keepOpen = root.querySelector('.bp-manual')?.open ?? bp.manualOpen;
-  root.innerHTML = `<div class="bp-card ph-${bp.phase}" role="dialog" aria-modal="true" aria-labelledby="bpTitle" tabindex="-1" style="--c:${col}">
+  root.innerHTML = `<div class="bp-card ph-${bp.phase} ${f < NUM_FRETS ? 'fret' : ''}" role="dialog" aria-modal="true" aria-labelledby="bpTitle" tabindex="-1" style="--c:${col}">
       ${bp.queue ? `<div class="bp-count">Button ${bp.qi + 1} of ${bp.queue.length}</div>` : ''}
       <div class="bp-gslot"></div>
       <h2 class="bp-title" id="bpTitle">${verb} ${what}</h2>
@@ -1066,13 +1088,15 @@ function buildTiltSwitch() {
   const c = state.cfg, body = $('#tiltSwBody');
   if (!body) return;
   body.innerHTML = `
-    <div class="opt first"><div><h3>Tilt for star power</h3><p class="dim">A tilt switch wired to a free pin triggers star power when the neck is lifted.</p></div>
+    <div class="opt first"><div><h3>${tiltFuncOk() ? 'Tilt switch' : 'Tilt for star power'}</h3><p class="dim">A tilt switch wired to a free pin ${tiltFuncOk() ? 'presses an input when the neck is lifted.' : 'triggers star power when the neck is lifted.'}</p></div>
       <label class="switch"><input type="checkbox" id="tsOn" ${c.tiltEnabled ? 'checked' : ''}><i></i></label></div>
     ${c.tiltEnabled ? `<div class="opt"><div><h3>Switch pin</h3><p class="dim">Or use Setup to find it by tilting twice.</p></div>${tiltPinSelect('tsPin')}</div>
+      ${tiltFuncOk() ? `<div class="opt"><div><h3>Acts as</h3><p class="dim">The input a tilt presses.</p></div><select id="tsFunc" aria-label="Tilt switch acts as">${tiltFuncOptions(tiltFuncOf(0), false)}</select></div>` : ''}
       ${tiltTypeHtml('tsType')}
       <div class="tilt-live" id="tsLive"><i></i><span id="tsLiveTxt">Tilt: not active</span><span class="dim small">Hold the guitar level, then tilt it up to check.</span></div>` : ''}`;
   $('#tsOn').onchange = (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); buildTiltSwitch(); };
   $('#tsPin')?.addEventListener('change', (e) => { c.tiltPin = +e.target.value; pushCfg(); buildTiltSwitch(); });
+  $('#tsFunc')?.addEventListener('change', (e) => { c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR]; c.tiltFunc[0] = +e.target.value; pushCfg(); });
   body.querySelectorAll('#tsType [data-inv]').forEach((b) => b.addEventListener('click', () => { c.tiltInvert = b.dataset.inv === '1'; pushCfg(); buildTiltSwitch(); }));
   if (state.status) updateTiltSwitch(state.status);
 }
@@ -1291,26 +1315,31 @@ function tiltStates(s) {
   return c.atilt.map((t, i) => {
     const raw = tiltSourceRaw(s, t.src);
     const value = tiltValue(raw, t);
-    if (value == null) { tiltOn[i] = false; return { raw, value: null, whammy: false, star: false }; }
+    const func = t.target === 0 ? -1 : tiltFuncOf(1 + i, c);
+    if (value == null) { tiltOn[i] = false; return { raw, value: null, whammy: false, star: false, press: false, func }; }
     if (t.target === 1) {
       const on = t.threshold / 100, off = on - 0.04;
       tiltOn[i] = tiltOn[i] ? value > off : value >= on;
     } else tiltOn[i] = false;
     const v = t.target === 0 && value < c.whammyDeadzone / 100 ? 0 : value;
-    return { raw, value: v, whammy: t.target === 0, star: tiltOn[i] };
+    return { raw, value: v, whammy: t.target === 0, star: tiltOn[i] && func === FUNC_STAR, press: tiltOn[i], func };
   });
 }
 
 // Quick setup: raw captures live here, never in cfg
-const qt = { target: 1, chosen: false, chip: 0, level: null, tilted: null };
-let qtSlot = -1, tiltKey = '';
+// target: 1 star power, 0 whammy, 2 a button (func picked from a list)
+const qt = { target: 1, chosen: false, chip: 0, level: null, tilted: null, func: FUNC_STAR };
+let qtSlot = -1, qtBtnSlot = -1, tiltKey = '';
 const isAxisSrc = (src) => (src >= 3 && src <= 5) || (src >= 9 && src <= 11);
 const axisIdx = (src) => (src >= 9 ? src - 9 : src - 3);
-const quickSlotFor = (c, target) => c.atilt.findIndex((t) => isAxisSrc(t.src) && t.target === target);
+// what a sensor slot does, as the guided setup sees it: 0 whammy, 1 star power, 2 another button
+const slotMode = (c, i) => (c.atilt[i].target === 0 ? 0 : tiltFuncOf(1 + i, c) !== FUNC_STAR || i === qtBtnSlot ? 2 : 1);
+const quickSlotFor = (c, mode) => c.atilt.findIndex((t, i) => isAxisSrc(t.src) && slotMode(c, i) === mode);
 const accStatusText = (s, on) => !on ? 'Pick the pins your accelerometer is wired to.'
   : !s?.accelType ? 'Looking for the accelerometer… check the wiring (SDA/SCL, power, CS to 3V3).'
   : '✓ ' + (ACCEL_TYPES[s.accelType] || 'Accelerometer') + ' found';
-const tiltStateText = (src, t) => src === PIN_NONE ? 'off' : t.value == null ? (t.raw == null ? 'no reading' : 'calibrate') : t.whammy ? 'whammy ' + Math.round(t.value * 100) + ' %' : t.star ? 'STAR POWER' : 'level';
+const tiltStateText = (src, t) => src === PIN_NONE ? 'off' : t.value == null ? (t.raw == null ? 'no reading' : 'calibrate') : t.whammy ? 'whammy ' + Math.round(t.value * 100) + ' %' : t.star ? 'STAR POWER' : t.press ? funcName(t.func).toUpperCase() : 'level';
+const pressWord = (f) => (f === FUNC_STAR ? 'Star power' : funcName(f));
 const tiltKeyOf = (s) => `${!!s?.accelType}|${!!s?.accel2Type}`;
 
 function buildTilt() {
@@ -1342,8 +1371,10 @@ function buildTilt() {
   tiltKey = tiltKeyOf(st0);
   const found = accelOn && !!st0?.accelType;
   const found2 = found && two && !!st0.accel2Type;
+  const btnOk = tiltFuncOk();
+  if (!btnOk && qt.target === 2) qt.target = 1;
   if (!qt.chosen) {
-    if (quickSlotFor(c, 1) >= 0) qt.target = 1; else if (quickSlotFor(c, 0) >= 0) qt.target = 0;
+    if (quickSlotFor(c, 1) >= 0) qt.target = 1; else if (quickSlotFor(c, 0) >= 0) qt.target = 0; else if (btnOk && quickSlotFor(c, 2) >= 0) qt.target = 2;
   }
   if (!found2) qt.chip = 0;
   qtSlot = found ? quickSlotFor(c, qt.target) : -1;
@@ -1355,7 +1386,8 @@ function buildTilt() {
       <h3>Guided setup</h3>
       <ol class="tilt-steps">
         <li class="done"><span class="n">✓</span><div><b>What should tilting do?</b>
-          <div class="seg" role="group" aria-label="What should tilting do"><button data-qt="1" class="${qt.target === 1 ? 'on' : ''}">Star power</button><button data-qt="0" class="${qt.target === 0 ? 'on' : ''}">Whammy</button></div>
+          <div class="seg" role="group" aria-label="What should tilting do"><button data-qt="1" class="${qt.target === 1 ? 'on' : ''}">Star power</button><button data-qt="0" class="${qt.target === 0 ? 'on' : ''}">Whammy</button>${btnOk ? `<button data-qt="2" class="${qt.target === 2 ? 'on' : ''}">A button</button>` : ''}</div>
+          ${btnOk && qt.target === 2 ? `<div class="dim small">Which input?</div><select id="qPick" aria-label="Which input should tilting press">${tiltFuncOptions(qt.func, false)}</select>` : ''}
           ${found2 ? `<div class="dim small">Which sensor?</div><div class="seg" role="group" aria-label="Which sensor"><button data-qc="0" class="${qt.chip === 0 ? 'on' : ''}">Chip 1</button><button data-qc="1" class="${qt.chip === 1 ? 'on' : ''}">Chip 2</button></div>` : ''}
         </div></li>
         <li class="${stage === 'result' || qt.level ? 'done' : 'active'}"><span class="n">${stage === 'result' || qt.level ? '✓' : '2'}</span><div><b>Hold the guitar level, the way you play</b>
@@ -1364,10 +1396,10 @@ function buildTilt() {
           ${stage === 'result' ? '' : `<div><button class="btn small" id="qCapTilt" ${qt.level ? '' : 'disabled'}>Capture tilted</button></div>`}</div></li>
         ${stage === 'result' ? `
         <li class="done"><span class="n">✓</span><div>
-          <b>Done. ${qt.target === 1 ? 'Tilt the neck to try star power.' : 'Tilt the guitar to move the whammy.'}</b>
-          <div class="tilt-meter"><div class="bar" id="qBar"><i></i></div>${qt.target === 1 ? `<span class="thr" id="qThrMark" style="left:${qs.threshold}%"></span>` : ''}</div>
+          <b>Done. ${qt.target === 1 ? 'Tilt the neck to try star power.' : qt.target === 2 ? `Tilt the neck to press ${pressWord(tiltFuncOf(1 + qtSlot))}.` : 'Tilt the guitar to move the whammy.'}</b>
+          <div class="tilt-meter"><div class="bar" id="qBar"><i></i></div>${qt.target !== 0 ? `<span class="thr" id="qThrMark" style="left:${qs.threshold}%"></span>` : ''}</div>
           <div class="tilt-readout"><span><span class="tilt-state" id="qSt">–</span></span><span id="qUsing">Using Accelerometer${found2 || qsChip === 2 ? ' ' + qsChip : ''} ${'XYZ'[axisIdx(qs.src)]} axis.</span></div>
-          ${qt.target === 1 ? `<div class="slider-row"><label for="qThr">Star power at</label><output class="val" id="qThrV">${qs.threshold} %</output><input type="range" id="qThr" min="5" max="95" step="1" value="${qs.threshold}"></div>` : '<p class="dim small">Adds to the whammy bar: whichever is further wins.</p>'}
+          ${qt.target !== 0 ? `<div class="slider-row"><label for="qThr">${qt.target === 1 ? 'Star power' : 'Press'} at</label><output class="val" id="qThrV">${qs.threshold} %</output><input type="range" id="qThr" min="5" max="95" step="1" value="${qs.threshold}"></div>` : '<p class="dim small">Adds to the whammy bar: whichever is further wins.</p>'}
           <div><button class="btn small" id="qRedo">Redo</button></div>
         </div></li>` : ''}
       </ol>
@@ -1402,12 +1434,12 @@ function buildTilt() {
         <div class="head"><h3>Sensor ${i + 1}</h3><span class="tilt-state" id="tSt${i}">off</span></div>
         <div class="opt first"><div><p class="dim">Reads from</p></div><select data-k="src">${srcOpts(i)}</select></div>
         ${t.src !== PIN_NONE ? `
-        <div class="seg" role="group" aria-label="Sensor ${i + 1} use"><button data-k="target" data-v="0" class="${t.target === 0 ? 'on' : ''}">Whammy</button><button data-k="target" data-v="1" class="${t.target === 1 ? 'on' : ''}">Star power</button></div>
+        <div class="opt"><div><p class="dim">Acts as</p></div><select data-k="func" aria-label="Sensor ${i + 1} acts as">${tiltFuncOptions(t.target === 0 ? 'w' : tiltFuncOf(1 + i), true)}</select></div>
         <div class="tilt-meter"><div class="bar" id="tBar${i}"><i></i></div>${t.target === 1 ? `<span class="thr" style="left:${t.threshold}%"></span>` : ''}</div>
         <div class="tilt-readout"><span>reading <b id="tRaw${i}">–</b></span><span>rest ${restOf(t)} · tilted ${tiltOf(t)}</span></div>
         <div class="row" style="margin-top:10px;flex-wrap:wrap">
           <button class="btn small" data-cap="rest">Set rest (guitar level)</button><button class="btn small" data-cap="tilt">Set tilted (neck up)</button></div>
-        ${t.target === 1 ? `<div class="slider-row"><label>Star power at</label><output class="val">${t.threshold} %</output><input type="range" data-k="threshold" min="5" max="95" step="1" value="${t.threshold}"></div>`
+        ${t.target === 1 ? `<div class="slider-row"><label>${tiltFuncOf(1 + i) === FUNC_STAR ? 'Star power' : 'Press'} at</label><output class="val">${t.threshold} %</output><input type="range" data-k="threshold" min="5" max="95" step="1" value="${t.threshold}"></div>`
           : '<p class="dim small" style="margin-top:8px">Adds to the whammy bar: whichever is further wins. The whammy dead zone above applies.</p>'}` : ''}
       </div>`).join('')}
     </div>`;
@@ -1439,7 +1471,12 @@ function buildTilt() {
     const s = card.querySelector('select[data-k="src"]');
     s.value = String(t.src);
     s.onchange = () => { t.src = +s.value; live(); buildTilt(); };
-    card.querySelectorAll('button[data-k="target"]').forEach((b) => (b.onclick = () => { t.target = +b.dataset.v; live(); buildTilt(); }));
+    const fs = card.querySelector('select[data-k="func"]');
+    if (fs) fs.onchange = () => {
+      if (fs.value === 'w') t.target = 0;
+      else { t.target = 1; c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR]; c.tiltFunc[1 + i] = +fs.value; }
+      live(); buildTilt();
+    };
     const th = card.querySelector('input[data-k="threshold"]');
     if (th) th.oninput = () => { t.threshold = +th.value; th.previousElementSibling.textContent = t.threshold + ' %'; card.querySelector('.thr').style.left = t.threshold + '%'; live(); };
     card.querySelectorAll('[data-cap]').forEach((b) => (b.onclick = () => {
@@ -1454,7 +1491,14 @@ function buildTilt() {
   });
   // ---- quick setup handlers
   const chipRaw = (st, chip) => { const r = chip ? st?.accel2Raw : st?.accelRaw; return r && r.slice(0, 3).every((v) => v !== undefined && v !== 0xffff) ? r.slice(0, 3) : null; };
-  body.querySelectorAll('[data-qt]').forEach((b) => (b.onclick = () => { qt.target = +b.dataset.qt; qt.chosen = true; buildTilt(); }));
+  body.querySelectorAll('[data-qt]').forEach((b) => (b.onclick = () => { qt.target = +b.dataset.qt; qt.chosen = true; qtBtnSlot = -1; buildTilt(); }));
+  const qpick = $('#qPick');
+  if (qpick) qpick.onchange = () => {
+    qt.func = +qpick.value;
+    const sl = quickSlotFor(c, 2);   // already captured: the new input takes over right away
+    if (sl >= 0) { qtBtnSlot = sl; c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR]; c.tiltFunc[1 + sl] = qt.func; live(); }
+    buildTilt();
+  };
   body.querySelectorAll('[data-qc]').forEach((b) => (b.onclick = () => { qt.chip = +b.dataset.qc; qt.level = qt.tilted = null; buildTilt(); }));
   const capL = $('#qCapLevel'), capT = $('#qCapTilt');
   const grab = () => { const r = chipRaw(state.status, qt.chip); if (!r) toast('No reading from the accelerometer yet. Check the wiring.', 'bad'); return r; };
@@ -1466,17 +1510,21 @@ function buildTilt() {
     const ax = diff.indexOf(Math.max(...diff));
     if (diff[ax] < 100) { qt.tilted = null; toast('Barely moved. Tilt the neck further and capture again.', 'bad'); buildTilt(); return; }
     const want = qt.target, srcId = (qt.chip ? 9 : 3) + ax;
-    let slot = c.atilt.findIndex((t) => t.target === want && t.src !== PIN_NONE);
+    let slot = c.atilt.findIndex((t, i) => slotMode(c, i) === want && t.src !== PIN_NONE);
     if (slot < 0) slot = c.atilt.findIndex((t) => t.src === PIN_NONE);
     if (slot < 0) slot = 0;
     const lv = qt.level[ax], tl = r[ax];
-    Object.assign(c.atilt[slot], { src: srcId, target: want, min: Math.min(lv, tl), max: Math.max(lv, tl), invert: lv > tl });
-    if (want === 1) c.atilt[slot].threshold = 50;
+    // a button is a "press" target (1) whose input sits in tiltFunc; star power is the same with the star input
+    Object.assign(c.atilt[slot], { src: srcId, target: want === 0 ? 0 : 1, min: Math.min(lv, tl), max: Math.max(lv, tl), invert: lv > tl });
+    c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR];
+    c.tiltFunc[1 + slot] = want === 2 ? qt.func : FUNC_STAR;
+    qtBtnSlot = want === 2 ? slot : -1;
+    if (want !== 0) c.atilt[slot].threshold = 50;
     qt.level = qt.tilted = null;
     live(); buildTilt();
   };
   const redo = $('#qRedo');
-  if (redo) redo.onclick = () => { qt.level = qt.tilted = null; if (qtSlot >= 0) c.atilt[qtSlot].src = PIN_NONE; live(); buildTilt(); };
+  if (redo) redo.onclick = () => { qt.level = qt.tilted = null; if (qtSlot >= 0) c.atilt[qtSlot].src = PIN_NONE; qtBtnSlot = -1; live(); buildTilt(); };
   const qthr = $('#qThr');
   if (qthr) {
     qthr.oninput = () => { const t = c.atilt[qtSlot]; t.threshold = +qthr.value; $('#qThrV').textContent = t.threshold + ' %'; $('#qThrMark').style.left = t.threshold + '%'; live(); };
@@ -1525,17 +1573,17 @@ function updateTilt(s) {
   if (qSt && qtSlot >= 0 && sts[qtSlot]) {
     const t = sts[qtSlot];
     qSt.textContent = tiltStateText(c.atilt[qtSlot].src, t);
-    qSt.classList.toggle('on', !!t.star || (t.whammy && t.value > 0));
-    if (qBar) { qBar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; qBar.classList.toggle('on', !!t.star); }
+    qSt.classList.toggle('on', !!t.press || (t.whammy && t.value > 0));
+    if (qBar) { qBar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; qBar.classList.toggle('on', !!t.press); }
   }
   sts.forEach((t, i) => {
     const st = $('#tSt' + i), bar = $('#tBar' + i), raw = $('#tRaw' + i);
     if (!st) return;
     const src = c.atilt[i].src;
     st.textContent = tiltStateText(src, t);
-    st.classList.toggle('on', !!t.star || (t.whammy && t.value > 0));
+    st.classList.toggle('on', !!t.press || (t.whammy && t.value > 0));
     if (raw) raw.textContent = t.raw ?? '–';
-    if (bar) { bar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; bar.classList.toggle('on', !!t.star); }
+    if (bar) { bar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; bar.classList.toggle('on', !!t.press); }
   });
 }
 
@@ -1601,14 +1649,15 @@ function applyColors() {
 function updateLedPreview(s) {
   const c = state.cfg;
   if (!c) return;
-  const up = isPressed(s, c.pins[5]), down = isPressed(s, c.pins[6]);
+  const tf = tiltFuncSet(s, c);
+  const up = isPressed(s, c.pins[5]) || tf.has(5), down = isPressed(s, c.pins[6]) || tf.has(6);
   document.querySelectorAll('#mapView .led').forEach((el) => {
     if (el.dataset.strum !== undefined) {
       const role = c.strumRoles[+el.dataset.strum] || 0;
       el.classList.toggle('on', role === 1 ? up : role === 2 ? down : up || down);
       return;
     }
-    el.classList.toggle('on', isPressed(s, c.pins[+el.dataset.fret]));
+    el.classList.toggle('on', isPressed(s, c.pins[+el.dataset.fret]) || tf.has(+el.dataset.fret));
   });
 }
 
@@ -1847,7 +1896,7 @@ function buildLights() {
   drawLayout();
   buildStudio({
     state, changed: () => { applyColors(); refreshChain(); pushCfg(); }, toast, advRefresh,
-    whammy: (s) => liveWhammy(s), turnOn: () => { c.rgbEnabled = true; live(); },
+    whammy: (s) => liveWhammy(s), tiltFuncs: (s) => tiltFuncSet(s), turnOn: () => { c.rgbEnabled = true; live(); },
     fwPreview: () => fwAtLeast(35), preview: (bits, on) => state.dev?.ledPreview(bits, on), goUpdate: () => goUpdate(),
   });
   refresh();

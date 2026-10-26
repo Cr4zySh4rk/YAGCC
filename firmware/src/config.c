@@ -56,6 +56,7 @@ bool config_validate(const yacc_config_t *c) {
         if (a->target > ATILT_STAR || a->invert > 1 || a->threshold < 1 || a->threshold > 99) return false;
         if (a->min > 4095 || a->max > 4095) return false;
     }
+    for (int i = 0; i < 1 + NUM_ATILT; i++) if (c->tilt_func[i] > NUM_FUNCS) return false;
     if ((c->accel_sda != PIN_NONE && c->accel_sda >= NUM_DIGITAL_PINS) || (c->accel_scl != PIN_NONE && c->accel_scl >= NUM_DIGITAL_PINS)) return false;
     if (c->accel_gate > 100 || c->accel_median > 9 || c->accel_lowpass > 100) return false;
     if (c->xinput_opts > 7) return false;
@@ -121,6 +122,7 @@ static void v7_defaults(yacc_config_t *c) {
     memset(c->strum_led_color, 255, sizeof(c->strum_led_color));
     static const uint8_t tail[] = {0, 200, 255,  255, 60, 200,  0x40, 0xE0, 0xFF,  STAR_PULSE, 3, WFX_NONE, 3, 0, 0, 5};
     memcpy(c->strum_up_color, tail, sizeof(tail));     // strum_up/down, star_color, star_anim .. star_speed
+    memset(c->tilt_func, 0, sizeof(c->tilt_func));      // tilt inputs press star power, as before 0.41
     memset(c->reserved4, 0, sizeof(c->reserved4));
     led_zones_from_efx(c);
 }

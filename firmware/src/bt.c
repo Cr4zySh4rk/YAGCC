@@ -271,8 +271,10 @@ static void build_adv(bool discoverable) {
     (void)discoverable;
     *a++ = 3; *a++ = BLUETOOTH_DATA_TYPE_COMPLETE_LIST_OF_16_BIT_SERVICE_CLASS_UUIDS; *a++ = 0x12; *a++ = 0x18;
     *a++ = 3; *a++ = BLUETOOTH_DATA_TYPE_APPEARANCE; *a++ = (uint8_t)s_appearance; *a++ = (uint8_t)(s_appearance >> 8);
-    if (name_len > 31 - 11 - 2) name_len = 31 - 11 - 2;
-    *a++ = (uint8_t)(name_len + 1); *a++ = BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME;
+    // the name gets what is left of the 31 bytes; a clamped one is flagged SHORTENED, not COMPLETE (Santroller bt_gamepad.cpp)
+    bool clamped = name_len > 31 - 11 - 2;
+    if (clamped) name_len = 31 - 11 - 2;
+    *a++ = (uint8_t)(name_len + 1); *a++ = clamped ? BLUETOOTH_DATA_TYPE_SHORTENED_LOCAL_NAME : BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME;
     memcpy(a, s_name, name_len); a += name_len;
     s_adv_len = (uint8_t)(a - s_adv);
 }
@@ -637,6 +639,9 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     sm_init();
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
     sm_set_authentication_requirements(SM_AUTHREQ_SECURE_CONNECTION | SM_AUTHREQ_BONDING);
+    // Ask hosts that connect to us to encrypt the link (we are only ever the peripheral). macOS never pairs on its
+    // own, and a host that forgot us re-pairs instead of hitting the encrypted reports without keys (Santroller cb58f633).
+    sm_set_request_security(true);
     // A host with a key we don't have gets "key missing" (0x06) instead of a made-up legacy key that fails with
     // a MIC error, so it knows to pair again instead of retrying forever.
     sm_allow_ltk_reconstruction_without_le_device_db_entry(0);

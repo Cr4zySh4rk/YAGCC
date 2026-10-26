@@ -13,6 +13,13 @@ export const FUNC_LABEL = {
   strumUp: 'Strum up', strumDown: 'Strum down', star: 'Star power', plus: 'Plus / Start',
 };
 export const NUM_FRETS = 5;
+// Tilt inputs as buttons (firmware 0.41, config bytes 242..244: tilt switch, sensor 1, sensor 2). In the config
+// object `tiltFunc` is [switch, sensor 1, sensor 2], each an index into FUNCS (default star power). On the wire 0 =
+// star power, n = FUNCS[n - 1]. A sensor only uses it when its target is "press" (1); whammy (0) ignores it.
+export const TILT_FUNC_MIN_MINOR = 41;
+export const FUNC_STAR = FUNCS.indexOf('star');
+export const tiltFuncFromByte = (b) => (b >= 1 && b <= FUNCS.length ? b - 1 : FUNC_STAR);
+export const tiltFuncToByte = (f) => (Number.isInteger(f) && f >= 0 && f < FUNCS.length && f !== FUNC_STAR ? f + 1 : 0);
 export const PIN_NONE = 0xff;
 export const NUM_DIGITAL_PINS = 23;
 export const MODE_NONE = 0xff;
@@ -287,7 +294,7 @@ export function defaultConfig() {
     rgbEnabled: false, rgbBootFlash: true, rgbPin: PIN_NONE, rgbBrightness: 40, rgbEffect: 3, rgbSpeed: 5,
     ledMap: [0, 1, 2, 3, 4], colors: FRET_DEFAULT_COLORS.slice(),
     noFretLeds: false, strumLeds: 0, strumMap: [200, 201, 202, 203, 204, 205, 206, 207], strumColor: '#ffffff', strumRoles: [0, 0, 0, 0, 0, 0, 0, 0],
-    cfgVersion: CFG_VERSION, ...defaultTiltSensors(),
+    cfgVersion: CFG_VERSION, tiltFunc: [FUNC_STAR, FUNC_STAR, FUNC_STAR], ...defaultTiltSensors(),
     ...defaultLedV2(FRET_DEFAULT_COLORS, 3, 5),
   };
 }
@@ -333,7 +340,7 @@ export function tiltValue(raw, s) {
   return s.invert ? 1 - v : v;
 }
 
-export const CFG_SIZE = 256;      // config version 7 (firmware 0.34+, LED engine v2); 0.31-0.33 send 160 bytes (v6), 0.29-0.30 128 (v5), older 96 (v4)
+export const CFG_SIZE = 256;      // config version 7 (firmware 0.34+, LED engine v2; 0.41 adds tilt_func at 242..244); 0.31-0.33 send 160 bytes (v6), 0.29-0.30 128 (v5), older 96 (v4)
 export const CFG_SIZE_V6 = 160;
 export const CFG_SIZE_V5 = 128;
 export const CFG_SIZE_V4 = 96;
@@ -372,6 +379,7 @@ export function parseConfig(dv) {
     strumColor: (dv.getUint8(80) | dv.getUint8(81) | dv.getUint8(82)) ? rgbToHex(dv.getUint8(80), dv.getUint8(81), dv.getUint8(82)) : '#ffffff',
     strumRoles: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (dv.getUint8(i < 4 ? 83 : 88) >> (2 * (i & 3))) & 3),
     cfgVersion: dv.getUint8(4),
+    tiltFunc: [0, 1, 2].map((i) => tiltFuncFromByte(v7 ? dv.getUint8(242 + i) : 0)),   // 0.41+; zero (star power) before
     // tilt sensors (version 5): 2 x 8 bytes at 92, then accelerometer pins and filters at 108
     // two LEDs per fret (version 6): count at 124, second positions at 125..129
     ...(dv.byteLength >= CFG_SIZE_V6 && dv.getUint8(4) >= 6 ? {
@@ -457,6 +465,7 @@ export function serializeConfig(c) {
   dv.setUint8(130, c.tiltInvert ? 1 : 0);
   if (!v7) { dv.setUint32(156, crc32(new Uint8Array(buf, 0, 156)), true); return buf; }
   serializeLedV2(dv, c);
+  [0, 1, 2].forEach((i) => dv.setUint8(242 + i, tiltFuncToByte(c.tiltFunc?.[i])));
   dv.setUint32(252, crc32(new Uint8Array(buf, 0, 252)), true);
   return buf;
 }

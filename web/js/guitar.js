@@ -74,6 +74,7 @@ function createGuitar2D(onPart) {
   const part = (name, color) => {
     const g = el('g', { class: 'part', style: `--c:${color}` }, svg);
     parts[name] = g;
+    g.dataset.part = name;
     return g;
   };
   const ring = (g, x, y, w, h, rx) => el('rect', { class: 'focus-ring', x: x - 5, y: y - 5, width: w + 10, height: h + 10, rx: rx + 4 }, g);
@@ -167,6 +168,7 @@ function createGuitar2D(onPart) {
   FRET_NAMES.forEach((n, i) => {
     const cx = 912 - i * 42, w = 32, h = 54, x = cx - w / 2, y = 143;
     const g = part(n, COLORS[n]);
+    g.classList.add('fret');   // its focus ring takes the fret's own colour (--c)
     const d = `M${x},${y + 4} Q${x},${y} ${x + 4},${y} L${x + w - 4},${y} Q${x + w},${y} ${x + w},${y + 4} L${x + w},${y + h - 15} Q${x + w},${y + h} ${x + w - 15},${y + h} L${x + 15},${y + h} Q${x},${y + h} ${x},${y + h - 15} Z`;
     el('path', { d, fill: '#000', opacity: 0.5, transform: 'translate(0 2)' }, g);
     el('path', { class: 'fretcap', d, fill: url('cap-' + n) }, g);

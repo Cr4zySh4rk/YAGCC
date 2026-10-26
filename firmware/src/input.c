@@ -42,6 +42,12 @@ static uint16_t adc_val[NUM_ADC_CH];
 static uint32_t last_adc_us;
 static uint32_t last_poll_us;
 
+// ---- tilt inputs acting as buttons (0.41) ----
+static uint16_t tilt_mask;        // F_* functions currently pressed by a tilt input (never F_STAR, see below)
+static bool tilt_star_on;         // a tilt input acting as star power is active (the classic tilt path)
+static bool atilt_on[NUM_ATILT];  // sensor presses with hysteresis
+static void tilt_update(void);
+
 static inline bool elapsed(uint32_t now, uint32_t then, uint32_t span) {
     return (uint32_t)(now - then) >= span;
 }
@@ -130,6 +136,8 @@ void input_poll(void) {
     }
     if (strum_lock_active && (int32_t)(now - strum_lock_until) >= 0) strum_lock_active = false;
 
+    tilt_update();
+
     // analog, 1 kHz
     if (elapsed(now, last_adc_us, 1000)) {
         last_adc_us = now;
@@ -160,8 +168,37 @@ uint32_t input_gpio_mask(void) {
 
 const uint8_t *input_press_counts(void) { return presses; }
 
-bool input_func(int f) { return f >= 0 && f < NUM_FUNCS && slot[f].out; }
+// A tilt input mapped to a function counts as that button being pressed, for every output, the LEDs and the
+// buttons that act on a held function. Star power is the exception: it keeps the classic tilt path
+// (input_tilt_star(), folded into the star bit by the report builders), so it behaves exactly as before.
+bool input_func(int f) { return f >= 0 && f < NUM_FUNCS && (slot[f].out || ((tilt_mask >> f) & 1)); }
 bool input_tilt(void) { return slot[SLOT_TILT].out; }
+bool input_tilt_star(void) { return tilt_star_on; }
+
+// Sensor press with 4 % hysteresis: `v` is 0..32767, -1 = not reading
+bool atilt_press(bool was_on, int32_t v, uint8_t threshold_pct) {
+    if (v < 0) return false;
+    int32_t on = (32767 * (int32_t)threshold_pct) / 100, off = on - 32767 * 4 / 100;
+    return was_on ? v > off : v >= on;
+}
+
+static void tilt_update(void) {
+    uint16_t m = 0;
+    bool star = false;
+    if ((g_cfg.flags & CFG_FLAG_TILT_ENABLED) && g_cfg.tilt_pin != PIN_NONE && slot[SLOT_TILT].out) {
+        int f = tilt_sw_func(&g_cfg);
+        if (f == F_STAR) star = true; else m |= (uint16_t)(1u << f);
+    }
+    for (int i = 0; i < NUM_ATILT; i++) {
+        int f = atilt_func(&g_cfg, i);
+        if (f < 0) { atilt_on[i] = false; continue; }          // feeds the whammy (main.c)
+        atilt_on[i] = atilt_press(atilt_on[i], input_atilt(i), g_cfg.atilt[i].threshold);
+        if (!atilt_on[i]) continue;
+        if (f == F_STAR) star = true; else m |= (uint16_t)(1u << f);
+    }
+    tilt_mask = m;
+    tilt_star_on = star;
+}
 
 uint16_t input_adc(uint8_t ch) { return ch < NUM_ADC_CH ? adc_val[ch] : 0; }
 
