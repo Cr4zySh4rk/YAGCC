@@ -317,7 +317,7 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
 
 static uint16_t ms_os_len(void) {
     return MS_OS_HDR_LEN + MS_OS_CFG_LEN + MS_OS_FN_CFG + ((g_usb_mode == MODE_XINPUT || g_usb_mode == MODE_AUTO) ? MS_OS_FN_SEC : 0) +
-           ((g_usb_mode == MODE_XINPUT && g_xinput_wireless) ? MS_OS_FN_SEC : 0);
+           (g_usb_mode == MODE_XINPUT ? MS_OS_FN_SEC : 0);   // the pad's own compatible id
 }
 
 static uint8_t desc_bos[TUD_BOS_DESC_LEN + TUD_BOS_WEBUSB_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN];
@@ -374,10 +374,12 @@ const uint8_t *yacc_ms_os_desc(uint16_t *len) {
         memcpy(p, "WINUSB\0\0", 8); p += 8;
         memset(p, 0, 8); p += 8;
     }
-    if (g_usb_mode == MODE_XINPUT && g_xinput_wireless) {
-        W16(0x0008); W16(0x0002); *p++ = ITF_PAD; *p++ = 0; W16(MS_OS_FN_SEC);                // function subset: the pad
+    if (g_usb_mode == MODE_XINPUT) {
+        // function subset: the pad. Windows has no driver that matches a third-party XInput pad's class codes unless it
+        // can fetch one from Windows Update (Code 28 otherwise); this compatible id binds Microsoft's own xusb22
+        W16(0x0008); W16(0x0002); *p++ = ITF_PAD; *p++ = 0; W16(MS_OS_FN_SEC);
         W16(0x0014); W16(0x0003);
-        memcpy(p, "XUSB20\0\0", 8); p += 8;                                                     // xusb22's receiver slot driver
+        memcpy(p, g_xinput_wireless ? "XUSB20\0\0" : "XUSB10\0\0", 8); p += 8;               // xusb22: wired pad / receiver slot
         memset(p, 0, 8); p += 8;
     }
     #undef W16
@@ -454,7 +456,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                     static char ser2[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 6];
                     size_t k = strlen(serial);
                     memcpy(ser2, serial, k);
-                    ser2[k++] = '-'; ser2[k++] = g_xinput_wireless ? 'r' : 'w'; ser2[k++] = '3'; ser2[k++] = '9'; ser2[k] = 0;
+                    ser2[k++] = '-'; ser2[k++] = g_xinput_wireless ? 'r' : 'w'; ser2[k++] = '4'; ser2[k++] = '0'; ser2[k] = 0;
                     s = ser2;
                 } else s = serial;
                 break;
