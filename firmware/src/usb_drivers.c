@@ -234,7 +234,7 @@ bool xinput_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t
         receiver_id(buf);                            // read when xusb22 starts a receiver
         len = 7;
     } else if (req->wValue == XI_WVALUE_SERIAL && req->wIndex == 0) {
-        uint32_t serial = time_us_32();
+        uint32_t serial = board_hash(ITF_PAD);       // stable, and the same value the receiver's link packet reports
         memcpy(buf, &serial, 4);
         len = 4;
     } else {

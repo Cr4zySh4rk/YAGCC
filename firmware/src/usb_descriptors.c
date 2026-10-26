@@ -445,7 +445,19 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                   : g_usb_mode == MODE_XBONE  ? "Rock Band 4 Stratocaster"
                                               : "YAGCC Guitar Controller";
                 break;
-            case STR_SERIAL:   pico_get_unique_board_id_string(serial, sizeof(serial)); s = serial; break;
+            case STR_SERIAL:
+                pico_get_unique_board_id_string(serial, sizeof(serial));
+                if (g_usb_mode == MODE_XINPUT) {
+                    // Windows keys its driver bindings on VID/PID/serial: give the wired pad and the receiver slot
+                    // their own serials, so one never inherits (or is blocked by) the other's driver record. The
+                    // trailing firmware number is a salt too: bumping it makes every Windows PC bind the XInput layouts afresh.
+                    static char ser2[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 6];
+                    size_t k = strlen(serial);
+                    memcpy(ser2, serial, k);
+                    ser2[k++] = '-'; ser2[k++] = g_xinput_wireless ? 'r' : 'w'; ser2[k++] = '3'; ser2[k++] = '9'; ser2[k] = 0;
+                    s = ser2;
+                } else s = serial;
+                break;
             case STR_CONFIG:   s = "YAGCC Configuration"; break;
             case STR_SECURITY: s = str_xb360_auth; break;
             default: return NULL;

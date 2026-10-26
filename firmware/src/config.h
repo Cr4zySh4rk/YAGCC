@@ -265,6 +265,7 @@ void config_defaults(yacc_config_t *c);
 void led_zones_from_efx(yacc_config_t *c);   // rgb_effect / rgb_speed -> both zones (old configurators)
 void config_load(void);
 bool config_save(void);
+bool config_save_auto(void);   // like config_save, but not when the flash held a config this firmware could not read (an explicit save still works)
 bool config_validate(const yacc_config_t *c);
 void config_seal(yacc_config_t *c);   // fill magic/version/crc
 void config_keyboard_preset(yacc_config_t *c, int preset);

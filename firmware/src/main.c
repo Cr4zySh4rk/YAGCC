@@ -636,7 +636,7 @@ static uint8_t pick_mode(void) {
             mode = m;
             if (m != g_cfg.usb_mode) {      // remember it, like picking a mode on any other pad
                 g_cfg.usb_mode = m;
-                config_save();
+                config_save_auto();
             }
             break;
         }
@@ -657,7 +657,7 @@ int main(void) {
     bool bt_ok = bt_supported() && !(needs_host(g_usb_mode) && g_cfg.host_dp_pin != PIN_NONE);
     if (bt_ok && g_bt_pair_at_boot && !(g_cfg.flags & CFG_FLAG_BT_ENABLED)) {
         g_cfg.flags |= CFG_FLAG_BT_ENABLED;   // pairing turns Bluetooth on for good
-        config_save();
+        config_save_auto();
     }
     if (bt_ok) bt_init(g_cfg.flags & CFG_FLAG_BT_ENABLED, g_bt_pair_at_boot, g_bt_mode_switched);
     if (g_usb_mode == MODE_XBONE) xbone_init();
@@ -689,7 +689,7 @@ int main(void) {
     // reuses its cached driver and may not show any sign of it within the timeout, and falling back there left
     // the guitar as a plain gamepad.
     enum { XI_WATCH, XI_SWITCHING, XI_AS_HID, XI_RX_SWITCHING, XI_DONE } xi_state = (g_usb_mode == MODE_XINPUT && !g_setup_session && !g_auto_host) ? XI_WATCH : XI_DONE;
-    uint64_t xi_t = 0;
+    uint64_t xi_t = 0, xi_mount_t = 0;
     bool xi_was_mounted = false;
     // a mode Auto picked lasts until the guitar is unplugged (matters for boards on a battery)
     bool auto_was_mounted = false;
@@ -702,6 +702,7 @@ int main(void) {
             uint8_t m = host ? auto_mode_for(host) : MODE_NONE;
             if (m != MODE_NONE) {
                 tud_disconnect();
+                sleep_ms(300);               // stay off the bus long enough for the host to see the device leave (hub status polling is ~256 ms)
                 watchdog_hw->scratch[1] = (uint32_t)m | ((uint32_t)host << 8);
                 watchdog_hw->scratch[0] = AUTO_MAGIC;
                 watchdog_reboot(0, 0, 10);
@@ -710,6 +711,7 @@ int main(void) {
         } else if (g_auto_host && g_usb_mode == MODE_PS4 && ps5_dongle_present()) {
             // Auto sent a PS4 / PS5 console here, and the auth controller is a P5General: this is a PS5
             tud_disconnect();
+            sleep_ms(300);
             watchdog_hw->scratch[1] = (uint32_t)MODE_PS5 | ((uint32_t)g_auto_host << 8);
             watchdog_hw->scratch[0] = AUTO_MAGIC;
             watchdog_reboot(0, 0, 10);
@@ -726,8 +728,9 @@ int main(void) {
             uint64_t t = time_us_64();
             switch (xi_state) {
                 case XI_WATCH:
-                    if (tud_mounted()) xi_was_mounted = true;
-                    else if (xi_was_mounted) {          // unplugged: forget what the last host was
+                    if (tud_mounted()) { xi_was_mounted = true; if (!xi_mount_t) xi_mount_t = t ? t : 1; }
+                    else xi_mount_t = 0;
+                    if (!tud_mounted() && xi_was_mounted) {          // unplugged: forget what the last host was
                         xi_was_mounted = false;
                         g_xinput_driver_seen = g_host_windows = g_config_seen = false;
                         if (!g_auto_host) g_xinput_wireless = false;   // the next host may be a 360: wired again
@@ -735,7 +738,7 @@ int main(void) {
                     // Windows (it read the Microsoft OS 2.0 descriptors): come back as a wireless receiver slot,
                     // which Steam's driver takes (a wired XInput pad sharing its device with the config interface
                     // makes it choke). A 360 never reads those descriptors, so it keeps the wired pad.
-                    if (tud_mounted() && g_host_windows && !g_xinput_wireless && (g_cfg.xinput_opts & XOPT_RECEIVER)) {
+                    if (tud_mounted() && g_host_windows && !g_xinput_wireless && (g_cfg.xinput_opts & XOPT_RECEIVER) && xi_mount_t && t - xi_mount_t > 1500000) {   // after enumeration has finished, not in the middle of it
                         tud_disconnect();
                         g_xinput_wireless = true;
                         xi_state = XI_RX_SWITCHING; xi_t = t; xi_was_mounted = false;

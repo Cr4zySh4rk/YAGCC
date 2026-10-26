@@ -190,6 +190,8 @@ void config_defaults(yacc_config_t *c) {
     config_seal(c);
 }
 
+static bool g_cfg_preserve;
+bool config_save_auto(void) { return g_cfg_preserve ? false : config_save(); }
 void config_load(void) {
     const yacc_config_t *flash = (const yacc_config_t *)(XIP_BASE + CFG_OFFSET);
     yacc_config_t tmp;
@@ -238,6 +240,10 @@ void config_load(void) {
         }
     } else {
         config_defaults(&g_cfg);
+        // something is stored there but it isn't readable (a newer layout, or damaged): keep it until the user saves
+        uint32_t w = 0xFFFFFFFFu;
+        for (int i = 0; i < 16; i++) w &= ((const uint32_t *)flash)[i];
+        g_cfg_preserve = w != 0xFFFFFFFFu;
     }
 }
 
@@ -254,6 +260,7 @@ static void flash_write_cb(void *param) {
 
 bool config_save(void) {
     static write_job_t job;
+    g_cfg_preserve = false;
     memset(job.page, 0xFF, sizeof(job.page));
     config_seal(&g_cfg);
     memcpy(job.page, &g_cfg, sizeof(g_cfg));
