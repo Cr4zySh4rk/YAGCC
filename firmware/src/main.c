@@ -662,7 +662,7 @@ int main(void) {
     if (bt_ok) bt_init(g_cfg.flags & CFG_FLAG_BT_ENABLED, g_bt_pair_at_boot, g_bt_mode_switched);
     if (g_usb_mode == MODE_XBONE) xbone_init();
     // Windows found by Auto mode: XInput as a wireless receiver slot, which Steam handles (Santroller)
-    g_xinput_wireless = g_usb_mode == MODE_XINPUT && g_auto_host == HOST_WINDOWS && !(g_cfg.xinput_opts & XOPT_NO_RECEIVER);
+    g_xinput_wireless = g_usb_mode == MODE_XINPUT && g_auto_host == HOST_WINDOWS && (g_cfg.xinput_opts & XOPT_RECEIVER);
     tusb_init();
     if (needs_host(g_usb_mode) && g_cfg.host_dp_pin != PIN_NONE) usb_host_start(g_cfg.host_dp_pin);
     rgb_boot_indicator(g_usb_mode);
@@ -735,7 +735,7 @@ int main(void) {
                     // Windows (it read the Microsoft OS 2.0 descriptors): come back as a wireless receiver slot,
                     // which Steam's driver takes (a wired XInput pad sharing its device with the config interface
                     // makes it choke). A 360 never reads those descriptors, so it keeps the wired pad.
-                    if (tud_mounted() && g_host_windows && !g_xinput_wireless && !(g_cfg.xinput_opts & XOPT_NO_RECEIVER)) {
+                    if (tud_mounted() && g_host_windows && !g_xinput_wireless && (g_cfg.xinput_opts & XOPT_RECEIVER)) {
                         tud_disconnect();
                         g_xinput_wireless = true;
                         xi_state = XI_RX_SWITCHING; xi_t = t; xi_was_mounted = false;

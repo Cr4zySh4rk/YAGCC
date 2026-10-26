@@ -58,7 +58,7 @@ bool config_validate(const yacc_config_t *c) {
     }
     if ((c->accel_sda != PIN_NONE && c->accel_sda >= NUM_DIGITAL_PINS) || (c->accel_scl != PIN_NONE && c->accel_scl >= NUM_DIGITAL_PINS)) return false;
     if (c->accel_gate > 100 || c->accel_median > 9 || c->accel_lowpass > 100) return false;
-    if (c->xinput_opts > 3) return false;
+    if (c->xinput_opts > 7) return false;
     const uint8_t ext[7] = {c->ps2_att, c->ps2_cmd, c->ps2_dat, c->ps2_clk, c->ps2_ack, c->wii_sda, c->wii_scl};
     for (int i = 0; i < 7; i++) if (ext[i] != PIN_NONE && ext[i] >= NUM_DIGITAL_PINS) return false;
     if ((c->rumble_pin != PIN_NONE && c->rumble_pin >= NUM_DIGITAL_PINS) || c->rumble_flags > 7 ||

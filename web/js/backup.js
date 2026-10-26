@@ -41,7 +41,7 @@ const CHECK = {
   whammyDeadzone: (v) => Number.isInteger(v) && v >= 0 && v <= 30,
   rgbSpeed: (v) => Number.isInteger(v) && v >= 1 && v <= 10,
   usbMode: (v) => MODES.some((m) => m.id === v),
-  xinputOpts: (v) => Number.isInteger(v) && v >= 0 && v <= 3,
+  xinputOpts: (v) => Number.isInteger(v) && v >= 0 && v <= 7,
   ps2Pins: (v) => Array.isArray(v) && v.length === 5 && v.every(isPin), wiiSda: isPin, wiiScl: isPin,
   bootModes: (v) => Array.isArray(v) && v.length === 5 && v.every((m) => m === 255 || MODES.some((x) => x.id === m)),
   ledMap: (v) => Array.isArray(v) && v.length === 5 && new Set(v).size === 5 && v.every((p) => Number.isInteger(p) && p >= 0 && p < 18),
@@ -78,7 +78,7 @@ export const LABELS = {
   starZones: 'star power zones', starSpeed: 'star power speed', whammyFx: 'whammy effect', whammyZones: 'whammy zones', starFlash: 'star power flash', sleepMin: 'LED sleep timer',
   ledMap: 'LED order', ledMap2: 'second fret LEDs', fretLeds: 'LEDs per fret', noFretLeds: 'fret LEDs on/off', strumLeds: 'strum LED count', strumMap: 'strum LED order', strumColor: 'strum LED colour', strumRoles: 'strum LED roles', colors: 'fret colours', ledType: 'LED type', ledOrder: 'colour order', ledClkPin: 'LED clock pin', rgbStarPower: 'star power glow',
   atilt: 'tilt sensors', rumblePin: 'rumble motor pin', ps2Pins: 'PS2 port pins', wiiSda: 'Wii extension SDA', wiiScl: 'Wii extension SCL', rumbleFlags: 'rumble triggers', rumbleStrength: 'rumble strength', accelSda: 'accelerometer SDA pin', accelScl: 'accelerometer SCL pin', accelGate: 'gravity gate', accelMedian: 'median filter', accelLowpass: 'low pass filter',
-  usbMode: 'default mode', bootModes: 'hold-a-fret modes', xinputType: 'XInput guitar type', starDpadLeft: 'star power on D-pad left', xinputOpts: 'Steam-friendly XInput', keys: 'keyboard bindings',
+  usbMode: 'default mode', bootModes: 'hold-a-fret modes', xinputType: 'XInput guitar type', starDpadLeft: 'star power on D-pad left', xinputOpts: 'Steam receiver option', keys: 'keyboard bindings',
 };
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));
 

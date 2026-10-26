@@ -71,7 +71,8 @@ enum {
 // Analog tilt sensors (firmware 0.29+): up to two, each on its own analog input, each either adding to the
 // whammy or pressing tilt / star power past a calibrated angle. They work alongside the whammy bar, the
 // star power button and the digital tilt switch.
-#define XOPT_NO_RECEIVER (1u << 0)   // XInput: never present as a wireless receiver slot on Windows
+#define XOPT_NO_RECEIVER (1u << 0)   // (0.30..0.37, no longer used) XInput: never present as a wireless receiver slot on Windows
+#define XOPT_RECEIVER    (1u << 2)   // (0.38) XInput: present as one slot of an Xbox 360 wireless receiver on Windows (Steam); off by default
 #define XOPT_WIIMOTE     (1u << 1)   // Pico W: act as a Wii Remote with a guitar extension over Bluetooth (classic)
 #define RUMBLE_FLAG_GAME (1u << 0)   // follow the rumble games send
 #define RUMBLE_FLAG_STAR (1u << 1)   // buzz when star power / overdrive starts (games that report it)

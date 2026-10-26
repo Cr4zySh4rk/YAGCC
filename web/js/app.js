@@ -198,7 +198,7 @@ function advRefresh() {
   const tilt = keep('#tiltPanel', set(c.accelSda) || (c.atilt || []).some((t) => t.src !== PIN_NONE));
   const rumble = keep('#rumblePanel', set(c.rumblePin));
   hint('#tuneAdvHint', advOn(), [!tilt && 'tilt sensors', !rumble && 'rumble'].filter(Boolean));
-  const rx = keep('#rxRow', c.xinputOpts & 1);
+  const rx = keep('#rxRow', c.xinputOpts & 4);
   const ports = keep('#portsPanel', (c.ps2Pins || []).some((p) => p !== PIN_NONE) || set(c.wiiSda) || (c.xinputOpts & 2));
   const needsHost = MODES.find((m) => m.id === c.usbMode)?.host || (c.bootModes || []).some((id) => MODES.find((m) => m.id === id)?.host);
   const host = keep('#hostPanel', set(c.hostPin) || needsHost);
@@ -1885,9 +1885,9 @@ function buildModes() {
   $('#xiType').onchange = (e) => { c.xinputType = +e.target.value; };
   $('#starLeft').checked = !!c.starDpadLeft;
   $('#starLeft').onchange = (e) => { c.starDpadLeft = e.target.checked; };
-  $('#rxRow').hidden = (c.cfgVersion ?? 0) < 5 || !(state.info.major > 0 || state.info.minor >= 30);
-  $('#xiRx').checked = !(c.xinputOpts & 1);
-  $('#xiRx').onchange = (e) => { c.xinputOpts = (c.xinputOpts & ~1) | (e.target.checked ? 0 : 1); };
+  $('#rxRow').hidden = (c.cfgVersion ?? 0) < 5 || !(state.info.major > 0 || state.info.minor >= 38);
+  $('#xiRx').checked = !!(c.xinputOpts & 4);
+  $('#xiRx').onchange = (e) => { c.xinputOpts = (c.xinputOpts & ~5) | (e.target.checked ? 4 : 0); };
   buildPorts();
 
   // keyboard bindings

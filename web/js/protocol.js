@@ -446,7 +446,7 @@ export function serializeConfig(c) {
   });
   dv.setUint8(108, c.accelSda ?? PIN_NONE); dv.setUint8(109, c.accelScl ?? PIN_NONE);
   dv.setUint8(110, Math.min(100, c.accelGate | 0)); dv.setUint8(111, Math.min(9, c.accelMedian | 0)); dv.setUint8(112, Math.min(100, c.accelLowpass | 0));
-  dv.setUint8(113, (c.xinputOpts | 0) & 3);
+  dv.setUint8(113, (c.xinputOpts | 0) & 7);
   dv.setUint8(114, c.rumblePin ?? PIN_NONE); dv.setUint8(115, (c.rumbleFlags ?? 3) & 7);
   dv.setUint8(116, Math.max(10, Math.min(100, c.rumbleStrength ?? 80)));
   (c.ps2Pins || []).forEach((p, i) => dv.setUint8(117 + i, p ?? PIN_NONE));

@@ -209,7 +209,7 @@ static uint8_t const *device_desc(void) {
         case MODE_WII_RB: desc_device.idVendor = HARMONIX_VID;  desc_device.idProduct = WII_RB_GUITAR_PID; break;
         case MODE_HID:      desc_device.idProduct = 0x0002; break;
         case MODE_AUTO:     desc_device.idProduct = YACC_AUTO_PID; break;
-        case MODE_XINPUT:   if (g_xinput_wireless) desc_device.bcdDevice = 0x0110; break;   // its own Microsoft OS descriptor cache entry
+        case MODE_XINPUT:   desc_device.bcdDevice = g_xinput_wireless ? 0x0110 : 0x0101; break;   // each layout gets its own Windows descriptor / driver cache entry (0.38: a fresh one for the wired pad)
         case MODE_KEYBOARD: desc_device.idProduct = 0x0003; break;
         case MODE_SWITCH:
             desc_device.idVendor = HORI_VID; desc_device.idProduct = HORI_POKKEN_PID;
