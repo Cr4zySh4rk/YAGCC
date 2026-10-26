@@ -681,11 +681,14 @@ int main(void) {
     bool dirty = true;
 
     // XInput on a host without an XInput driver (macOS has none): nothing reads the controller, so it would
-    // never show up in games. If no driver has used it 2.5 s after the host configured it, and the host isn't
+    // never show up in games. If no driver has used it 10 s after the host configured it, and the host isn't
     // Windows (which reads the MS OS 2.0 descriptors, and may take a while to install the driver the first
     // time), re-enumerate as the HID gamepad, which every OS supports. Unplugging goes back to XInput, so the
     // next host gets XInput first. Not in a setup session.
-    enum { XI_WATCH, XI_SWITCHING, XI_AS_HID, XI_RX_SWITCHING, XI_DONE } xi_state = (g_usb_mode == MODE_XINPUT && !g_setup_session) ? XI_WATCH : XI_DONE;
+    // Not when Auto mode already identified the host (Windows or an Xbox 360 are certain XInput hosts): Windows
+    // reuses its cached driver and may not show any sign of it within the timeout, and falling back there left
+    // the guitar as a plain gamepad.
+    enum { XI_WATCH, XI_SWITCHING, XI_AS_HID, XI_RX_SWITCHING, XI_DONE } xi_state = (g_usb_mode == MODE_XINPUT && !g_setup_session && !g_auto_host) ? XI_WATCH : XI_DONE;
     uint64_t xi_t = 0;
     bool xi_was_mounted = false;
     // a mode Auto picked lasts until the guitar is unplugged (matters for boards on a battery)
@@ -741,7 +744,7 @@ int main(void) {
                     // (the configurator talking over WebUSB says nothing about whether games can see XInput: ignored)
                     if (!tud_mounted() || g_xinput_driver_seen || g_host_windows) { xi_t = 0; break; }
                     if (!xi_t) xi_t = t ? t : 1;
-                    else if (t - xi_t > 2500000) {
+                    else if (t - xi_t > 10000000) {   // 10 s: Windows with a cached driver can be slow to show any sign of it
                         tud_disconnect();
                         g_usb_mode = MODE_HID;
                         g_xinput_fallback = true;
