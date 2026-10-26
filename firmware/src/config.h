@@ -82,7 +82,9 @@ enum { ATILT_WHAMMY = 0, ATILT_STAR = 1 };
 // where a tilt sensor reads from: an analog input, or one axis of the I2C accelerometer
 // (or one of a LIS3DH's three auxiliary ADC inputs, for analog sensors wired to the accelerometer board)
 enum { ATILT_SRC_ADC0 = 0, ATILT_SRC_ADC1, ATILT_SRC_ADC2, ATILT_SRC_ACCEL_X, ATILT_SRC_ACCEL_Y, ATILT_SRC_ACCEL_Z,
-       ATILT_SRC_LIS_ADC1, ATILT_SRC_LIS_ADC2, ATILT_SRC_LIS_ADC3, NUM_ATILT_SRC };
+       ATILT_SRC_LIS_ADC1, ATILT_SRC_LIS_ADC2, ATILT_SRC_LIS_ADC3,
+       ATILT_SRC_ACCEL2_X, ATILT_SRC_ACCEL2_Y, ATILT_SRC_ACCEL2_Z,   // 9..11: a second accelerometer on the same bus (0.36+)
+       NUM_ATILT_SRC };
 typedef struct __attribute__((packed)) {
     uint8_t  ch;          // ATILT_SRC_* or PIN_NONE = not fitted
     uint8_t  target;      // ATILT_*

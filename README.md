@@ -145,10 +145,13 @@ Tune page, firmware 0.30+. A small vibration motor (coin / ERM) on any free GPIO
 Set up on the **Tune** page (firmware 0.29+). Besides the digital tilt switch from Setup there are two sensor slots, and each one reads from:
 
 * an analog input (**GP26–GP28**, any not used by the whammy bar),
-* one axis (**X, Y or Z**) of an I²C accelerometer: LIS3DH, SC7A20, LIS3DSH, ADXL345 or MPU-6050 and its clones, found automatically at either of its addresses, or
+* one axis (**X, Y or Z**) of an I²C accelerometer: LIS3DH, SC7A20, LIS3DSH, ADXL345 or MPU-6050 and its clones, found automatically at either of its addresses,
+* one axis of a **second** accelerometer on the same bus (firmware 0.36+, see below), or
 * one of a **LIS3DH's three auxiliary ADC inputs**, for analog sensors wired to the accelerometer board.
 
 Each slot either **adds to the whammy** (the whammy bar and the sensor work together; whichever is pushed further wins, and the whammy dead zone applies) or **presses star power / tilt** once the guitar tilts past a threshold you set (with a little hysteresis so it doesn't flicker). Calibrate with *Set rest* (guitar level) and *Set tilted* (neck up); the direction is worked out from the two. So a guitar can have a whammy bar, a star power button, a tilt sensor on the whammy and another on star power, all at once.
+
+**Two accelerometers (0.36+).** Wire both to the same SDA / SCL / 3V3 / GND and give the second a different address: ADXL345 SDO to GND = 0x53 and SDO to 3V3 = 0x1D; LIS3DH SA0/SDO to 3V3 = 0x19 (default 0x18); MPU-6050 AD0 high = 0x69 (default 0x68). Mixed chip types work too. The first chip found is *Accelerometer 1*, the next one at another address *Accelerometer 2*; the Tune page shows both chips and their live X / Y / Z, and each sensor slot can read any axis of either (sources 9..11 in the config). Each chip has its own filters and is found again if unplugged. The LIS3DH auxiliary ADC inputs are read from chip 1 only.
 
 The accelerometer readings go through the same filters Santroller uses, each off at 0: a 2nd order Butterworth **low pass** (default 20 Hz), a **median** of 3–9 samples (default 3) that drops single spikes, and a **gravity gate** that holds the last reading while the guitar is being shaken (a hard strum) rather than tilted. The chip is polled with its data-ready flag so each sample is used once, and it is found again if it's unplugged.
 * LED data line (WS2812 / SK6812): any free GP0–GP22. APA102 / SK9822 / DotStar also needs a clock pin (any other free GP0–GP22): wire the Pico's data pin to the first LED's DI and the clock pin to its CI.

@@ -300,7 +300,11 @@ export const ATILT_SOURCES = [
   { id: 0, name: 'GP26 (analog)', kind: 'adc' }, { id: 1, name: 'GP27 (analog)', kind: 'adc' }, { id: 2, name: 'GP28 (analog)', kind: 'adc' },
   { id: 3, name: 'Accelerometer X', kind: 'accel' }, { id: 4, name: 'Accelerometer Y', kind: 'accel' }, { id: 5, name: 'Accelerometer Z', kind: 'accel' },
   { id: 6, name: 'LIS3DH ADC 1', kind: 'lis' }, { id: 7, name: 'LIS3DH ADC 2', kind: 'lis' }, { id: 8, name: 'LIS3DH ADC 3', kind: 'lis' },
+  // 9..11: a second accelerometer on the same bus at another address (firmware 0.36+)
+  { id: 9, name: 'Accelerometer 2 X', kind: 'accel2' }, { id: 10, name: 'Accelerometer 2 Y', kind: 'accel2' }, { id: 11, name: 'Accelerometer 2 Z', kind: 'accel2' },
 ];
+export const NUM_ATILT_SRC = 12;
+export const ACCEL2_MIN_MINOR = 36;
 export const ACCEL_TYPES = ['none found', 'LIS3DH', 'ADXL345', 'MPU-6050', 'SC7A20', 'LIS3DSH'];
 export function defaultTiltSensors() {
   return {
@@ -317,7 +321,7 @@ export const i2cPinsOk = (sda, scl) => sda < NUM_DIGITAL_PINS && scl < NUM_DIGIT
 export function tiltSourceRaw(status, src) {
   if (!status || src === PIN_NONE) return null;
   if (src < 3) return status.adc[src];
-  const v = status.accelRaw?.[src - 3];
+  const v = src >= 9 ? status.accel2Raw?.[src - 9] : status.accelRaw?.[src - 3];
   return v === undefined || v === 0xffff ? null : v;
 }
 // Same maths as firmware input_atilt(): 0 (rest) .. 1 (tilted), or null when not reading
@@ -540,7 +544,10 @@ export function parseStatus(dv) {
   const accelType = dv.byteLength > o ? dv.getUint8(o) : 0;
   const accelRaw = dv.byteLength >= o + 13 ? [0, 1, 2, 3, 4, 5].map((i) => dv.getUint16(o + 1 + i * 2, true)) : [0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff];
   const ports = dv.byteLength > o + 13 ? dv.getUint8(o + 13) : 0;   // firmware 0.31+: 1 PS2 polling, 2 Wii Remote on the extension, 4 Wii connected over Bluetooth
-  return { t: performance.now(), mask, adc, counts, btState: flags & 3, saveOk: !!(flags & 4), savePending: !!(flags & 8), accelType, accelRaw, ports };
+  // firmware 0.36+: the second accelerometer's type, then its X, Y, Z (0xffff = none)
+  const accel2Type = dv.byteLength > o + 14 ? dv.getUint8(o + 14) : 0;
+  const accel2Raw = dv.byteLength >= o + 21 ? [0, 1, 2].map((i) => dv.getUint16(o + 15 + i * 2, true)) : [0xffff, 0xffff, 0xffff];
+  return { t: performance.now(), mask, adc, counts, btState: flags & 3, saveOk: !!(flags & 4), savePending: !!(flags & 8), accelType, accelRaw, ports, accel2Type, accel2Raw };
 }
 
 // Same maths as firmware input_whammy(): returns 0..1

@@ -41,7 +41,8 @@ void usb_request_setup_reboot(void) {
     reboot_at = time_us_64() + 150000;
 }
 
-#define STATUS_LEN (4 + 2 * NUM_ADC_CH + NUM_DIGITAL_PINS + 1)
+#define STATUS_LEN (4 + 2 * NUM_ADC_CH + NUM_DIGITAL_PINS + 1 + 1 + 12 + 1 + 1 + 6)
+_Static_assert(STATUS_LEN <= 64, "status report must fit tx_buf and the 64 byte request");
 
 static uint16_t build_status(void) {
     uint8_t *p = tx_buf;
@@ -60,9 +61,19 @@ static uint16_t build_status(void) {
         uint16_t v = r < 0 ? 0xFFFF : (uint16_t)r;
         memcpy(p, &v, 2); p += 2;
     }
+    // Status layout (bytes): 0..3 GPIO mask, then 2 per ADC channel, NUM_DIGITAL_PINS press counts, flags, accel type,
+    // 6 x 16 bit accel / aux ADC readings, ports byte (below), then [0.36+] accel 2 type, 3 x 16 bit accel 2 X/Y/Z.
+    // 55 bytes with the current pin counts; tx_buf is 64 and the host asks for 64.
     // firmware 0.31+: 1 = a PS2 is polling the controller port, 2 = a Wii Remote reads the extension port,
     // 4 = a Wii is connected to the Wii Remote emulation
     *p++ = (ps2_out_active() ? 1 : 0) | (wii_out_active() ? 2 : 0) | (bt_wiimote() && bt_state() == BT_STATE_CONNECTED ? 4 : 0);
+    // firmware 0.36+: the second accelerometer's type (ACCEL_*) and its X, Y, Z (12-bit, 0xFFFF = none)
+    *p++ = accel_type_n(1);
+    for (int i = 0; i < 3; i++) {
+        int32_t r = accel_raw12_n(1, i);
+        uint16_t v = r < 0 ? 0xFFFF : (uint16_t)r;
+        memcpy(p, &v, 2); p += 2;
+    }
     return (uint16_t)(p - tx_buf);
 }
 

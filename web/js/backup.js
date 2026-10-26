@@ -1,6 +1,6 @@
 // Backup and restore of the controller's settings as a JSON file (in the spirit of GP2040-CE's
 // "Data Backup and Restoration"): pick which sections to save or restore.
-import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX } from './protocol.js?v=dev';
+import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, NUM_ATILT_SRC, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX } from './protocol.js?v=dev';
 
 export const BACKUP_FORMAT = 1;
 
@@ -58,7 +58,7 @@ const CHECK = {
   starAnim: (v) => isInt(v, 0, NUM_STAR - 1), whammyFx: (v) => isInt(v, 0, NUM_WFX - 1), starZones: (v) => isInt(v, 0, 3), whammyZones: (v) => isInt(v, 0, 3),
   starSpeed: (v) => isInt(v, 1, 10), sleepMin: (v) => isInt(v, 0, 30), fret2Own: (v) => typeof v === 'boolean', starFlash: (v) => typeof v === 'boolean',
   keys: (v) => Array.isArray(v) && v.length === 11 && v.every(isByte),
-  atilt: (v) => Array.isArray(v) && v.length === 2 && v.every((s) => s && (s.src === PIN_NONE || (Number.isInteger(s.src) && s.src >= 0 && s.src < 9)) &&
+  atilt: (v) => Array.isArray(v) && v.length === 2 && v.every((s) => s && (s.src === PIN_NONE || (Number.isInteger(s.src) && s.src >= 0 && s.src < NUM_ATILT_SRC)) &&
     (s.target === 0 || s.target === 1) && typeof s.invert === 'boolean' && Number.isInteger(s.threshold) && s.threshold >= 1 && s.threshold <= 99 &&
     [s.min, s.max].every((x) => Number.isInteger(x) && x >= 0 && x <= 4095)),
   accelSda: isPin, accelScl: isPin, rumblePin: isPin,

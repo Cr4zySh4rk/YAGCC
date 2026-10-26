@@ -183,6 +183,7 @@ int16_t input_whammy(void) {
 int32_t input_atilt_raw(uint8_t src) {
     if (src < NUM_ADC_CH) return adc_val[src];
     if (src >= ATILT_SRC_ACCEL_X && src <= ATILT_SRC_ACCEL_Z) return accel_raw12(src - ATILT_SRC_ACCEL_X);
+    if (src >= ATILT_SRC_ACCEL2_X && src <= ATILT_SRC_ACCEL2_Z) return accel_raw12_n(1, src - ATILT_SRC_ACCEL2_X);
     if (src >= ATILT_SRC_LIS_ADC1 && src <= ATILT_SRC_LIS_ADC3) return accel_adc12(src - ATILT_SRC_LIS_ADC1);
     return -1;
 }

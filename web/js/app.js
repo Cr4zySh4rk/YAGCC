@@ -2,7 +2,7 @@ import {
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
-  ATILT_SOURCES, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
+  ATILT_SOURCES, ACCEL2_MIN_MINOR, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
 } from './protocol.js?v=dev';
 import { YaccDevice, webusbSupported } from './usb.js?v=dev';
 import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
@@ -1312,14 +1312,16 @@ function buildTilt() {
   const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), c.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE && !own.has(p)));
   const pairs = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !(p & 1) && i2cPinsOk(p, p + 1) && !taken.has(p) && !taken.has(p + 1));
   const accelOn = c.accelSda !== PIN_NONE && i2cPinsOk(c.accelSda, c.accelScl);
+  const two = fwAtLeast(ACCEL2_MIN_MINOR);   // firmware 0.36+ finds a second accelerometer on the same bus
   const srcOpts = (i) => {
     const other = c.atilt[1 - i].src;
     return '<option value="255">Off</option>' + ATILT_SOURCES.map((s) => {
       const busy = (s.kind === 'adc' && s.id === c.whammyCh) || (s.id === other && other !== PIN_NONE);
-      const needs = s.kind !== 'adc' && !accelOn;
+      const needs = (s.kind !== 'adc' && !accelOn) || (s.kind === 'accel2' && !two);
       if (needs && c.atilt[i].src !== s.id) return '';
+      const name = two && s.kind === 'accel' ? s.name.replace('Accelerometer', 'Accelerometer 1') : s.name;
       const note = s.id === c.whammyCh ? ' (whammy bar)' : s.id === other ? ' (other sensor)' : s.kind === 'lis' ? ' (LIS3DH only)' : '';
-      return `<option value="${s.id}" ${busy ? 'disabled' : ''}>${s.name}${note}</option>`;
+      return `<option value="${s.id}" ${busy ? 'disabled' : ''}>${name}${note}</option>`;
     }).join('');
   };
   const restOf = (t) => (t.invert ? t.max : t.min), tiltOf = (t) => (t.invert ? t.min : t.max);
@@ -1327,9 +1329,12 @@ function buildTilt() {
     <div class="tilt-accel">
       <div class="opt first"><div><h3>Accelerometer</h3><p class="dim">I²C module: SDA on the even pin, SCL on the next one, VCC to 3V3(OUT), GND to GND.</p></div>
         <select id="accPins"><option value="255">None</option>${pairs.map((p) => `<option value="${p}">SDA GP${p}, SCL GP${p + 1}</option>`).join('')}</select></div>
+      <p class="dim small" style="margin:6px 0 0" id="accTwoHint">Two accelerometers: wire both to the same SDA / SCL / 3V3 / GND; give the second a different address (ADXL345: SDO to 3V3 → 0x1D, the first SDO to GND → 0x53; LIS3DH: SA0/SDO high → 0x19; MPU-6050: AD0 high → 0x69).${two ? '' : ' Needs firmware 0.36 or newer.'}</p>
       ${accelOn ? `
-      <div class="tilt-readout" style="margin-top:8px"><span>Chip: <b id="accType">looking…</b></span><span class="dim">1 g = 1024 counts, 2048 = level</span></div>
-      <div class="tilt-axes">${['X', 'Y', 'Z'].map((a, i) => `<div>${a} <span id="accV${i}">–</span><div class="bar"><i id="accB${i}"></i></div></div>`).join('')}</div>
+      <div class="tilt-readout" style="margin-top:8px"><span>${two ? 'Chip 1' : 'Chip'}: <b id="accType">looking…</b>${two ? ' · Chip 2: <b id="acc2Type">looking…</b>' : ''}</span><span class="dim">1 g = 1024 counts, 2048 = level</span></div>
+      ${two ? '<p class="dim small" id="acc2Hint" hidden>Chip 2: not found. Wire its SDO to 3V3 for address 0x1D (ADXL345), SA0 high for 0x19 (LIS3DH) or AD0 high for 0x69 (MPU-6050).</p>' : ''}
+      <div class="tilt-axes">${['X', 'Y', 'Z'].map((a, i) => `<div>${two ? '1 ' : ''}${a} <span id="accV${i}">–</span><div class="bar"><i id="accB${i}"></i></div></div>`).join('')}</div>
+      ${two ? `<div class="tilt-axes" id="acc2Axes" style="margin-top:6px">${['X', 'Y', 'Z'].map((a, i) => `<div>2 ${a} <span id="acc2V${i}">–</span><div class="bar"><i id="acc2B${i}"></i></div></div>`).join('')}</div>` : ''}
       <div class="cols" style="margin-top:6px">
         <div>
           <div class="slider-row"><label for="accLp">Low pass</label><output class="val" id="accLpV"></output><input type="range" id="accLp" min="0" max="50" step="1"></div>
@@ -1409,6 +1414,17 @@ function updateTilt(s) {
       const v = s.accelRaw[i], ok = v !== 0xffff;
       $('#accV' + i).textContent = ok ? ((v - 2048) / 1024).toFixed(2) + ' g' : '–';
       $('#accB' + i).style.width = ok ? (v / 40.95).toFixed(1) + '%' : '0';
+    }
+  }
+  const ty2 = $('#acc2Type');
+  if (ty2) {
+    ty2.textContent = s.accel2Type ? ACCEL_TYPES[s.accel2Type] || 'unknown' : 'not found';
+    const hint = $('#acc2Hint');
+    if (hint) hint.hidden = !!s.accel2Type || !s.accelType;   // only once chip 1 is up: chip 2 is searched after it
+    for (let i = 0; i < 3; i++) {
+      const v = s.accel2Raw[i], ok = v !== 0xffff;
+      $('#acc2V' + i).textContent = ok ? ((v - 2048) / 1024).toFixed(2) + ' g' : '–';
+      $('#acc2B' + i).style.width = ok ? (v / 40.95).toFixed(1) + '%' : '0';
     }
   }
   tiltStates(s).forEach((t, i) => {
