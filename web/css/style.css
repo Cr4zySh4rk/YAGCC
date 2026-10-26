@@ -755,3 +755,64 @@ body.has-savebar #toasts { bottom: 90px; }
   .lfx-fretcols { grid-template-columns: 52px repeat(5, minmax(0, 1fr)); gap: 8px 6px; }
   .led-sum-btns .btn { flex: 1 1 auto; }
 }
+
+/* ---------- Setup as an app-like screen on desktop: steps | card | guitar, no page scroll ---------- */
+@media (min-width: 901px) and (min-height: 560px) {
+  body:has(#view-setup.active #setupMain:not([style*="none"])) { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  body:has(#view-setup.active #setupMain:not([style*="none"])) footer { display: none; }
+  body:has(#view-setup.active #setupMain:not([style*="none"])) .top-inner { max-width: 1560px; }
+  body:has(#view-setup.active #setupMain:not([style*="none"])) main { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; max-width: 1560px; width: 100%; padding: 14px 24px 14px; }
+  body.has-savebar:has(#view-setup.active #setupMain:not([style*="none"])) main { padding-bottom: calc(var(--ubh, 64px) + 12px); }
+  #view-setup.active { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  #setupMain { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 248px minmax(0, 1fr) clamp(340px, 31vw, 500px); grid-template-rows: minmax(0, 1fr); grid-template-areas: "list card stage"; gap: 14px; }
+  #setupMain[style*="none"] { display: none; }
+  #setupMain .setup-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
+  #setupMain .setup-grid { display: contents; }
+  #setupMain .step-list { grid-area: list; margin: 0; overflow-y: auto; min-height: 0; padding: 4px 0; }
+  #setupMain .step-list li button { padding: 6px 12px; font-size: 14.5px; gap: 8px; }
+  #setupMain .step-list .v { font-size: 11px; white-space: nowrap; }
+  #setupMain .step-list .grp { padding: 4px 12px 2px; }
+  #setupMain .step-list li.has-grp { padding-top: 3px; }
+  #setupMain .step-list li.has-grp + li.has-grp { margin-top: 2px; padding-top: 5px; }
+  #setupMain .step-panel { grid-area: card; min-height: 0; margin: 0; padding: 16px 22px 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
+  #setupMain .step-panel > :not(.step-nav) { flex: none; }
+  #setupMain .step-count { margin-bottom: 0; font-size: 12px; }
+  #setupMain .step-title { font-size: 32px; margin-bottom: 2px; }
+  #setupMain .step-prompt { font-size: 15.5px; margin: 0 0 12px; }
+  #setupMain .step-nav { position: sticky; bottom: 0; z-index: 2; margin-top: auto; padding: 12px 0 14px; background: var(--panel); flex: none; }
+  #setupMain .step-panel > .step-nav::before { content: ""; position: absolute; left: 0; right: 0; top: -14px; height: 14px; background: linear-gradient(transparent, var(--panel)); pointer-events: none; }
+  #setupMain .step-panel > :nth-last-child(2) { margin-bottom: 14px; }
+  /* the guitar column */
+  #setupMain .stage { grid-area: stage; --g3d-maxh: 400px; position: relative; top: auto; z-index: 1; align-self: stretch; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 14px 14px 10px; box-shadow: 0 0 0 1px rgba(28,198,255,.06), 0 24px 70px -30px rgba(47,123,255,.55); }
+  #setupMain .stage > .guitar-view, #setupMain .stage > svg.guitar { margin: auto 0; flex: none; max-height: none; }
+  #setupMain .stage svg.guitar { max-height: none; }
+  #setupMain .stage .pins { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px 2px; margin: 0; padding: 10px 4px 2px; flex: none; }
+  #setupMain .stage .pins div { font-size: 9.5px; gap: 3px; }
+  /* tighter content */
+  #setupMain .bt-top { margin-bottom: 6px; }
+  #setupMain .bt-note { min-height: 0; }
+  #setupMain .bt-note:empty { display: none; }
+  #setupMain .bt-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  #setupMain .bt { padding: 8px 6px; gap: 3px; }
+  #setupMain .bt-ic svg { width: 28px; height: 28px; }
+  #setupMain .bt-name { font-size: 14px; line-height: 1.2; }
+  #setupMain .bt-pin { min-height: 22px; font-size: 13px; }
+  #setupMain .result { padding: 10px 14px; min-height: 0; margin-bottom: 10px; }
+  #setupMain .led-steps { margin: 0 0 10px; }
+  #setupMain .led-ask { margin-top: 8px; }
+  #setupMain .led-ask .btn { height: 52px; }
+  #setupMain table.sum td { padding-top: 2px; padding-bottom: 2px; }
+  #setupMain table.sum .btn.small { height: 26px; min-height: 0; padding-top: 0; padding-bottom: 0; }
+  #setupMain .step-panel > p.dim.small { margin: 8px 0 0 !important; }
+}
+@media (min-width: 901px) and (min-height: 560px) and (max-height: 860px) {
+  #setupMain .step-title { font-size: 28px; }
+  #setupMain .step-prompt { margin-bottom: 8px; }
+}
+@media (max-width: 900px) {
+  .setup-grid { grid-template-columns: 1fr; }
+  .step-list { order: 2; }
+}
+.setup-grid > * { min-width: 0; }
+.step-list li button { grid-template-columns: 18px minmax(0, 1fr) auto; }
+@media (max-width: 900px) { .step-list .v { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }

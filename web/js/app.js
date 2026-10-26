@@ -225,6 +225,11 @@ setAdv(store.get('yacc.adv') === '1', false);
   const hdr = document.querySelector('header.top');
   if (hdr) new ResizeObserver(() => document.documentElement.style.setProperty('--hdr', hdr.offsetHeight + 'px')).observe(hdr);
 }
+// the fixed unsaved-changes bar: Setup (desktop) reserves exactly its height so nothing hides behind it
+{
+  const ub = document.getElementById('saveBar');
+  if (ub) new ResizeObserver(() => document.documentElement.style.setProperty('--ubh', (ub.hidden ? 0 : ub.offsetHeight) + 'px')).observe(ub);
+}
 
 // ------------------------------------------------------------------ live guitar viewers
 const viewers = [];
@@ -809,7 +814,7 @@ function renderStep() {
        <tr><td>RGB LEDs</td><td>${pinOr(c.rgbEnabled && c.rgbPin !== PIN_NONE ? 'GP' + c.rgbPin : '', 'off')}</td>${act('rgb')}</tr>
        <tr><td>Bluetooth</td><td>${c.btEnabled ? 'on' : 'off'}</td>${act('bluetooth')}</tr>`;
     card.innerHTML = head + `<table class="sum">${rows}</table>
-      <p class="dim small" style="margin-top:14px">Try every input: the guitar above lights up as you press. Debounce and whammy feel are on the Tune page.</p>
+      <p class="dim small" style="margin-top:14px">Try every input: the guitar lights up as you press. Debounce and whammy feel are on the Tune page.</p>
       <div class="step-nav">
         <button class="btn quiet" id="bRedo">Start over</button>
         <button class="btn primary lg" id="bSave">Save to controller</button></div>`;

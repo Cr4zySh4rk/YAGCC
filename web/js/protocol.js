@@ -169,7 +169,7 @@ export const IDLE_ANIMS = [
 export const PRESS_FX = [
   { id: 0, name: 'No reaction', desc: 'Pressing changes nothing.' },
   { id: 1, name: 'Light up', desc: 'Full brightness while held, back to idle on release.' },
-  { id: 2, name: 'Flash & fade', desc: 'Flashes on press, then fades back slowly. Fade time sets how slowly.', fade: true },
+  { id: 2, name: 'Flash & fade', desc: 'Flashes on press, then fades back. Speed sets how quickly.', fade: true },
   { id: 3, name: 'Dim', desc: 'Dims while held.' },
   { id: 4, name: 'Go dark', desc: 'Goes dark while held.' },
   { id: 5, name: 'Strobe', desc: 'Flickers on and off while held. Speed sets how fast.', speed: true },

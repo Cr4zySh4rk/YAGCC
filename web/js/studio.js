@@ -142,14 +142,14 @@ function controlsHtml() {
         <div data-v7>
         <section class="lfx-grp" aria-labelledby="mFrets"><h4 id="mFrets">Frets</h4>
           ${slider('lfx-frets-level', 'zoneFrets.idleLevel', 'Idle brightness', 0, 100, 'pct')}
-          ${slider('lfx-frets-fade', 'zoneFrets.fade', 'Fade time', 1, 10, 'ms')}
+          ${slider('lfx-frets-fade', 'zoneFrets.fade', 'Fade speed', 1, 10, 'num')}
           <div id="lfxFret2Wrap">${check('lfxFret2', 'fret2Own', 'Second LED has its own colour')}<div class="lfx-swrow" id="lfxFret2Cols" role="group" aria-label="Second LED colours"></div></div>
           <div class="row lfx-quick"><button type="button" class="btn small" id="lfxPressWhite">Pressed = white</button><button type="button" class="btn small" id="lfxPressBright">Pressed = brighter</button></div>
           <h5 class="lfx-sub">Colour palettes</h5><div class="presets" id="lfxPalettes"></div>
         </section>
         <section class="lfx-grp" id="lfxMoreStrum" aria-labelledby="mStrum"><h4 id="mStrum">Strum bar</h4>
           ${slider('lfx-strum-level', 'zoneStrum.idleLevel', 'Idle brightness', 0, 100, 'pct')}
-          ${slider('lfx-strum-fade', 'zoneStrum.fade', 'Fade time', 1, 10, 'ms')}
+          ${slider('lfx-strum-fade', 'zoneStrum.fade', 'Fade speed', 1, 10, 'num')}
           ${check('lfxPerLed', 'zoneStrum.perLed', 'Each strum LED its own colour')}
           <div class="row lfx-quick"><button type="button" class="btn small" id="lfxCopy">Copy fret settings to strum bar</button></div>
         </section>
@@ -210,6 +210,7 @@ function wire() {
       if (!v7() && !OLD_OK.includes(el.dataset.b)) return;
       const c = S.ctx.state.cfg;
       setPath(c, el.dataset.b, readControl(el));
+      if (/^zone(Frets|Strum)\.speed$/.test(el.dataset.b)) setPath(c, el.dataset.b.replace('speed', 'fade'), readControl(el));
       let flip = false;
       if (/^fretPress\./.test(el.dataset.b) && c.zoneFrets.same) { c.zoneFrets.same = false; flip = true; }
       if (/^strum(Up|Down)Color$/.test(el.dataset.b) && c.zoneStrum.same) { c.zoneStrum.same = false; flip = true; }
@@ -274,9 +275,9 @@ function renderRows(c) {
 function moreChanged(c, l) {
   const r = [], z = c.zoneFrets, s = c.zoneStrum;
   if (z.idleLevel !== 25) r.push('fret idle brightness');
-  if (z.fade !== 5) r.push('fret fade time');
+  if (z.fade !== 5) r.push('fret fade speed');
   if (c.fret2Own && l.frets && l.per === 2) r.push('second LED colours');
-  if (l.strum) { if (s.idleLevel !== 25) r.push('strum idle brightness'); if (s.fade !== 5) r.push('strum fade time'); if (s.perLed) r.push('strum LED colours'); }
+  if (l.strum) { if (s.idleLevel !== 25) r.push('strum idle brightness'); if (s.fade !== 5) r.push('strum fade speed'); if (s.perLed) r.push('strum LED colours'); }
   if (c.starSpeed !== 5) r.push('star power speed');
   if (c.starZones !== 3) r.push('star power zones');
   if (c.starFlash) r.push('star flash');
@@ -303,7 +304,7 @@ function sync() {
     const z = c[zn === 'frets' ? 'zoneFrets' : 'zoneStrum'];
     const idle = IDLE_ANIMS[z.idle], press = PRESS_FX[z.press];
     $(`#lfx-${zn}-level`, root).hidden = z.idle === IDLE.OFF;
-    $(`#lfx-${zn}-speed`, root).hidden = !(idle.speed || z.press === PRESS.STROBE);
+    $(`#lfx-${zn}-speed`, root).hidden = !(idle.speed || z.press === PRESS.STROBE || press.fade);   // one Speed for the animation and the fade, like the old effect speed
     $(`#lfx-${zn}-fade`, root).hidden = !press.fade;
   }
   $('#lfx-star-speed', root).hidden = !(c.starAnim === STAR.PULSE || c.starAnim === STAR.STROBE);
