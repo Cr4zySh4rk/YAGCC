@@ -32,12 +32,12 @@ const GREY = '#7b838f', SYM = { a: '#7fb4ff', b: '#ff6f78', x: '#f3a6d6', y: '#3
 const ARROW = (d) => ({ g: 'arrow_' + d, c: '#e8e8ec', bg: '#1e1e22', s: 0.92 });
 const MODELS = {
   xbox360: {
-    file: 'pad_xbox360.glb', ratio: 1.55, trig: -15, bump: 5, tilt: 0.3, press: 0.006,
+    file: 'pad_xbox360.glb', ratio: 1.55, trig: -15, bump: 2, bumpTravel: 0.03, tilt: 0.3, press: 0.006,
     decals: { btn_a: { g: 'A', c: '#6cc04a', s: 0.64 }, btn_b: { g: 'B', c: '#e5484d', s: 0.64 }, btn_x: { g: 'X', c: '#3f8fe0', s: 0.64 }, btn_y: { g: 'Y', c: '#f0c52b', s: 0.64 } },
     dpadArrows: true,
   },
   xboxone: {
-    file: 'pad_xboxone.glb', ratio: 1.55, trig: -14, bump: 5, tilt: 0.3, press: 0.01,
+    file: 'pad_xboxone.glb', ratio: 1.55, trig: -14, bump: 2, bumpTravel: 0.035, tilt: 0.3, press: 0.01,
     decals: { btn_a: { g: 'A', c: GREY, s: 0.6 }, btn_b: { g: 'B', c: GREY, s: 0.6 }, btn_x: { g: 'X', c: GREY, s: 0.6 }, btn_y: { g: 'Y', c: GREY, s: 0.6 },
       back: { g: 'view', c: GREY, s: 0.62 }, start: { g: 'menu', c: GREY, s: 0.62 } },
     dpadArrows: true,
@@ -288,7 +288,9 @@ export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}
             glow(p, s.v, k, hov);
           } else if (role === 'bump') {
             const on = bit(pad, u.out); s.v = ease(s.v, on ? 1 : 0, k);
-            p.rotation.x = rest.r.x + (cfg.bump * Math.PI / 180) * s.v; p.position.y = rest.p.y - 0.012 * s.v;
+            p.rotation.x = rest.r.x + (cfg.bump * Math.PI / 180) * s.v;
+            if (u.dir && cfg.bumpTravel) p.position.set(rest.p.x + u.dir[0] * cfg.bumpTravel * s.v, rest.p.y + u.dir[1] * cfg.bumpTravel * s.v, rest.p.z + u.dir[2] * cfg.bumpTravel * s.v);   // press = straight into the body (node extras: dir)
+            else p.position.y = rest.p.y - 0.012 * s.v;
             glow(p, s.v, k, hov);
           } else if (role === 'trig') {
             const raw = name === 'lt' ? (pad.lt || 0) : (pad.rt || 0);   // a digital LT / RT already fills the axis

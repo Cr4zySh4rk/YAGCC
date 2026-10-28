@@ -15,3 +15,6 @@ PY
 fi
 ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -I../../src -o "$BIN" golden.c -lm
 "$BIN"
+IDLE="${TMPDIR:-/tmp}/yagcc_idle_sleep_test"
+${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$IDLE" idle_sleep_test.c ../../src/ext_config.c
+"$IDLE"

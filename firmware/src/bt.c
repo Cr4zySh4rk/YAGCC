@@ -29,6 +29,7 @@ void bt_set_usb_active(bool active) { (void)active; }
 bool bt_wiimote(void) { return false; }
 void bt_wii_report(const uint8_t *ext, uint8_t len) { (void)ext; (void)len; }
 int bt_vbus(void) { return -1; }
+void bt_power_down(void) {}
 uint16_t bt_log_read(uint8_t *out, uint16_t max) { (void)out; (void)max; return 0; }
 const uint8_t *bt_log_flash(uint16_t *len) { *len = 0; return 0; }
 void bt_log_flash_clear(void) {}
@@ -747,6 +748,25 @@ void bt_set_usb_active(bool active) {
         if (s_pairing) rgb_set_bt(RGB_BT_PAIRING);
     }
     async_context_release_lock(ctx);
+}
+
+void bt_power_down(void) {
+    if (!s_running) return;
+    async_context_t *ctx = cyw43_arch_async_context();
+    if (!s_wiimote) {
+        async_context_acquire_lock_blocking(ctx);
+        gap_advertisements_enable(0);
+        if (s_con != HCI_CON_HANDLE_INVALID) gap_disconnect(s_con);   // clean disconnect: the host sees it end, not time out
+        async_context_release_lock(ctx);
+        sleep_ms(300);
+        async_context_acquire_lock_blocking(ctx);
+        hci_power_control(HCI_POWER_OFF);
+        async_context_release_lock(ctx);
+        sleep_ms(200);
+    }
+    cyw43_arch_deinit();
+    s_running = false;
+    s_powered = false;
 }
 
 int bt_vbus(void) {

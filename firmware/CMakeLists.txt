@@ -35,7 +35,7 @@ endif()
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 44)
+set(YACC_VERSION_MINOR 45)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")
@@ -71,6 +71,7 @@ add_executable(yacc
   src/reports.c
   src/input.c
   src/bt.c
+  src/idle_sleep.c
   src/rgb.c
   src/accel.c
   src/auto_detect.c

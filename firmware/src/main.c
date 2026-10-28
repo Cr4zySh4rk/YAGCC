@@ -17,6 +17,7 @@
 #include "reports.h"
 #include "input.h"
 #include "bt.h"
+#include "idle_sleep.h"
 #include "rgb.h"
 #include "accel.h"
 #include "rumble.h"
@@ -465,6 +466,10 @@ static uint8_t pick_mode(void) {
         uint8_t m = (uint8_t)(v & 0xFF), h = (uint8_t)((v >> 8) & 0xFF);
         if (m < NUM_MODES && m != MODE_AUTO && h && h < NUM_HOSTS) { g_auto_host = h; return m; }
     }
+    if (watchdog_caused_reboot() && watchdog_hw->scratch[0] == SLEEPWAKE_MAGIC) {
+        watchdog_hw->scratch[0] = 0;          // woken from Bluetooth idle sleep by a button that may still be held: no shortcuts
+        return g_cfg.usb_mode < NUM_MODES ? g_cfg.usb_mode : MODE_XINPUT;
+    }
     if (watchdog_caused_reboot() && watchdog_hw->scratch[0] == MODESWITCH_MAGIC) {
         watchdog_hw->scratch[0] = 0;          // frets may still be held from the shortcut: use the saved mode
         g_bt_mode_switched = true;
@@ -656,6 +661,7 @@ int main(void) {
             rgb_set_charging(!mounted && !bt_host && vbus && host_lost_at && now - host_lost_at > 3000000);
         }
         rgb_task();
+        idle_sleep_task();
 
         if (setup_reboot && now >= reboot_at) {
             watchdog_hw->scratch[0] = SETUP_MAGIC;

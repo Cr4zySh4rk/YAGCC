@@ -1,4 +1,4 @@
-import {
+import { BT_SLEEP_CHOICES, btSleepByte,
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
@@ -92,6 +92,8 @@ function assignSelect(src, label) {
   return `<select data-assign="${src}" aria-label="${label} assign to">${extra}${grp('Guitar', guitar)}${pads.join('')}</select>`;
 }
 // firmware 0.44+: a 0..1 source (tilt switch, sensors) on a stick axis can rest at the centre or at the opposite end
+const btSleepOk = () => fwAtLeast(45) && !!state.cfg?.ext;
+const btSleepLabel = (v) => (v === 255 ? 'Never' : (v || 2) + (v === 1 ? ' minute' : ' minutes'));
 const rangeOk = () => fwAtLeast(44) && !!state.cfg?.ext?.range;
 const rangeFor = (src, v) => { const d = v.startsWith('o:') ? stickDir(+v.slice(2)) : null; return rangeOk() && d ? rangeHtml(RANGE_SRC[src], state.cfg.ext.range[RANGE_SRC[src]], d) : ''; };
 const assignNote = (v) => (v.startsWith('o:') || v === 'mixed') ? `<p class="dim small assign-note">Applied to all modes; fine-tune per mode on the <a href="#" data-goto-test>Test page</a>.</p>` : '';
@@ -903,6 +905,8 @@ function renderStep() {
       <div class="opt first"><div><h3>Bluetooth</h3><p class="dim">${sup ? 'To pair, hold <b>Star power</b> while plugging in or switching on (or hold <b>Star power + Plus</b> for 5 s). The frets double-blink blue until it connects, then the guitar reconnects by itself every time it is switched on. Each mode is its own Bluetooth device (\u201cYAGCC PS3 GH\u201d, \u201cYAGCC XInput\u201d, \u2026), paired once; Star power at power-on forgets only the mode it starts in.' : why}</p></div>
         <label class="switch"><input type="checkbox" id="btSw" ${state.cfg.btEnabled ? 'checked' : ''} ${sup ? '' : 'disabled'}><i></i></label></div>
       ${sup ? '<div class="notice">Over Bluetooth the guitar shows up as the same controller as over USB in its current mode (XInput and Xbox modes use the standard gamepad). Hold <b>Star power + a fret</b> for 3 s to switch modes wirelessly. Plugging it into a PC or console switches Bluetooth off until it is unplugged; a charger doesn\u2019t.</div>' : ''}
+      ${sup && btSleepOk() ? `<div class="opt"><div><h3>Sleep after</h3><p class="dim">On Bluetooth with no USB host: no button press for this long turns the guitar off; press any button to wake it. Moving the whammy bar or stick counts as a press; tilting does not.</p></div>
+        <select id="btSleepSel" aria-label="Sleep after">${BT_SLEEP_CHOICES.map((v) => `<option value="${v}" ${v === state.cfg.ext.btSleep ? 'selected' : ''}>${btSleepLabel(v)}${v === 0 ? ' (default)' : ''}</option>`).join('')}</select></div>` : sup ? '<p class="dim">Update the firmware to 0.45 or newer to make the guitar switch itself off when idle on Bluetooth.</p>' : ''}
       ${sup ? `<div class="opt adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}"><div><h3>Debug logging</h3><p class="dim">Records Bluetooth connections in the guitar's memory, kept across power cycles until cleared, to track down connection problems. Off by default; leave it off for normal use.</p></div>
         <label class="switch"><input type="checkbox" id="btLogSw" ${state.cfg.btDebugLog ? 'checked' : ''}><i></i></label></div>
       <div class="opt adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}"><div><h3>Bluetooth log</h3><p class="dim">What was recorded while debug logging was on.</p></div><span class="row"><button class="btn small" id="btLogBtn">Show</button><button class="btn small" id="btLogClear" hidden>Clear</button></span></div><pre class="btlog adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}" id="btLog" hidden></pre>
@@ -927,6 +931,7 @@ function renderStep() {
       catch (e) { toast('Could not clear the log: ' + e.message, 'bad'); }
     });
     $('#btSw').addEventListener('change', (e) => { state.cfg.btEnabled = e.target.checked; pushCfg(); });
+    $('#btSleepSel')?.addEventListener('change', (e) => { state.cfg.ext.btSleep = btSleepByte(+e.target.value); pushCfg(); });
     // saved straight away: the log is for power cycles, which an unsaved setting wouldn't survive
     $('#btLogSw')?.addEventListener('change', async (e) => {
       state.cfg.btDebugLog = e.target.checked;

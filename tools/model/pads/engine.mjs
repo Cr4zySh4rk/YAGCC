@@ -21,7 +21,7 @@ export function carve(soup, parts, opt = {}) {
         if (q.taken[t]) continue;
         const i = t * 3, p = q.p; let cx = 0, cy = 0, cz = 0;
         for (let k = 0; k < 3; k++) { cx += p.pos[p.idx[i+k]*3]; cy += p.pos[p.idx[i+k]*3+1]; cz += p.pos[p.idx[i+k]*3+2]; }
-        if (part.tri([cx/3, cy/3, cz/3], p)) tris.push(t);
+        if (part.tri([cx/3, cy/3, cz/3], p, t)) tris.push(t);
       }
       if (tris.length) picked.push([pi, tris]);
     }
@@ -70,7 +70,9 @@ export function write(soup, res, cfg, outPath, srcDoc) {
     for (const [, list] of byMat) addPrim(doc, buf, mesh, reduce(merge(list), (cfg.budget?.parts || {})[part.name] ?? cfg.budget?.part ?? 1500), part.name);
     node.setMesh(mesh);
     const lb = { min: bb.min.map((v, d) => v - piv[d]), max: bb.max.map((v, d) => v - piv[d]) };
-    node.setExtras({ ...(part.x || {}), role: part.role, size: [lb.max[0]-lb.min[0], lb.max[2]-lb.min[2]].map((v) => +v.toFixed(4)), top: [+((lb.min[0]+lb.max[0])/2).toFixed(4), +lb.max[1].toFixed(4), +((lb.min[2]+lb.max[2])/2).toFixed(4)], hgt: +(lb.max[1]-lb.min[1]).toFixed(4) });
+    // bumpers: unit direction of a press = into the body, i.e. against the mean surface normal of the part (the runtime uses it when a model sets bumpTravel)
+    let dir; if (part.role === 'bump') { const m = [0, 0, 0]; for (const q of prims) for (let i = 0; i < q.nor.length; i += 3) for (let d = 0; d < 3; d++) m[d] -= q.nor[i+d]; const l = Math.hypot(...m) || 1; dir = m.map((v) => +(v / l).toFixed(4)); }
+    node.setExtras({ ...(part.x || {}), ...(dir ? { dir } : {}), role: part.role, size: [lb.max[0]-lb.min[0], lb.max[2]-lb.min[2]].map((v) => +v.toFixed(4)), top: [+((lb.min[0]+lb.max[0])/2).toFixed(4), +lb.max[1].toFixed(4), +((lb.min[2]+lb.max[2])/2).toFixed(4)], hgt: +(lb.max[1]-lb.min[1]).toFixed(4) });
     top.addChild(node); byName.set(part.name, node);
   }
   // static: whatever is left, merged per material

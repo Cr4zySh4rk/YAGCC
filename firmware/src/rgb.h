@@ -13,6 +13,8 @@ bool rgb_active_pin(int p);
 #define RGB_BT_CONNECTED 2
 void rgb_set_bt(uint8_t state);              // pairing: blue double blink on all frets; connected: blue for 1 s
 void rgb_set_charging(bool on);             // powered but no USB host (e.g. a charger): slow orange -> green chase
+void rgb_set_off(bool off);                 // fade all LEDs to black (Bluetooth idle sleep); false = back to normal
+bool rgb_is_dark(void);                     // the fade has finished and the black frame has been sent
 void rgb_set_star_power(bool on);           // game says star power / overdrive is active                 // true while the PIO drives this GPIO
 void rgb_set_whammy(uint16_t w);            // 0..32767, the bar and tilt-whammy combined
 void rgb_set_player_star(bool pressed);     // the player's star power button / tilt is pressed (LEDF_STAR_FLASH)

@@ -21,6 +21,8 @@ bool bt_running(void);
 void bt_send_report(const uint8_t *report, uint16_t len);
 // A USB host is (not) using the guitar: Bluetooth drops its host and stops advertising while one is (bonds kept)
 void bt_set_usb_active(bool active);
+// Idle sleep: drop the host, stop advertising and power the radio down (the chip is restarted to bring it back)
+void bt_power_down(void);
 // Wii Remote emulation (config option XOPT_WIIMOTE, Bluetooth Classic): the guitar extension's 6 data bytes
 bool bt_wiimote(void);
 void bt_wii_report(const uint8_t *ext, uint8_t len);

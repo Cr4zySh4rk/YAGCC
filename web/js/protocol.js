@@ -603,9 +603,13 @@ export function defaultExt() {
     cal: [0, 2048, 4095, 0, 2048, 4095],
     curve: [0, 0, 0],   // response curve -100..100 of the whammy, tilt sensor 1, tilt sensor 2 (firmware 0.43+, ext bytes 320..322)
     range: [0, 0, 0, 0],   // stick range of the whammy, tilt switch, sensor 1, sensor 2 (firmware 0.44+, ext bytes 323..326): 0 from centre, 1 full sweep
+    btSleep: 0,   // Bluetooth idle sleep (firmware 0.45+, ext byte 327): 0 = 2 minutes (default), 1..60 minutes, 255 = never
     map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
   };
 }
+export const BT_SLEEP_NEVER = 255;
+export const BT_SLEEP_CHOICES = [1, 0, 5, 10, 15, 30, 60, BT_SLEEP_NEVER];   // 0 is the 2 minute default
+export const btSleepByte = (v) => (v === BT_SLEEP_NEVER ? BT_SLEEP_NEVER : Number.isInteger(v) && v >= 1 && v <= 60 && v !== 2 ? v : 0);
 export function parseExt(dv) {
   if (dv.byteLength < EXT_SIZE) throw new Error('Short extension page');
   if (dv.getUint32(0, true) !== EXT_MAGIC) throw new Error('Bad extension magic');
@@ -619,6 +623,7 @@ export function parseExt(dv) {
     map: Array.from({ length: NUM_MODE_ROWS }, (_, m) => Array.from({ length: MAP_ROW }, (_, s) => dv.getUint8(32 + m * MAP_ROW + s))),
     curve: [0, 1, 2].map((i) => Math.max(-100, Math.min(100, dv.getInt8(320 + i)))),
     range: [0, 1, 2, 3].map((i) => (dv.getUint8(323 + i) === 1 ? 1 : 0)),
+    btSleep: btSleepByte(dv.getUint8(327)),
   };
 }
 export function serializeExt(e) {
@@ -635,6 +640,7 @@ export function serializeExt(e) {
   }
   (e.curve || [0, 0, 0]).slice(0, 3).forEach((c, i) => dv.setInt8(320 + i, Math.max(-100, Math.min(100, Math.round(c) | 0))));
   (e.range || [0, 0, 0, 0]).slice(0, 4).forEach((r, i) => dv.setUint8(323 + i, r === 1 ? 1 : 0));
+  dv.setUint8(327, btSleepByte(e.btSleep));
   dv.setUint32(508, crc32(new Uint8Array(buf, 0, 508)), true);
   return buf;
 }

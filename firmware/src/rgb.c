@@ -27,6 +27,8 @@ static volatile bool star_power;
 static volatile uint16_t whammy_in;        // 0..32767
 static volatile bool pstar_in;             // the player's star power button / tilt
 static volatile bool charging;
+static volatile bool force_off;            // Bluetooth idle sleep: fade everything out
+static uint32_t off_t0;
 static volatile uint8_t bt_led;
 static volatile uint32_t bt_connected_at;
 
@@ -44,6 +46,8 @@ static bool fn_in(int f) { return input_func(f) || (f < 5 ? (pv() >> f) & 1 : f 
 void rgb_set_whammy(uint16_t w) { whammy_in = w; }
 void rgb_set_player_star(bool pressed) { pstar_in = pressed; }
 void rgb_set_charging(bool on) { charging = on; }
+void rgb_set_off(bool off) { if (off && !force_off) off_t0 = to_ms_since_boot(get_absolute_time()); force_off = off; }
+bool rgb_is_dark(void) { return !force_off || to_ms_since_boot(get_absolute_time()) - off_t0 >= 1300; }
 void rgb_set_bt(uint8_t state) {
     if (state == RGB_BT_CONNECTED && bt_led != RGB_BT_CONNECTED) bt_connected_at = time_us_32() | 1;
     bt_led = state;
@@ -525,6 +529,12 @@ static void render(const light_t *L, int n, px_t *px, uint8_t bright, uint32_t t
         if (idle > lim) slp = idle - lim >= 2000 ? 0 : 255 - (idle - lim) * 255 / 2000;
     }
 
+    if (force_off) {   // Bluetooth idle sleep: 1 s fade to black over whatever else is going on
+        uint32_t a = to_ms_since_boot(get_absolute_time()) - off_t0;
+        uint32_t f = a >= 1000 ? 0 : 255 - a * 255 / 1000;
+        if (f < slp) slp = f;
+    }
+
     update_states(L, n, t, star);
     for (int i = 0; i < n; i++) {
         const light_t *l = &L[i];
@@ -578,7 +588,9 @@ void rgb_task(void) {
     bool testing = test_led >= 0 && (int32_t)(now - test_until) < 0;
     bool booting = (g_cfg.flags & CFG_FLAG_RGB_BOOTFLASH) && boot_fret >= 0 && (uint32_t)(now - boot_t0) < BOOT_FLASH_US;
 
-    if (testing) {
+    if (force_off && to_ms_since_boot(get_absolute_time()) - off_t0 >= 1000) {
+        // Bluetooth idle sleep: black (the pixels are already zero)
+    } else if (testing) {
         if (test_led < MAX_LEDS) { px[test_led] = pack(255, 255, 255, 255, bright); if (test_led + 1 > chain) chain = test_led + 1; }
     } else if (booting) {
         // the fret that picks the running mode flashes; with no fret LEDs the strum LEDs flash in its colour
