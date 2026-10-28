@@ -934,6 +934,15 @@ body.has-savebar #toasts { bottom: 90px; }
 .gp-svg.armed .gp-part:not(.na) { cursor: pointer; }
 .gp-svg.armed .gp-part:not(.na):hover .gp-shape, .gp-part:focus-visible .gp-shape { stroke: var(--cyan); stroke-width: 3.5; }
 .gp-svg.armed .gp-part.wedge:not(.na):hover .gp-shape, .gp-svg.armed .gp-part.click:not(.na):hover .gp-shape { fill: rgba(28, 198, 255, .28); }
+/* 3D controller (gamepad3d.js): the drawing stays in the page, visually hidden, as the keyboard layer; tabbing into the card shows it again */
+.gp-card.is-3d { position: relative; }
+.gp-3d { position: relative; margin: 2px -4px 0; border-radius: 14px; background: radial-gradient(ellipse 62% 56% at 50% 46%, color-mix(in srgb, var(--text) 8%, transparent), transparent 74%); }
+.gp-3d[hidden] { display: none; }
+canvas.pad3d { display: block; width: 100%; cursor: grab; touch-action: pan-y; animation: g3d-in .5s ease-out; }
+canvas.pad3d.grabbing { cursor: grabbing; }
+.gp-card.is-3d .gp-3d::after { content: "Drag to turn \00b7  double-click to reset"; position: absolute; right: 8px; bottom: 4px; font: 500 11px var(--sans); color: var(--faint); pointer-events: none; }
+.gp-svg.gp-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.gp-card.is-3d:focus-within .gp-svg.gp-sr { position: static; width: 100%; height: auto; margin: 8px auto 0; overflow: visible; clip: auto; clip-path: none; }
 .gp-legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 22px; margin-top: 8px; font-size: 13px; color: var(--dim); }
 .gp-legend span { display: inline-flex; align-items: center; gap: 8px; }
 .gp-key { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); display: inline-block; }

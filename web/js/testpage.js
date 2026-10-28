@@ -4,7 +4,7 @@ import {
   SOURCES, GUITAR_PART, DEFAULT_OUT, TEST_MODES, testMode, isAnalogSrc, outName, outLabel, outFull, guitarMeaning,
   OUT_GROUPS, outputSupported, computePad,
 } from './mapping.js?v=dev';
-import { createPad } from './gamepad.js?v=dev';
+import { createPadAuto as createPad } from './gamepad3d.js?v=dev';
 import { responseHtml, wireResponse, moveDots } from './response.js?v=dev';
 import { CURVE_SRC } from './mapping.js?v=dev';
 import { ATILT_SOURCES } from './protocol.js?v=dev';

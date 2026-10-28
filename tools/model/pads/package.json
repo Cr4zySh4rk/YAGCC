@@ -1,0 +1,13 @@
+{
+  "name": "yagcc-pad-models",
+  "private": true,
+  "type": "module",
+  "description": "Build scripts for web/models/pad_*.glb (see ../README.md)",
+  "dependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "meshoptimizer": "^1.2.0",
+    "sharp": "^0.34.0"
+  }
+}
