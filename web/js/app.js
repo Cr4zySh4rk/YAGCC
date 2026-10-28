@@ -1149,7 +1149,7 @@ function tickStep(s) {
     }
     const p = stepCtx.cal.feed(s);
     $('#wBar').style.width = (p.fraction * 100).toFixed(0) + '%';
-    $('#wLabel').textContent = p.channel < 0 ? 'Waiting for the bar to move' : `Sweeps: ${Math.min(2, Math.floor(p.switches / 2))} of 2, swing ${p.range} counts` + (p.range && p.range < 200 ? '. That is very small; a healthy whammy swings several hundred. Check that the outer legs of the pot go to 3V3(OUT) and GND.' : '');
+    $('#wLabel').textContent = p.channel < 0 ? 'Waiting for the bar to move' : `Sweeps: ${Math.min(2, Math.floor(p.switches / 2))} of 2, swing ${p.range} counts`;
     if (p.done) {
       const r = stepCtx.cal.result();
       Object.assign(c, { whammyCh: r.channel, whammyMin: r.min, whammyMax: r.max, whammyInvert: r.invert });
