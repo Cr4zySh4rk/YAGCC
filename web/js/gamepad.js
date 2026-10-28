@@ -178,7 +178,7 @@ export function createPad(onPick) {
         if (+o === 7 || +o === 8) continue;
         g.classList.toggle('on', !!(pad.buttons & (1 << (o - 1))));
       }
-      const lt = Math.max(pad.lt || 0, pad.buttons & (1 << 6) ? 1 : 0), rt = Math.max(pad.rt || 0, pad.buttons & (1 << 7) ? 1 : 0);
+      const lt = pad.lt || 0, rt = pad.rt || 0;   // a digital LT / RT already fills the axis
       for (const [side, v] of [['L', lt], ['R', rt]]) {
         const r = parts.find((p) => p.target.trigger === side), f = Math.max(0, Math.min(1, v)), h = r.h * f;
         r.fillEl.setAttribute('y', (r.y0 + r.h - h).toFixed(1));

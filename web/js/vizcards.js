@@ -137,7 +137,7 @@ export function createViz(ctx) {
     update(pad, info) {
       stick('L', pad.lx || 0, pad.ly || 0); stick('R', pad.rx || 0, pad.ry || 0);
       for (const [k, v0, bit] of [['L', pad.lt, 6], ['R', pad.rt, 7]]) {
-        const v = Math.max(0, Math.min(1, Math.max(v0 || 0, pad.buttons & (1 << bit) ? 1 : 0)));
+        const v = Math.max(0, Math.min(1, v0 || 0));   // the axis already reads full for a digital LT / RT; the button bit is also set past half an analog pull, so it must not force 1
         const n = root.querySelector(`.vz-trig[data-side="${k}"]`);
         n.querySelector('[data-fill]').style.height = (v * 100).toFixed(1) + '%';
         n.querySelector('[data-v]').textContent = v.toFixed(2);

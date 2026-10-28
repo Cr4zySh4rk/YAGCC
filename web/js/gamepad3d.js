@@ -291,7 +291,7 @@ export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}
             p.rotation.x = rest.r.x + (cfg.bump * Math.PI / 180) * s.v; p.position.y = rest.p.y - 0.012 * s.v;
             glow(p, s.v, k, hov);
           } else if (role === 'trig') {
-            const raw = name === 'lt' ? Math.max(pad.lt || 0, bit(pad, 7) ? 1 : 0) : Math.max(pad.rt || 0, bit(pad, 8) ? 1 : 0);
+            const raw = name === 'lt' ? (pad.lt || 0) : (pad.rt || 0);   // a digital LT / RT already fills the axis
             s.v = ease(s.v, Math.max(0, Math.min(1, raw)), k);
             p.rotation.x = rest.r.x + (cfg.trig * Math.PI / 180) * s.v;
             glow(p, s.v > 0.02 ? 0.25 + 0.75 * s.v : 0, k, hov);
