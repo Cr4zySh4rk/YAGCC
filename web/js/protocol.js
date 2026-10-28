@@ -4,7 +4,7 @@ export const PIDS = [0x0001, 0x0002, 0x0003, 0x0004];   // 4 = Auto mode before 
 
 export const VREQ = {
   INFO: 0x30, STATUS: 0x31, GETCFG: 0x32, SETCFG: 0x33,
-  SAVE: 0x34, DEFAULTS: 0x35, REBOOT: 0x36, SETMODE: 0x37, LEDTEST: 0x38, BTLOG: 0x39, BTLOGFL: 0x3A, RUMBLE: 0x3B, LEDPREVIEW: 0x3C,
+  SAVE: 0x34, DEFAULTS: 0x35, REBOOT: 0x36, SETMODE: 0x37, LEDTEST: 0x38, BTLOG: 0x39, BTLOGFL: 0x3A, RUMBLE: 0x3B, LEDPREVIEW: 0x3C, GETEXT: 0x3D, SETEXT: 0x3E,
 };
 
 export const FUNCS = ['green', 'red', 'yellow', 'blue', 'orange', 'strumUp', 'strumDown', 'star', 'plus'];
@@ -556,8 +556,20 @@ export function parseStatus(dv) {
   // firmware 0.36+: the second accelerometer's type, then its X, Y, Z (0xffff = none)
   const accel2Type = dv.byteLength > o + 14 ? dv.getUint8(o + 14) : 0;
   const accel2Raw = dv.byteLength >= o + 21 ? [0, 1, 2].map((i) => dv.getUint16(o + 15 + i * 2, true)) : [0xffff, 0xffff, 0xffff];
-  return { t: performance.now(), mask, adc, counts, btState: flags & 3, saveOk: !!(flags & 4), savePending: !!(flags & 8), accelType, accelRaw, ports, accel2Type, accel2Raw };
+  const out = { t: performance.now(), mask, adc, counts, btState: flags & 3, saveOk: !!(flags & 4), savePending: !!(flags & 8), accelType, accelRaw, ports, accel2Type, accel2Raw };
+  // firmware 0.42+ (96 bytes): the running mode's map row, the generic pad it packed, the calibrated stick
+  if (dv.byteLength >= STATUS_LEN_42) {
+    const row = dv.getUint8(55), s16 = (o) => dv.getInt16(o, true);
+    Object.assign(out, {
+      modeRow: row === 0xff ? -1 : row,
+      pad: { buttons: dv.getUint32(56, true) & 0x1ffff, lx: s16(60) / 32767, ly: s16(62) / 32767, rx: s16(64) / 32767, ry: s16(66) / 32767, lt: s16(68) / 32767, rt: s16(70) / 32767 },
+      stick: [s16(72) / 32767, s16(74) / 32767],
+      stickOn: !!(dv.getUint8(76) & 1), dpadOn: !!(dv.getUint8(76) & 2),
+    });
+  }
+  return out;
 }
+export const STATUS_LEN_42 = 96;
 
 // Same maths as firmware input_whammy(): returns 0..1
 export function whammyValue(raw, cfg) {
@@ -569,3 +581,54 @@ export function whammyValue(raw, cfg) {
 }
 
 export const isPressed = (status, pin) => pin !== PIN_NONE && pin < NUM_DIGITAL_PINS && !((status.mask >>> pin) & 1);
+
+
+// ---------------------------------------------------------------- extension page (firmware 0.42+, VREQ 0x3D / 0x3E)
+// 512 bytes: optional pins, analog stick, and the per-mode input map (12 modes x 24 sources). See map_spec.md.
+export const EXT_MIN_MINOR = 42;
+export const EXT_SIZE = 512;
+export const EXT_MAGIC = 0x54584559;   // "YEXT"
+export const NUM_MODE_ROWS = 12;
+export const NUM_SRC = 22;
+export const MAP_ROW = 24;
+export const MAP_DEFAULT = 0xff;
+export const MAP_NONE = 0;
+// extPins order: D-pad up, down, left, right, Select, Home, stick click
+export const EXT_PIN_NAMES = ['D-pad up', 'D-pad down', 'D-pad left', 'D-pad right', 'Select', 'Home', 'Stick click'];
+export const STICK_INVERT_X = 1, STICK_INVERT_Y = 2, STICK_SWAP = 4;
+export const emptyMapRow = () => Array(MAP_ROW).fill(MAP_DEFAULT);
+export function defaultExt() {
+  return {
+    extPins: Array(7).fill(PIN_NONE), stickCh: [PIN_NONE, PIN_NONE], stickFlags: 0, deadzone: 10,
+    cal: [0, 2048, 4095, 0, 2048, 4095],
+    map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
+  };
+}
+export function parseExt(dv) {
+  if (dv.byteLength < EXT_SIZE) throw new Error('Short extension page');
+  if (dv.getUint32(0, true) !== EXT_MAGIC) throw new Error('Bad extension magic');
+  const u8 = new Uint8Array(dv.buffer, dv.byteOffset, EXT_SIZE);
+  if (dv.getUint32(508, true) !== crc32(u8.subarray(0, 508))) throw new Error('Bad extension checksum');
+  return {
+    extPins: [0, 1, 2, 3, 4, 5, 6].map((i) => dv.getUint8(8 + i)),
+    stickCh: [dv.getUint8(16), dv.getUint8(17)],
+    stickFlags: dv.getUint8(18) & 7, deadzone: Math.min(50, dv.getUint8(19)),
+    cal: [0, 1, 2, 3, 4, 5].map((i) => dv.getUint16(20 + i * 2, true)),
+    map: Array.from({ length: NUM_MODE_ROWS }, (_, m) => Array.from({ length: MAP_ROW }, (_, s) => dv.getUint8(32 + m * MAP_ROW + s))),
+  };
+}
+export function serializeExt(e) {
+  const buf = new ArrayBuffer(EXT_SIZE), dv = new DataView(buf);
+  dv.setUint32(0, EXT_MAGIC, true); dv.setUint8(4, 1);
+  (e.extPins || []).slice(0, 7).forEach((p, i) => dv.setUint8(8 + i, p));
+  dv.setUint8(15, 0xff);
+  dv.setUint8(16, e.stickCh[0]); dv.setUint8(17, e.stickCh[1]);
+  dv.setUint8(18, e.stickFlags & 7); dv.setUint8(19, Math.max(0, Math.min(50, e.deadzone | 0)));
+  e.cal.forEach((v, i) => dv.setUint16(20 + i * 2, Math.max(0, Math.min(4095, v | 0)), true));
+  for (let m = 0; m < NUM_MODE_ROWS; m++) {
+    const row = e.map[m] || emptyMapRow();
+    for (let s = 0; s < MAP_ROW; s++) dv.setUint8(32 + m * MAP_ROW + s, s < NUM_SRC ? row[s] : 0xff);
+  }
+  dv.setUint32(508, crc32(new Uint8Array(buf, 0, 508)), true);
+  return buf;
+}

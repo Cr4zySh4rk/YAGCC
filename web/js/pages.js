@@ -104,7 +104,7 @@ export const HARDWARE = [
   { group: 'neck', name: 'PS2 guitars (USB adapter)', bus: 'PS2 controller bus', status: 'planned', points: ['Plug a PS2 Guitar Hero guitar in as-is'] },
   // LEDs
   { group: 'led', name: 'Strum bar LEDs', bus: 'Same chain as the fret LEDs', status: 'ok',
-    points: ['Up to 8 (one per side, the four corners, or four along each side), before or after the fret LEDs', 'Or strum LEDs only, with no fret LEDs', 'Own colour; each follows strum up, down or both'] },
+    points: ['1 to 8, in one row under the strum bar or split between the up and down sides, before or after the fret LEDs', 'Or strum LEDs only, with no fret LEDs', 'Own colour; each follows strum up, down or both'] },
   { group: 'led', name: 'WS2812B / NeoPixel', bus: '1 GPIO (PIO)', status: 'ok',
     points: ['5 LEDs, one per fret, any order (LED order wizard)', 'Colours, presets, 7 effects, brightness 0–255', 'Selectable colour order (GRB, RGB, …)'] },
   { group: 'led', name: 'SK6812 RGBW', bus: '1 GPIO (PIO)', status: 'exp', points: ['White channel used for the shared white part of each colour'] },

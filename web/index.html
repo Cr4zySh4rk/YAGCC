@@ -59,6 +59,7 @@
       <button data-view="setup" data-needs-dev>Setup</button>
       <button data-view="lights" data-needs-dev>Lights</button>
       <button data-view="modes" data-needs-dev>Modes</button>
+      <button data-view="test" data-needs-dev>Test</button>
       <button data-view="tune" data-needs-dev>Tune</button>
       <div class="nav-help">
         <button type="button" id="helpBtn" class="help-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="helpMenu">Help<svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
@@ -342,6 +343,13 @@
         <div id="portsBody"></div>
       </div>
     </div>
+  </section>
+
+  <!-- ================= TEST ================= -->
+  <section class="view" id="view-test">
+    <div class="page-head"><h1 class="display">Test</h1><p class="dim">Press things on the guitar and see what a console would receive. Pick a mode, and change what any input does in it.</p></div>
+    <div id="testGate" class="gate small-gate"><p class="dim">Connect a controller to test it.</p><button class="btn primary" data-connect>Connect controller</button></div>
+    <div id="testMain" style="display:none"><div id="testBody"></div></div>
   </section>
 
   <!-- ================= HARDWARE ================= -->

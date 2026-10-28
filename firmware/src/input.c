@@ -8,6 +8,8 @@
 #include "rumble.h"
 #include "ps2_out.h"
 #include "wii_out.h"
+#include "ext_config.h"
+#include "padmap.h"
 
 // ---- detection grade pin state (fixed debounce, used for pin discovery) ----
 #define DETECT_DEBOUNCE_US 3000
@@ -46,7 +48,10 @@ static uint32_t last_poll_us;
 static uint16_t tilt_mask;        // F_* functions currently pressed by a tilt input (never F_STAR, see below)
 static bool tilt_star_on;         // a tilt input acting as star power is active (the classic tilt path)
 static bool atilt_on[NUM_ATILT];  // sensor presses with hysteresis
+static int8_t tilt_fn[1 + NUM_ATILT];   // what the Tune page has each tilt input pressing right now (F_*), -1 none
 static void tilt_update(void);
+
+_Static_assert(NUM_SLOTS == SLOT_EXT + NUM_EXT_PINS, "extension input slots");
 
 static inline bool elapsed(uint32_t now, uint32_t then, uint32_t span) {
     return (uint32_t)(now - then) >= span;
@@ -81,7 +86,7 @@ static inline bool deb_step(deb_t *d, bool raw, uint32_t now, uint32_t lockout, 
 }
 
 static bool raw_for_slot(uint32_t all, int s) {
-    uint8_t pin = (s == SLOT_TILT) ? g_cfg.tilt_pin : g_cfg.pins[s];
+    uint8_t pin = (s == SLOT_TILT) ? g_cfg.tilt_pin : s >= SLOT_EXT ? g_ext.pin_ext[s - SLOT_EXT] : g_cfg.pins[s];
     if (pin >= NUM_DIGITAL_PINS || accel_pin(pin) || rumble_pin_active(pin) || ps2_out_pin(pin) || wii_out_pin(pin)) return false;
     bool low = !((all >> pin) & 1);   // active low (to GND through the switch)
     // a normally closed tilt switch is closed at rest and opens as the neck goes up
@@ -185,8 +190,10 @@ bool atilt_press(bool was_on, int32_t v, uint8_t threshold_pct) {
 static void tilt_update(void) {
     uint16_t m = 0;
     bool star = false;
-    if ((g_cfg.flags & CFG_FLAG_TILT_ENABLED) && g_cfg.tilt_pin != PIN_NONE && slot[SLOT_TILT].out) {
+    tilt_fn[0] = tilt_fn[1] = tilt_fn[2] = -1;
+    if (input_tilt_switch()) {
         int f = tilt_sw_func(&g_cfg);
+        tilt_fn[0] = (int8_t)f;
         if (f == F_STAR) star = true; else m |= (uint16_t)(1u << f);
     }
     for (int i = 0; i < NUM_ATILT; i++) {
@@ -194,10 +201,43 @@ static void tilt_update(void) {
         if (f < 0) { atilt_on[i] = false; continue; }          // feeds the whammy (main.c)
         atilt_on[i] = atilt_press(atilt_on[i], input_atilt(i), g_cfg.atilt[i].threshold);
         if (!atilt_on[i]) continue;
+        tilt_fn[1 + i] = (int8_t)f;
         if (f == F_STAR) star = true; else m |= (uint16_t)(1u << f);
     }
     tilt_mask = m;
     tilt_star_on = star;
+}
+
+bool input_tilt_switch(void) {
+    return (g_cfg.flags & CFG_FLAG_TILT_ENABLED) && g_cfg.tilt_pin != PIN_NONE && slot[SLOT_TILT].out;
+}
+int input_tilt_fn(int i) { return i >= 0 && i <= NUM_ATILT ? tilt_fn[i] : -1; }
+
+int32_t input_tilt_whammy(int i) {
+    if (i < 0 || i >= NUM_ATILT || g_cfg.atilt[i].target != ATILT_WHAMMY) return 0;
+    int32_t v = input_atilt(i);
+    if (v < 0) return 0;
+    return v < (32767 * (int32_t)g_cfg.whammy_deadzone) / 100 ? 0 : v;
+}
+
+bool input_func_phys(int f) { return f >= 0 && f < NUM_FUNCS && slot[f].out; }
+bool input_ext(int k) { return k >= 0 && k < NUM_EXT_PINS && slot[SLOT_EXT + k].out; }
+bool input_ext_pin(int gpio) {
+    if (gpio < 0) return false;
+    for (int k = 0; k < NUM_EXT_PINS; k++) if (g_ext.pin_ext[k] == gpio) return true;
+    return false;
+}
+
+bool input_stick(int16_t *x, int16_t *y) {
+    const uint8_t cx = g_ext.stick_x_ch, cy = g_ext.stick_y_ch;
+    int16_t vx = 0, vy = 0;
+    if (cx < NUM_ADC_CH) vx = padmap_cal_axis(adc_val[cx], g_ext.x_min, g_ext.x_mid, g_ext.x_max, g_ext.stick_deadzone);
+    if (cy < NUM_ADC_CH) vy = padmap_cal_axis(adc_val[cy], g_ext.y_min, g_ext.y_mid, g_ext.y_max, g_ext.stick_deadzone);
+    if (g_ext.stick_flags & STICK_SWAP) { int16_t t = vx; vx = vy; vy = t; }
+    if (g_ext.stick_flags & STICK_INVERT_X) vx = (int16_t)-vx;
+    if (g_ext.stick_flags & STICK_INVERT_Y) vy = (int16_t)-vy;
+    *x = vx; *y = vy;
+    return cx < NUM_ADC_CH || cy < NUM_ADC_CH;
 }
 
 uint16_t input_adc(uint8_t ch) { return ch < NUM_ADC_CH ? adc_val[ch] : 0; }

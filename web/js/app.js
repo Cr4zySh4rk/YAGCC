@@ -9,6 +9,8 @@ import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
 import { createGuitar } from './guitar.js?v=dev';
 import { renderHardware, renderCompat } from './pages.js?v=dev';
 import { buildStudio, syncStudio } from './studio.js?v=dev';
+import { createTestPage } from './testpage.js?v=dev';
+import { createExtras } from './extras.js?v=dev';
 import { SECTIONS, makeBackup, backupFileName, readBackup, applyBackup, download } from './backup.js?v=dev';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -86,6 +88,7 @@ function showView(v) {
     if (v === 'tune') buildTune();
     if (v === 'lights') buildLights();
     if (v === 'modes') buildModes();
+    if (v === 'test' && fwAtLeast(42)) testPage.refresh();
     advRefresh();
   }
 }
@@ -120,7 +123,9 @@ const funcName = (i) => FUNC_LABEL[FUNCS[i]];
 const hostPins = (c = state.cfg) => (c.hostPin !== undefined && c.hostPin !== PIN_NONE ? [c.hostPin, c.hostPin + 1] : []);
 const portPins = (c = state.cfg) => [...(c.ps2Pins || []), c.wiiSda ?? PIN_NONE, c.wiiScl ?? PIN_NONE].filter((p) => p !== PIN_NONE);
 const accelPins = (c = state.cfg) => (c.accelSda !== undefined && c.accelSda !== PIN_NONE ? [c.accelSda, c.accelScl] : []);
-const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(), ...accelPins(), state.cfg.rumblePin ?? PIN_NONE, ...portPins()].filter((p) => p !== PIN_NONE);
+// firmware 0.42+: the optional D-pad / Select / Home / stick click pins live in cfg.ext
+const extPinList = (c = state.cfg) => (c?.ext ? c.ext.extPins.filter((p) => p !== PIN_NONE) : []);
+const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(), ...accelPins(), state.cfg.rumblePin ?? PIN_NONE, ...portPins(), ...extPinList()].filter((p) => p !== PIN_NONE);
 const isConfigured = (cfg) => cfg.pins.some((p) => p !== PIN_NONE);
 
 let pushTimer = 0;
@@ -229,13 +234,14 @@ function advRefresh() {
 $('#advSw').addEventListener('change', (e) => {
   setAdv(e.target.checked);
   if (state.dev && state.cfg && state.view === 'lights') buildLights();   // refreshes the troubleshooting advice
-  if (state.dev && state.cfg && state.view === 'setup' && STEPS[state.step].kind === 'bluetooth') renderStep();
+  if (state.dev && state.cfg && state.view === 'setup' && ['bluetooth', 'extras'].includes(STEPS[state.step].kind)) renderStep();
 });
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-adv-on]');
   if (!b) return;
   setAdv(true);
   if (state.dev && state.cfg && state.view === 'lights') buildLights();
+  if (state.dev && state.cfg && state.view === 'setup' && STEPS[state.step].kind === 'extras') renderStep();
   toast('Advanced settings are on', 'ok');
 });
 setAdv(store.get('yacc.adv') === '1', false);
@@ -288,6 +294,55 @@ function updateViewer(v, s) {
     });
   }
 }
+
+// ------------------------------------------------------------------ Test page and extra controls (firmware 0.42+)
+// The live value of every source (index = position in a mode's map row) for the Test page's mapping engine.
+// A tilt input whose map entry is "mode default" keeps today's behaviour (presses its Tune page function, or feeds the
+// whammy); one with its own entry becomes a source of its own.
+const sensorOn = [false, false];
+function liveSources(s, row, mode) {
+  const c = state.cfg, e = c.ext, v = Array(22).fill(0), tp = [false, false];
+  let tiltStar = false;
+  FUNCS.forEach((_, i) => { v[i] = isPressed(s, c.pins[i]) ? 1 : 0; });
+  v[9] = c.whammyCh !== PIN_NONE ? whammyValue(s.adc[c.whammyCh], c) : 0;
+  for (let i = 13; i <= 18; i++) v[i] = isPressed(s, e.extPins[i - 13]) ? 1 : 0;
+  v[21] = isPressed(s, e.extPins[6]) ? 1 : 0;
+  if (s.stick) { v[19] = s.stick[0]; v[20] = s.stick[1]; }
+  const press = (f) => { if (f === FUNC_STAR) { v[7] = 1; tiltStar = true; } else v[f] = 1; };
+  const sw = tiltSwitchActive(s, c);
+  if (row[10] === 0xff) { if (sw) press(tiltFuncOf(0, c)); } else v[10] = sw ? 1 : 0;
+  (c.atilt || []).forEach((t, i) => {
+    const val = tiltValue(tiltSourceRaw(s, t.src), t);
+    if (val == null) { sensorOn[i] = false; return; }
+    const on = t.threshold / 100;
+    sensorOn[i] = sensorOn[i] ? val > on - 0.04 : val >= on;
+    if (row[11 + i] === 0xff) {
+      if (t.target === 0) v[9] = Math.max(v[9], val < c.whammyDeadzone / 100 ? 0 : val);
+      else if (sensorOn[i]) press(tiltFuncOf(1 + i, c));
+    } else { v[11 + i] = val; tp[i] = sensorOn[i]; }
+  });
+  return { v, tp, tiltStar };
+}
+const testPage = createTestPage({ state, $, toast, pushCfg: () => pushCfg(), makeViewer: (...a) => makeViewer(...a), liveSources });
+// ADC channels the stick can't use: the whammy's and any analog tilt sensor's
+const whammyChannels = () => {
+  const c = state.cfg, b = new Set();
+  if (c.whammyCh !== PIN_NONE) b.add(c.whammyCh);
+  (c.atilt || []).forEach((t) => { if (t.src < 3) b.add(t.src); });
+  return b;
+};
+const extras = createExtras({ state, $, toast, pushCfg: () => pushCfg(), assignedPins: () => assignedPins(), whammyChannels, advOn: () => advOn(), rerender: () => renderStep() });
+const EXTRAS_STEP = { kind: 'extras', title: 'More controls', prompt: 'Optional: a D-pad, Select and Home buttons, or an analog stick. Skip this if your guitar has none.', focus: [] };
+function syncSteps() {
+  const has = STEPS.some((st) => st.kind === 'extras'), want = fwAtLeast(42);
+  if (want && !has) STEPS.splice(STEPS.findIndex((st) => st.kind === 'review'), 0, EXTRAS_STEP);
+  else if (!want && has) STEPS.splice(STEPS.findIndex((st) => st.kind === 'extras'), 1);
+}
+const extrasSummary = (c) => {
+  if (!c.ext) return '';
+  const n = c.ext.extPins.filter((p) => p !== PIN_NONE).length, st = c.ext.stickCh.some((ch) => ch !== PIN_NONE);
+  return [n ? `${n} pin${n > 1 ? 's' : ''}` : '', st ? 'stick' : ''].filter(Boolean).join(' · ');
+};
 
 // ------------------------------------------------------------------ firmware updates
 // web/firmware.json holds the version the site ships (CI writes it from firmware/CMakeLists.txt)
@@ -372,6 +427,10 @@ function updatePill() {
   $('#lightsMain').style.display = on ? '' : 'none';
   $('#modesGate').style.display = on ? 'none' : '';
   $('#modesMain').style.display = on ? '' : 'none';
+  $('#testGate').style.display = on ? 'none' : '';
+  $('#testMain').style.display = on ? '' : 'none';
+  const tn = document.querySelector('#nav [data-view="test"]');
+  if (tn) tn.hidden = !!(on && !fwAtLeast(42));   // the Test page needs firmware 0.42
 }
 
 async function connect(device, { navigate = false } = {}) {
@@ -385,6 +444,7 @@ async function connect(device, { navigate = false } = {}) {
     if (lastErr) throw lastErr;
     state.cfg = await device.getConfig();
     state.dev = device;
+    syncSteps();
     state.step = isConfigured(state.cfg) ? STEPS.length - 1 : 0;
     device.addEventListener('status', (e) => onStatus(e.detail));
     device.addEventListener('lost', onLost);
@@ -406,7 +466,7 @@ async function connect(device, { navigate = false } = {}) {
 }
 
 function onLost() {
-  state.dev = null; state.info = null; state.fwOutdated = false;
+  state.dev = null; state.info = null; state.fwOutdated = false; syncSteps();
   saved = null; dirty = false; saving = false; updateBar();
   $('#fwBanner').hidden = true;
   setTimeout(scanHid, 1500);
@@ -435,6 +495,7 @@ function onStatus(s) {
   if (state.view === 'lights') updateLedPreview(s);
   if (state.view === 'tune') { updateTilt(s); updateTiltSwitch(s); }
   if (state.view === 'modes') updatePorts(s);
+  if (state.view === 'test' && state.cfg?.ext) testPage.update(s);
   for (const v of viewers) if (v.container.offsetParent !== null) updateViewer(v, s);
   tickStep(s);
 }
@@ -462,6 +523,10 @@ function buildUi() {
   $('#tuneStage').innerHTML = '';
   makeViewer($('#tuneStage'), false, true);
   if ($('#lightsStage')) { $('#lightsStage').innerHTML = ''; makeViewer($('#lightsStage'), false, true); }   // the Lights page has no compact viewer any more (the live preview replaces it)
+  if (fwAtLeast(42) && state.cfg?.ext && $('#testBody')) {
+    testPage.build();
+    testPage.attachViewer(makeViewer($('#testStage'), false, false, (n) => testPage.onPart(n)));
+  }
   buildTune();
   buildBackup();
   buildLights();
@@ -477,6 +542,7 @@ function stepValue(st) {
   if (st.kind === 'rgb') return c.rgbEnabled ? [['WS2812B', 'SK6812', 'APA102'][c.ledType] || 'WS2812B', c.rgbPin === PIN_NONE ? '' : 'GP' + c.rgbPin].filter(Boolean).join(' \u00b7 ') : 'off';
   if (st.kind === 'ledmap') return c.rgbEnabled ? '' : 'n/a';
   if (st.kind === 'bluetooth') return c.btEnabled ? 'on' : 'off';
+  if (st.kind === 'extras') return extrasSummary(c);
   if (st.kind === 'tilt') return c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin + (c.tiltInvert && fwAtLeast(33) ? ' NC' : '') : 'off';
   return '';
 }
@@ -799,6 +865,10 @@ function renderStep() {
       try { await state.dev.setConfig(state.cfg); await state.dev.save(); takeSnapshot(); toast(e.target.checked ? 'Bluetooth debug logging on (saved)' : 'Bluetooth debug logging off (saved)', 'ok'); }
       catch (err) { toast('Could not save: ' + err.message, 'bad'); }
     });
+  } else if (step.kind === 'extras') {
+    extras.reset();
+    stepCtx.extras = true;
+    extras.render(card, head, nav, wireNav);
   } else if (step.kind === 'tilt') {
     const renderTilt = () => {
       const c = state.cfg;
@@ -832,6 +902,7 @@ function renderStep() {
     const rows = FUNCS.map((f, i) => `<tr><td>${btnName(i)}</td><td>${pinOr(c.pins[i] === PIN_NONE ? '' : 'GP' + c.pins[i])}</td>${act('b' + i, c.pins[i] !== PIN_NONE ? 'b' + i : '')}</tr>`).join('') +
       `<tr><td>Whammy</td><td>${pinOr(c.whammyCh === PIN_NONE ? '' : 'GP' + (26 + c.whammyCh))}</td>${act('whammy')}</tr>
        <tr><td>Tilt switch</td><td>${pinOr(c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin + (c.tiltInvert && fwAtLeast(33) ? ' \u00b7 normally closed' : '') : '', 'off')}</td>${act('tilt', c.tiltEnabled || c.tiltPin !== PIN_NONE ? 'tilt' : '')}</tr>
+       ${c.ext ? `<tr><td>D-pad, Select, Home, stick</td><td>${pinOr(extrasSummary(c), 'not wired')}</td>${act('extras')}</tr>` : ''}
        <tr><td>RGB LEDs</td><td>${pinOr(c.rgbEnabled && c.rgbPin !== PIN_NONE ? 'GP' + c.rgbPin : '', 'off')}</td>${act('rgb')}</tr>
        <tr><td>Bluetooth</td><td>${c.btEnabled ? 'on' : 'off'}</td>${act('bluetooth')}</tr>`;
     card.innerHTML = head + `<table class="sum">${rows}</table>
@@ -1179,6 +1250,8 @@ function tickStep(s) {
       next();
       break;
     }
+  } else if (step.kind === 'extras') {
+    extras.tick(s, $('#stepCard'));
   } else if (step.kind === 'tilt' && !stepCtx.active) {
     tickTiltLive(s);
   } else if (step.kind === 'tilt' && stepCtx.detector) {
@@ -1232,7 +1305,7 @@ function buildPorts() {
   const fw31 = (c.cfgVersion ?? 0) >= 5 && (state.info.major > 0 || state.info.minor >= 31);
   $('#portsPanel').hidden = false;
   if (!fw31) { body.innerHTML = '<p class="notice small">Needs firmware 0.31 or newer. Update the firmware on the Install page.</p>'; return; }
-  const others = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), ...accelPins(), c.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE));
+  const others = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), ...accelPins(), c.rumblePin ?? PIN_NONE, ...extPinList(c)].filter((p) => p !== PIN_NONE));
   const PS2 = ['ATT', 'CMD', 'DAT', 'CLK', 'ACK'];
   const ps2 = c.ps2Pins || [255, 255, 255, 255, 255];
   const pinSel = (id, val, exclude) => `<select id="${id}"><option value="255">Not wired</option>${[...Array(NUM_DIGITAL_PINS).keys()]
@@ -1281,7 +1354,7 @@ function buildRumble() {
     body.innerHTML = '<p class="notice small">Rumble needs firmware 0.30 or newer. Update the firmware on the Install page.</p>';
     return;
   }
-  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), ...accelPins()].filter((p) => p !== PIN_NONE));
+  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), ...accelPins(), ...extPinList(c)].filter((p) => p !== PIN_NONE));
   const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !taken.has(p) || p === c.rumblePin);
   const on = c.rumblePin !== PIN_NONE;
   const sw = (bit, title, desc) => `<div class="opt"><div><h3>${title}</h3><p class="dim">${desc}</p></div>
@@ -1350,7 +1423,7 @@ function buildTilt() {
     return;
   }
   const own = new Set(accelPins());
-  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), c.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE && !own.has(p)));
+  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), c.rumblePin ?? PIN_NONE, ...extPinList(c)].filter((p) => p !== PIN_NONE && !own.has(p)));
   const pairs = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !(p & 1) && i2cPinsOk(p, p + 1) && !taken.has(p) && !taken.has(p + 1));
   const accelOn = c.accelSda !== PIN_NONE && i2cPinsOk(c.accelSda, c.accelScl);
   const two = fwAtLeast(ACCEL2_MIN_MINOR);   // firmware 0.36+ finds a second accelerometer on the same bus
@@ -1605,7 +1678,7 @@ function buildBackup() {
     try { parsed = readBackup(await file.text()); } catch (err) { toast(err.message, 'bad'); return; }
     const when = parsed.meta.created ? new Date(parsed.meta.created).toLocaleString() : 'unknown date';
     box.innerHTML = `<p class="bk-meta">${file.name}: made ${when}${parsed.meta.board ? ` on a ${parsed.meta.board}` : ''}${parsed.meta.firmware ? `, firmware <b>v${parsed.meta.firmware}</b>` : ''}. Choose what to restore.</p>
-      <div class="choice-list" id="bkSections">${SECTIONS.map((sec) => {
+      <div class="choice-list" id="bkSections">${SECTIONS.filter((sec) => !sec.ext || state.cfg.ext).map((sec) => {
         const has = !!parsed.sections[sec.id];
         return `<label class="${has ? '' : 'off'}"><input type="checkbox" value="${sec.id}" ${has ? 'checked' : 'disabled'}><div><b>${sec.name}</b><span class="dim">${has ? sec.desc : 'Not in this backup'}</span></div></label>`;
       }).join('')}</div>
@@ -1622,7 +1695,7 @@ function buildBackup() {
         await sleep(400);
         state.cfg = await state.dev.getConfig();
         buildUi(); takeSnapshot();
-        toast(`Restored ${chosen.length === SECTIONS.length ? 'all settings' : chosen.map((id) => SECTIONS.find((x) => x.id === id).name.toLowerCase()).join(', ')} and saved to the controller`, 'ok');
+        toast(`Restored ${chosen.length === SECTIONS.filter((sec) => !sec.ext || state.cfg.ext).length ? 'all settings' : chosen.map((id) => SECTIONS.find((x) => x.id === id).name.toLowerCase()).join(', ')} and saved to the controller`, 'ok');
       } catch (err) { toast('Restore failed: ' + err.message, 'bad'); }
     };
   };
@@ -1670,7 +1743,7 @@ function brightNote(c) {
   return `<p class="dim small">Brightness is limited to ${m} with ${what}, to keep the current the LED chain draws in check.</p>`;
 }
 // LED layout controls (setup wizard and Lights page): fret LEDs on / off, how many strum LEDs, wiring order
-const STRUM_COUNTS = ['None', '1', '2 (1 per side)', '3', '4 (corners)', '5', '6', '7', '8 (4 per side)'];
+const STRUM_COUNTS = ['None', '1', '2', '3', '4', '5', '6', '7', '8'];
 function ledLayoutControls(c, pfx = 'lay') {
   const l = ledLayout(c);
   const v6 = (c.cfgVersion ?? 0) >= 6;
@@ -1878,8 +1951,8 @@ function buildLights() {
     const n = c.strumLeds || 0;
     const oldFw = (c.cfgVersion ?? 0) < 7;   // firmware 0.34+ sets the strum colours in the lighting studio
     $('#strumOpts').innerHTML = n ? `${oldFw ? `<div class="col-row"><span>Strum LED colour</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>` : ''}
-      ${n > 1 ? `<div class="opt"><div><h3>Guided setup</h3><p class="dim">What the strum LEDs light up on. Fine-tune each one below.</p></div>
-        <span class="row"><button class="btn small" data-rp="both">All: up and down</button><button class="btn small" data-rp="half">First half up, second half down</button><button class="btn small" data-rp="alt">Alternate up / down</button></span></div>` : ''}
+      ${n > 1 ? `<div class="opt"><div><h3>How are they placed?</h3><p class="dim">Pick the one that matches your build; it sets what each LED lights up on. Fine-tune each one below.</p></div>
+        <span class="row"><button class="btn small" data-rp="both">One row under the strum bar (all light on up and down)</button><button class="btn small" data-rp="half">Two groups: first half up, second half down</button><button class="btn small" data-rp="alt">Alternate up / down</button></span></div>` : ''}
       ${[...Array(n).keys()].map((k) => `<div class="opt"><div><h3>Strum LED ${k + 1}</h3><p class="dim">Lights up on</p></div>
         <select data-role="${k}">${STRUM_ROLES.map((r) => `<option value="${r.id}" ${c.strumRoles[k] === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}</select></div>`).join('')}` : '';
     $('#strumCol')?.addEventListener('input', (e) => { c.strumColor = e.target.value; $('#strumHex').textContent = c.strumColor.toUpperCase(); live(); });
@@ -1957,7 +2030,7 @@ function buildHostPort() {
   const c = state.cfg;
   if (c.hostPin === undefined) c.hostPin = PIN_NONE;
   const own = new Set(hostPins());
-  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...accelPins(c), c.rumblePin ?? PIN_NONE].filter((p) => p !== PIN_NONE && !own.has(p)));
+  const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...accelPins(c), c.rumblePin ?? PIN_NONE, ...extPinList(c)].filter((p) => p !== PIN_NONE && !own.has(p)));
   const free = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !taken.has(p) && !taken.has(p + 1));
   const sel = $('#hostPin');
   sel.innerHTML = '<option value="255">Off (no host port)</option>' +

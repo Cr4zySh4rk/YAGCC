@@ -1,4 +1,5 @@
 #include "config.h"
+#include "ext_config.h"
 
 #include <string.h>
 #include <stddef.h>
@@ -13,14 +14,7 @@ yacc_config_t g_cfg;
 
 #define CFG_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
 
-static uint32_t crc32(const uint8_t *d, size_t n) {
-    uint32_t c = 0xFFFFFFFFu;
-    for (size_t i = 0; i < n; i++) {
-        c ^= d[i];
-        for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (-(int32_t)(c & 1)));
-    }
-    return ~c;
-}
+static inline uint32_t crc32(const uint8_t *d, size_t n) { return yacc_crc32(d, n); }
 
 void config_seal(yacc_config_t *c) {
     c->magic = YACC_CFG_MAGIC;
@@ -193,7 +187,20 @@ void config_defaults(yacc_config_t *c) {
 }
 
 static bool g_cfg_preserve;
-bool config_save_auto(void) { return g_cfg_preserve ? false : config_save(); }
+static bool g_ext_preserve;   // the ext page holds something this firmware cannot read: automatic saves carry it over untouched
+bool config_save_auto(void) { return g_cfg_preserve ? false : config_save_ex(true); }
+
+static void ext_load(void) {
+    const ext_config_t *flash = (const ext_config_t *)(XIP_BASE + CFG_OFFSET + EXT_FLASH_OFFSET);
+    ext_config_t tmp;
+    memcpy(&tmp, flash, sizeof(tmp));
+    g_ext_preserve = false;
+    if (ext_validate(&tmp, &g_cfg)) { g_ext = tmp; return; }
+    ext_defaults(&g_ext);
+    uint32_t w = 0xFFFFFFFFu;     // old firmware leaves the pages erased (0xFF): defaults, nothing to protect
+    for (unsigned i = 0; i < sizeof(tmp) / 4; i++) w &= ((const uint32_t *)flash)[i];
+    g_ext_preserve = w != 0xFFFFFFFFu;
+}
 void config_load(void) {
     const yacc_config_t *flash = (const yacc_config_t *)(XIP_BASE + CFG_OFFSET);
     yacc_config_t tmp;
@@ -247,24 +254,37 @@ void config_load(void) {
         for (int i = 0; i < 16; i++) w &= ((const uint32_t *)flash)[i];
         g_cfg_preserve = w != 0xFFFFFFFFu;
     }
+    ext_load();
 }
 
 _Static_assert(sizeof(yacc_config_t) <= FLASH_PAGE_SIZE, "config must fit one flash page");
+_Static_assert(EXT_FLASH_OFFSET == FLASH_PAGE_SIZE && EXT_SIZE == 2 * FLASH_PAGE_SIZE, "ext config is the two pages after the main page");
+// one sector erase, then the main page and the two ext pages in a single program
 typedef struct {
-    uint8_t page[FLASH_PAGE_SIZE];
+    uint8_t page[FLASH_PAGE_SIZE + EXT_SIZE];
 } write_job_t;
 
 static void flash_write_cb(void *param) {
     write_job_t *job = (write_job_t *)param;
     flash_range_erase(CFG_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(CFG_OFFSET, job->page, FLASH_PAGE_SIZE);
+    flash_range_program(CFG_OFFSET, job->page, sizeof(job->page));
 }
 
-bool config_save(void) {
+bool config_save_ex(bool automatic) {
     static write_job_t job;
     g_cfg_preserve = false;
     memset(job.page, 0xFF, sizeof(job.page));
     config_seal(&g_cfg);
     memcpy(job.page, &g_cfg, sizeof(g_cfg));
-    return flash_safe_execute(flash_write_cb, &job, 500) == PICO_OK;
+    if (automatic && g_ext_preserve) {
+        memcpy(job.page + EXT_FLASH_OFFSET, (const void *)(XIP_BASE + CFG_OFFSET + EXT_FLASH_OFFSET), EXT_SIZE);   // keep what we cannot read
+    } else {
+        ext_seal(&g_ext);
+        memcpy(job.page + EXT_FLASH_OFFSET, &g_ext, EXT_SIZE);
+    }
+    bool ok = flash_safe_execute(flash_write_cb, &job, 500) == PICO_OK;
+    if (ok && !(automatic && g_ext_preserve)) g_ext_preserve = false;
+    return ok;
 }
+
+bool config_save(void) { return config_save_ex(false); }

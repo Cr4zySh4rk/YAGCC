@@ -276,7 +276,9 @@ static inline uint8_t strum_led_role(const yacc_config_t *c, int i) {
 void config_defaults(yacc_config_t *c);
 void led_zones_from_efx(yacc_config_t *c);   // rgb_effect / rgb_speed -> both zones (old configurators)
 void config_load(void);
-bool config_save(void);
+bool config_save(void);        // main config + the ext page (ext_config.h), one sector erase
+bool config_save_ex(bool automatic);
+#define EXT_FLASH_OFFSET 256   // the ext page follows the main config page in the same sector
 bool config_save_auto(void);   // like config_save, but not when the flash held a config this firmware could not read (an explicit save still works)
 bool config_validate(const yacc_config_t *c);
 void config_seal(yacc_config_t *c);   // fill magic/version/crc

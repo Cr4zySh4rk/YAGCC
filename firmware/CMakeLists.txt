@@ -35,7 +35,7 @@ endif()
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 41)
+set(YACC_VERSION_MINOR 42)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")
@@ -66,6 +66,9 @@ add_executable(yacc
   src/usb_descriptors.c
   src/usb_drivers.c
   src/config.c
+  src/ext_config.c
+  src/padmap.c
+  src/reports.c
   src/input.c
   src/bt.c
   src/rgb.c

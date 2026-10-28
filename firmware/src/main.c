@@ -12,6 +12,9 @@
 
 #include "usb_common.h"
 #include "config.h"
+#include "ext_config.h"
+#include "padmap.h"
+#include "reports.h"
 #include "input.h"
 #include "bt.h"
 #include "rgb.h"
@@ -27,7 +30,12 @@
 // ---------------------------------------------------------------- state shared with USB callbacks
 static yacc_config_t cfg_rx;
 static uint16_t cfg_rx_len;
-static uint8_t tx_buf[64];
+static uint8_t tx_buf[96];            // status report v2 is 96 bytes
+static ext_config_t ext_rx;
+static gpad_t g_gpad;                 // the generic pad the running mode packed last (status report)
+static uint8_t g_gpad_row = 0xFF;     // its map row, 0xFF = none
+static int16_t g_stick[2];
+static uint8_t g_ext_flags;
 static volatile bool save_pending;
 static volatile bool save_ok = true;
 static volatile int reboot_mode = -1;     // -1 none, 0 normal, 1 BOOTSEL
@@ -43,8 +51,10 @@ void usb_request_setup_reboot(void) {
     reboot_at = time_us_64() + 150000;
 }
 
-#define STATUS_LEN (4 + 2 * NUM_ADC_CH + NUM_DIGITAL_PINS + 1 + 1 + 12 + 1 + 1 + 6)
-_Static_assert(STATUS_LEN <= 64, "status report must fit tx_buf and the 64 byte request");
+#define STATUS_V1_LEN (4 + 2 * NUM_ADC_CH + NUM_DIGITAL_PINS + 1 + 1 + 12 + 1 + 1 + 6)
+#define STATUS_LEN 96
+_Static_assert(STATUS_V1_LEN == 55, "status v1 bytes 0..54 are fixed; v2 appends at 55");
+_Static_assert(STATUS_LEN <= sizeof(tx_buf), "status report must fit tx_buf");
 
 static uint16_t build_status(void) {
     uint8_t *p = tx_buf;
@@ -76,6 +86,15 @@ static uint16_t build_status(void) {
         uint16_t v = r < 0 ? 0xFFFF : (uint16_t)r;
         memcpy(p, &v, 2); p += 2;
     }
+    // firmware 0.42 (status v2, bytes 55..95; the configurator asks for 96 when minor >= 42)
+    *p++ = g_gpad_row;                                            // 55 map row of the running mode, 0xFF none
+    uint32_t btn = g_gpad.btn;
+    memcpy(p, &btn, 4); p += 4;                                   // 56 generic buttons, bit n-1 = output n
+    const int16_t ax[6] = {g_gpad.lx, g_gpad.ly, g_gpad.rx, g_gpad.ry, g_gpad.lt, g_gpad.rt};
+    memcpy(p, ax, sizeof(ax)); p += sizeof(ax);                   // 60 LX LY RX RY LT RT
+    memcpy(p, g_stick, 4); p += 4;                                // 72 stick X, Y
+    *p++ = g_ext_flags;                                           // 76 bit0 stick fitted, bit1 D-pad wired
+    memset(p, 0, (size_t)(tx_buf + STATUS_LEN - p)); p = tx_buf + STATUS_LEN;   // 77..95 reserved
     return (uint16_t)(p - tx_buf);
 }
 
@@ -109,6 +128,14 @@ static bool reply(uint8_t rhport, tusb_control_request_t const *req, const void 
 bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t const *req) {
     if (req->bmRequestType_bit.type != TUSB_REQ_TYPE_VENDOR) return false;
 
+    // ext config page received: validate while the control transfer can still be stalled, then apply live
+    if (stage == CONTROL_STAGE_DATA) {
+        if (req->bRequest == VREQ_SETEXT) {
+            if (!ext_validate(&ext_rx, &g_cfg)) return false;
+            g_ext = ext_rx;
+        }
+        return true;
+    }
     // OUT data stage finished: apply what we received
     if (stage == CONTROL_STAGE_ACK) {
         if (req->bRequest == VREQ_SETCFG && cfg_rx_len < sizeof(yacc_config_t)) {
@@ -163,11 +190,18 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             cfg_rx_len = req->wLength;
             memset(&cfg_rx, 0, sizeof(cfg_rx));
             return tud_control_xfer(rhport, req, &cfg_rx, cfg_rx_len);
+        case VREQ_GETEXT:
+            ext_seal(&g_ext);
+            return reply(rhport, req, &g_ext, sizeof(g_ext));
+        case VREQ_SETEXT:
+            if (req->wLength != sizeof(ext_rx)) return false;
+            return tud_control_xfer(rhport, req, &ext_rx, sizeof(ext_rx));
         case VREQ_SAVE:
             save_pending = true;
             return tud_control_status(rhport, req);
         case VREQ_DEFAULTS:
             config_defaults(&g_cfg);
+            ext_defaults(&g_ext);
             return tud_control_status(rhport, req);
         case VREQ_SETMODE:
             if (req->wValue < NUM_MODES) g_cfg.usb_mode = (uint8_t)req->wValue;
@@ -251,6 +285,31 @@ static void wake_task(const pad_t *s) {
     else tud_remote_wakeup();      // fails harmlessly when the host didn't enable remote wakeup before suspending
 }
 
+// Everything the mapping layer reads, straight from the physical inputs (not the remapped outputs)
+static void read_sources(padsrc_t *r) {
+    memset(r, 0, sizeof(*r));
+    for (int f = 0; f < NUM_FUNCS; f++) if (input_func_phys(f)) r->dig |= 1u << f;
+    if (input_tilt_switch()) r->dig |= 1u << SRC_TILT_SW;
+    for (int k = 0; k < 6; k++) if (input_ext(k)) r->dig |= 1u << (SRC_DPAD_UP + k);
+    if (input_ext(6)) r->dig |= 1u << SRC_STICK_CLICK;
+    r->whammy = input_whammy();
+    for (int i = 0; i < NUM_ATILT; i++) {
+        int32_t v = input_atilt(i);
+        r->sens[i] = (int16_t)(v < 0 ? 0 : v);
+        r->sens_whammy[i] = (int16_t)input_tilt_whammy(i);
+        r->sens_thr[i] = g_cfg.atilt[i].threshold;
+    }
+    bool st = input_stick(&r->stick[0], &r->stick[1]);
+    for (int i = 0; i < 1 + NUM_ATILT; i++) r->tilt_fn[i] = (int8_t)input_tilt_fn(i);
+    g_stick[0] = r->stick[0]; g_stick[1] = r->stick[1];
+    g_ext_flags = (uint8_t)((st ? 1 : 0) | ((g_ext.pin_ext[0] != PIN_NONE || g_ext.pin_ext[1] != PIN_NONE ||
+                                             g_ext.pin_ext[2] != PIN_NONE || g_ext.pin_ext[3] != PIN_NONE) ? 2 : 0));
+}
+
+static const uint8_t *map_row(uint8_t mode) {
+    return (mode < EXT_MAP_ROWS && mode != MODE_KEYBOARD && mode != MODE_AUTO) ? g_ext.map[mode] : NULL;   // keyboard / Auto: no map
+}
+
 static void read_pad(pad_t *s) {
     s->green  = input_func(F_GREEN);
     s->red    = input_func(F_RED);
@@ -293,106 +352,6 @@ void usb_game_feedback(uint8_t command, uint8_t param) {
     rgb_set_star_power(g_star_power_active);
 }
 
-// whammy 0..32767 -> full signed range with the rest position at -32768 (what XInput guitars report)
-static inline int16_t xi_axis(int16_t v) { return (int16_t)((int32_t)v * 2 - 32767); }
-
-// ---- Xbox 360 guitar, 20 byte report. Guitar Hero (subtype 7) and Rock Band (subtype 6) share
-// the layout Santroller uses: whammy on right stick X, tilt on right stick Y.
-static uint16_t build_xinput(const pad_t *s, uint8_t *out) {
-    uint16_t b = 0;
-    if (s->green)  b |= 0x1000;   // A
-    if (s->red)    b |= 0x2000;   // B
-    if (s->blue)   b |= 0x4000;   // X
-    if (s->yellow) b |= 0x8000;   // Y
-    if (s->orange) b |= 0x0100;   // left shoulder
-    if (s->strum_up)   b |= 0x0001;
-    if (s->strum_down) b |= 0x0002;
-    if (s->plus) b |= 0x0010;     // start
-    if (s->star) b |= 0x0020;     // back
-    // Fortnite Festival on PC reads overdrive from D-pad left
-    if (s->star && (g_cfg.flags & CFG_FLAG_STAR_DPAD_LEFT)) b |= 0x0004;
-    memset(out, 0, XINPUT_REPORT_LEN);
-    out[1] = XINPUT_REPORT_LEN;
-    out[2] = (uint8_t)b;
-    out[3] = (uint8_t)(b >> 8);
-    int16_t whammy = xi_axis(s->whammy);
-    out[10] = (uint8_t)whammy;
-    out[11] = (uint8_t)((uint16_t)whammy >> 8);
-    int16_t tilt = s->star ? 32767 : -32768;   // games read star power from the tilt axis too
-    out[12] = (uint8_t)tilt;
-    out[13] = (uint8_t)((uint16_t)tilt >> 8);
-    return XINPUT_REPORT_LEN;
-}
-
-// ---- PS3 Guitar Hero guitar, 27 byte report (layout matches the descriptor)
-static uint16_t build_ps3(const pad_t *s, uint8_t *out) {
-    memset(out, 0, PS3_REPORT_LEN);
-    uint8_t b0 = 0, b1 = 0;
-    if (s->yellow) b0 |= 0x01;
-    if (s->green)  b0 |= 0x02;
-    if (s->red)    b0 |= 0x04;
-    if (s->blue)   b0 |= 0x08;
-    if (s->orange) b0 |= 0x10;
-    if (s->star) b1 |= 0x01;      // select
-    if (s->plus) b1 |= 0x02;      // start
-    out[0] = b0;
-    out[1] = b1;
-    // hat: 0 = up, 4 = down, 8 = neutral
-    uint8_t hat = 0x08;
-    if (s->strum_up && !s->strum_down) hat = 0x00;
-    else if (s->strum_down && !s->strum_up) hat = 0x04;
-    out[2] = hat;
-    out[3] = 0x80;                // left stick x
-    out[4] = 0x80;                // left stick y
-    // Real GH guitars rest the whammy at 0x80 and go up to 0xFF (Santroller 24e78967: 0x80 + (v >> 9) of 16 bits)
-    out[5] = (uint8_t)(0x80 + (s->whammy >> 8));   // whammy is 0..32767: 0x80..0xFF
-    out[6] = 0x80;                // touch slider idle
-    // Fret pressures are 0 or 0xFF like a real guitar (Santroller 6f3d291f): yellow, (left, unused), green / strum
-    // up, orange / strum down, blue, red. A fret sharing a byte with its strum direction reads 0 when both are held.
-    out[7]  = s->yellow ? 0xFF : 0x00;
-    out[9]  = (s->green  != (s->strum_up   && !s->strum_down)) ? 0xFF : 0x00;
-    out[10] = (s->orange != (s->strum_down && !s->strum_up))   ? 0xFF : 0x00;
-    out[11] = s->blue ? 0xFF : 0x00;
-    out[12] = s->red ? 0xFF : 0x00;
-    // accelerometer words centred (tilt, z, y, unused)
-    for (int i = 0; i < 4; i++) {
-        out[19 + 2 * i] = 0x00;
-        out[20 + 2 * i] = 0x02;   // 0x0200
-    }
-    return PS3_REPORT_LEN;
-}
-
-// ---- PS3 Rock Band guitar, 27 byte report (Santroller's PS3RockBandGuitar_Data_t layout)
-// byte 0: blue, green, red, yellow, orange, tilt(R1), solo(L2), -   byte 1: select, start
-// byte 2: hat (strum), 3/4: sticks, 5: whammy (0 = rest), 6: pickup selector, accel words centred.
-static uint16_t build_ps3_rb(const pad_t *s, uint8_t *out) {
-    memset(out, 0, PS3_REPORT_LEN);
-    uint8_t b0 = 0, b1 = 0;
-    if (s->blue)   b0 |= 0x01;
-    if (s->green)  b0 |= 0x02;
-    if (s->red)    b0 |= 0x04;
-    if (s->yellow) b0 |= 0x08;
-    if (s->orange) b0 |= 0x10;
-    if (s->tilt)   b0 |= 0x20;    // Rock Band reads tilt as R1
-    // overdrive: the star button is select; with no separate tilt reading it also tilts (star = select)
-    if (s->star) b1 |= 0x01;      // select
-    if (s->plus) b1 |= 0x02;      // start
-    out[0] = b0;
-    out[1] = b1;
-    uint8_t hat = 0x08;
-    if (s->strum_up && !s->strum_down) hat = 0x00;
-    else if (s->strum_down && !s->strum_up) hat = 0x04;
-    out[2] = hat;
-    out[3] = 0x80;
-    out[4] = 0x80;
-    out[5] = (uint8_t)(s->whammy >> 7);
-    out[6] = 0x00;                // pickup selector position
-    for (int i = 0; i < 4; i++) {
-        out[19 + 2 * i] = 0x00;
-        out[20 + 2 * i] = 0x02;   // 0x0200
-    }
-    return PS3_REPORT_LEN;
-}
 
 // ---- USB keyboard, 8 byte boot report (Fortnite Festival keyboard bindings by default)
 static uint16_t build_keyboard(const pad_t *s, uint8_t *out) {
@@ -409,110 +368,6 @@ static uint16_t build_keyboard(const pad_t *s, uint8_t *out) {
         if (!dup && n < 6) out[2 + n++] = code;
     }
     return KEYBOARD_REPORT_LEN;
-}
-
-// ---- Nintendo Switch (HORIPAD layout), 8 byte report
-static uint16_t build_switch(const pad_t *s, uint8_t *out) {
-    uint16_t b = 0;
-    if (s->blue)   b |= 1u << 0;   // Y   (yellow is X and blue is Y, as in Santroller beb9b937)
-    if (s->red)    b |= 1u << 1;   // B
-    if (s->green)  b |= 1u << 2;   // A
-    if (s->yellow) b |= 1u << 3;   // X
-    if (s->orange) b |= 1u << 4;   // L
-    if (s->tilt)   b |= 1u << 5;   // R
-    if (s->star)   b |= 1u << 8;   // minus
-    if (s->plus)   b |= 1u << 9;   // plus
-    out[0] = (uint8_t)b;
-    out[1] = (uint8_t)(b >> 8);
-    uint8_t hat = 0x08;
-    if (s->strum_up && !s->strum_down) hat = 0x00;
-    else if (s->strum_down && !s->strum_up) hat = 0x04;
-    out[2] = hat;
-    out[3] = 0x80; out[4] = 0x80;
-    // right stick X = whammy: rests at the stick centre and pushes down toward the minimum (Santroller beb9b937)
-    uint8_t wh = (uint8_t)(0x80 - (s->whammy >> 8));   // 0..32767 -> 0x80..0x01
-    out[5] = wh ? wh : 0x01;
-    out[6] = 0x80;
-    out[7] = 0x00;
-    return SWITCH_REPORT_LEN;
-}
-
-// ---- original Xbox ("Duke"), 20 byte report
-static uint16_t build_ogxbox(const pad_t *s, uint8_t *out) {
-    memset(out, 0, OGXBOX_REPORT_LEN);
-    out[1] = OGXBOX_REPORT_LEN;
-    uint8_t d = 0;
-    if (s->strum_up)   d |= 0x01;
-    if (s->strum_down) d |= 0x02;
-    if (s->plus)       d |= 0x10;   // start
-    if (s->star)       d |= 0x20;   // back
-    out[2] = d;
-    out[4] = s->green ? 0xFF : 0;   // A
-    out[5] = s->red ? 0xFF : 0;     // B
-    out[6] = s->blue ? 0xFF : 0;    // X
-    out[7] = s->yellow ? 0xFF : 0;  // Y
-    out[8] = s->orange ? 0xFF : 0;  // black
-    out[9] = s->tilt ? 0xFF : 0;    // white
-    int16_t whammy = xi_axis(s->whammy);
-    out[16] = (uint8_t)whammy; out[17] = (uint8_t)((uint16_t)whammy >> 8);   // right stick X
-    return OGXBOX_REPORT_LEN;
-}
-
-// ---- generic HID gamepad, 7 byte report
-static uint16_t build_hid(const pad_t *s, uint8_t *out) {
-    uint16_t b = 0;
-    if (s->green)  b |= 1u << 0;
-    if (s->red)    b |= 1u << 1;
-    if (s->yellow) b |= 1u << 2;
-    if (s->blue)   b |= 1u << 3;
-    if (s->orange) b |= 1u << 4;
-    if (s->star)   b |= 1u << 5;
-    if (s->plus)   b |= 1u << 6;
-    if (s->strum_up)   b |= 1u << 7;
-    if (s->strum_down) b |= 1u << 8;
-    uint8_t hat = 0x08;           // neutral (8 = null state)
-    if (s->strum_up && !s->strum_down) hat = 0x00;
-    else if (s->strum_down && !s->strum_up) hat = 0x04;
-    out[0] = (uint8_t)b;
-    out[1] = (uint8_t)(b >> 8);
-    out[2] = hat;
-    out[3] = 0x80;
-    out[4] = 0x80;
-    out[5] = (uint8_t)(s->whammy >> 7);
-    // Rz follows the tilt sensor only. Pressing star power moves button 6 alone, so a game binding it
-    // (Clone Hero's remap screen) records a plain button with a label, not an unnamed axis.
-    // Tilt still presses button 6 too (folded into `star`), so it needs no separate binding.
-    out[6] = s->tilt ? 0xFF : 0x00;
-    return HID_REPORT_LEN;
-}
-
-// ---- PS4 Rock Band 4-style guitar, 64 byte DualShock 4 report (report id 1).
-// Layout as Santroller's PS4RockBandGuitar_Data_t / GP2040-CE's PS4Report guitar union.
-static uint16_t build_ps4(const pad_t *s, uint8_t *out) {
-    memset(out, 0, PS4_GUITAR_REPORT_LEN);
-    out[0] = 0x01;
-    out[1] = out[2] = out[3] = out[4] = 0x80;          // sticks centred
-    uint8_t hat = 0x08;
-    if (s->strum_up && !s->strum_down) hat = 0x00;
-    else if (s->strum_down && !s->strum_up) hat = 0x04;
-    uint8_t b5 = hat;
-    if (s->blue)   b5 |= 0x10;                          // square
-    if (s->green)  b5 |= 0x20;                          // cross
-    if (s->red)    b5 |= 0x40;                          // circle
-    if (s->yellow) b5 |= 0x80;                          // triangle
-    uint8_t b6 = 0;
-    if (s->orange) b6 |= 0x01;                          // L1
-    if (s->star)   b6 |= 0x10;                          // share = overdrive
-    if (s->plus)   b6 |= 0x20;                          // options
-    out[5] = b5;
-    out[6] = b6;
-    out[30] = 0x1B;                                     // cable connected, battery full (as a wired DS4)
-    out[43] = 0x00;                                     // pickup selector notch
-    out[44] = (uint8_t)(s->whammy >> 7);               // whammy, 0 = rest
-    out[45] = s->tilt ? 0xFF : 0x00;                    // tilt
-    out[46] = (uint8_t)((s->green ? 0x01 : 0) | (s->red ? 0x02 : 0) | (s->yellow ? 0x04 : 0) |
-                        (s->blue ? 0x08 : 0) | (s->orange ? 0x10 : 0));
-    return PS4_GUITAR_REPORT_LEN;
 }
 
 // ---- PS2 Guitar Hero guitar on the controller port (Santroller's PS2GuitarHeroGuitar_Data_t, active high;
@@ -561,56 +416,9 @@ static void build_wii_ext(const pad_t *s, uint8_t *out) {
     out[5] = (uint8_t)~hi;
 }
 
-// ---- PS5 Rock Band guitar, 64 byte report (Santroller's PS5RockBandGuitar_Data_t). It goes to the P5General,
-// which hands back the copy the console accepts.
-static uint16_t build_ps5(const pad_t *s, uint8_t *out) {
-    memset(out, 0, PS5_REPORT_LEN);
-    out[0] = 0x01;
-    out[1] = out[2] = out[3] = out[4] = 0x80;          // sticks centred
-    uint8_t hat = 0x08;
-    if (s->strum_up && !s->strum_down) hat = 0x00;
-    else if (s->strum_down && !s->strum_up) hat = 0x04;
-    uint8_t b8 = hat;
-    if (s->blue)   b8 |= 0x10;                          // square
-    if (s->green)  b8 |= 0x20;                          // cross
-    if (s->red)    b8 |= 0x40;                          // circle
-    if (s->yellow) b8 |= 0x80;                          // triangle
-    uint8_t b9 = 0;
-    if (s->orange) b9 |= 0x01;                          // L1
-    if (s->star)   b9 |= 0x10;                          // create = overdrive
-    if (s->plus)   b9 |= 0x20;                          // options
-    out[8] = b8;
-    out[9] = b9;
-    out[30] = 0x1A;                                     // as a DualSense
-    out[40] = 0x00;                                     // pickup selector notch
-    out[41] = (uint8_t)(s->whammy >> 7);               // whammy, 0 = rest
-    out[42] = s->tilt ? 0xFF : 0x00;                    // tilt
-    out[43] = (uint8_t)((s->green ? 0x01 : 0) | (s->red ? 0x02 : 0) | (s->yellow ? 0x04 : 0) |
-                        (s->blue ? 0x08 : 0) | (s->orange ? 0x10 : 0));
-    return PS5_REPORT_LEN;
-}
-
-// ---- Xbox One Rock Band 4-style guitar: 32 byte GIP input body (Santroller's XboxOneRockBandGuitar_Data_t)
-static void build_xbone(const pad_t *s, uint8_t *out) {
-    memset(out, 0, XBONE_GUITAR_PAYLOAD_LEN);
-    uint8_t b0 = 0, b1 = 0;
-    if (s->plus)   b0 |= 0x04;                          // menu
-    if (s->star)   b0 |= 0x08;                          // view = overdrive
-    if (s->green)  b0 |= 0x10;                          // A
-    if (s->red)    b0 |= 0x20;                          // B
-    if (s->blue)   b0 |= 0x40;                          // X
-    if (s->yellow) b0 |= 0x80;                          // Y
-    if (s->strum_up)   b1 |= 0x01;
-    if (s->strum_down) b1 |= 0x02;
-    if (s->orange) b1 |= 0x10;                          // LB
-    out[0] = b0;
-    out[1] = b1;
-    out[2] = s->tilt ? 0xFF : 0x00;                     // tilt
-    out[3] = (uint8_t)(s->whammy >> 7);                // whammy
-    out[4] = 0x00;                                      // pickup selector
-    out[5] = (uint8_t)((s->green ? 0x01 : 0) | (s->red ? 0x02 : 0) | (s->yellow ? 0x04 : 0) |
-                       (s->blue ? 0x08 : 0) | (s->orange ? 0x10 : 0));
-}
+_Static_assert(RPT_XINPUT_LEN == XINPUT_REPORT_LEN && RPT_PS3_LEN == PS3_REPORT_LEN && RPT_HID_LEN == HID_REPORT_LEN &&
+               RPT_SWITCH_LEN == SWITCH_REPORT_LEN && RPT_OGXBOX_LEN == OGXBOX_REPORT_LEN && RPT_PS4_LEN == PS4_GUITAR_REPORT_LEN &&
+               RPT_PS5_LEN == PS5_REPORT_LEN && RPT_XBONE_LEN == XBONE_GUITAR_PAYLOAD_LEN, "report lengths");
 
 static bool needs_host(uint8_t mode) { return mode == MODE_PS4 || mode == MODE_PS5 || mode == MODE_XBONE; }
 
@@ -896,6 +704,12 @@ int main(void) {
 
         pad_t st;
         read_pad(&st);
+        padsrc_t src;
+        gpad_t gp;                                          // what the running mode's map makes of the inputs
+        read_sources(&src);
+        padmap_build(&src, map_row(g_usb_mode), &gp);
+        g_gpad = gp;
+        g_gpad_row = map_row(g_usb_mode) ? g_usb_mode : 0xFF;
         wake_task(&st);
         uint8_t wii_ext[WII_EXT_REPORT_LEN];               // the Wii guitar extension: wired, or over Bluetooth
         build_wii_ext(&st, wii_ext);
@@ -918,15 +732,17 @@ int main(void) {
             static uint8_t bt_counter;
             uint8_t b[64];
             uint16_t n;
+            gpad_t gb;                                      // Bluetooth follows the HID mode's map
+            padmap_build(&src, g_ext.map[MODE_HID], &gb);
             switch (g_usb_mode) {
-                case MODE_PS3_GH:   n = build_ps3(&st, b); break;
+                case MODE_PS3_GH:   n = rpt_ps3(&gb, b); break;
                 case MODE_PS3_RB:
-                case MODE_WII_RB:   n = build_ps3_rb(&st, b); break;
+                case MODE_WII_RB:   n = rpt_ps3_rb(&gb, b); break;
                 case MODE_KEYBOARD: n = build_keyboard(&st, b); break;
-                case MODE_SWITCH:   n = build_switch(&st, b); break;
-                case MODE_HID:      n = build_hid(&st, b); break;
-                case MODE_PS4:      n = build_ps4(&st, b); break;
-                default:            n = build_hid(&st, b); break;
+                case MODE_SWITCH:   n = rpt_switch(&gb, b); break;
+                case MODE_HID:      n = rpt_hid(&gb, b); break;
+                case MODE_PS4:      n = rpt_ps4(&gb, b); break;
+                default:            n = rpt_hid(&gb, b); break;
             }
             const uint8_t *p = b;
             if (g_usb_mode == MODE_PS4) { p = &b[1]; n--; }      // report id travels separately over Bluetooth
@@ -934,31 +750,31 @@ int main(void) {
                 bt_first = false;
                 memcpy(bt_last, p, n); bt_len = n;
                 if (g_usb_mode == MODE_PS4) {                   // 6 bit counter, like over USB
-                    uint8_t c[64]; memcpy(c, p, n); c[6] = (uint8_t)(bt_counter << 2); bt_counter = (bt_counter + 1) & 0x3F;
+                    uint8_t c[64]; memcpy(c, p, n); c[6] = (uint8_t)((c[6] & 0x03) | (bt_counter << 2)); bt_counter = (bt_counter + 1) & 0x3F;
                     bt_send_report(c, n);
                 } else bt_send_report(p, n);
             }
         }
         if (g_usb_mode == MODE_XBONE) {                 // GIP has its own sequencing, acks and auth gate
             uint8_t body[XBONE_GUITAR_PAYLOAD_LEN];
-            build_xbone(&st, body);
+            rpt_xbone(&gp, body);
             xbone_task(body, false);
             continue;
         }
         uint8_t rpt[64];
         uint16_t len;
         switch (g_usb_mode) {
-            case MODE_PS3_GH: len = build_ps3(&st, rpt); break;
+            case MODE_PS3_GH: len = rpt_ps3(&gp, rpt); break;
             case MODE_PS3_RB:
-            case MODE_WII_RB: len = build_ps3_rb(&st, rpt); break;
+            case MODE_WII_RB: len = rpt_ps3_rb(&gp, rpt); break;
             case MODE_KEYBOARD: len = build_keyboard(&st, rpt); break;
-            case MODE_SWITCH: len = build_switch(&st, rpt); break;
-            case MODE_OGXBOX: len = build_ogxbox(&st, rpt); break;
+            case MODE_SWITCH: len = rpt_switch(&gp, rpt); break;
+            case MODE_OGXBOX: len = rpt_ogxbox(&gp, rpt); break;
             case MODE_HID:
-            case MODE_AUTO:   len = build_hid(&st, rpt); break;
-            case MODE_PS4:    len = build_ps4(&st, rpt); break;
-            case MODE_PS5:    len = build_ps5(&st, rpt); break;
-            default:          len = build_xinput(&st, rpt); break;
+            case MODE_AUTO:   len = rpt_hid(&gp, rpt); break;
+            case MODE_PS4:    len = rpt_ps4(&gp, rpt); break;
+            case MODE_PS5:    len = rpt_ps5(&gp, rpt); break;
+            default:          len = rpt_xinput(&gp, rpt); break;
         }
         if (g_usb_mode == MODE_PS5) {                   // every report is signed by the dongle: relay continuously
             static bool ps5_first = true;
@@ -979,7 +795,7 @@ int main(void) {
                 // every report carries a 6 bit counter; the very first one also taps PS so the console wakes up
                 uint8_t r[64];
                 memcpy(r, last_report, last_len);
-                r[7] = (uint8_t)((ps4_counter << 2) | (ps4_first ? 0x01 : 0));
+                r[7] = (uint8_t)((r[7] & 0x01) | (ps4_counter << 2) | (ps4_first ? 0x01 : 0));   // keeps the PS button the map put there
                 ok = tud_hid_n_ready(0) && tud_hid_n_report(0, r[0], &r[1], (uint16_t)(last_len - 1));
                 if (ok) { ps4_counter = (uint8_t)((ps4_counter + 1) & 0x3F); ps4_first = false; }
             } else {

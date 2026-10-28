@@ -49,6 +49,9 @@
 #define VREQ_LEDTEST  0x38   // OUT : wValue = chain position to light white, 0xFFFF = back to normal
 #define VREQ_LEDPREVIEW 0x3C   // OUT, no data: wValue bits 0..4 frets held, 5 strum up, 6 strum down, 7 star power, 8..15 whammy 0..255; wIndex 1 = preview on, 0 = off
 
+#define VREQ_GETEXT   0x3D   // IN  : 512 byte ext config page (ext_config.h)
+#define VREQ_SETEXT   0x3E   // OUT : 512 byte ext config page (validated, applied live, not saved; invalid: stall)
+
 #define XINPUT_REPORT_LEN 20
 #define PS3_REPORT_LEN    27
 #define HID_REPORT_LEN    7

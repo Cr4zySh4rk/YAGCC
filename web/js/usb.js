@@ -1,5 +1,6 @@
-import { VID, PIDS, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash } from './protocol.js?v=dev';
+import { VID, PIDS, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash, EXT_MIN_MINOR, EXT_SIZE, parseExt, serializeExt, STATUS_LEN_42, defaultExt } from './protocol.js?v=dev';
 
+const hexOf = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 const IFACE = 1;   // vendor config interface
 
 export const webusbSupported = () => 'usb' in navigator;
@@ -47,15 +48,28 @@ export class YaccDevice extends EventTarget {
   }
 
   async getInfo() { return parseInfo(await this._in(VREQ.INFO, 16)); }
-  async getStatus() { return parseStatus(await this._in(VREQ.STATUS, 64)); }
+  get hasExt() { return !!this.info && (this.info.major > 0 || this.info.minor >= EXT_MIN_MINOR); }
+  async getStatus() { return parseStatus(await this._in(VREQ.STATUS, this.hasExt ? STATUS_LEN_42 : 64)); }
+  async getExt() { const e = parseExt(await this._in(VREQ.GETEXT, EXT_SIZE)); this._extSent = hexOf(serializeExt(e)); return e; }
   async getBtLog() { return parseBtLog(await this._in(VREQ.BTLOG, 384)); }
   // test firmware only (throws on normal builds, which stall the request)
   async getBtLogFlash() { return parseBtLogFlash(await this._in(VREQ.BTLOGFL, 16384)); }
   async clearBtLogFlash() { await this._out(VREQ.BTLOGFL); }
-  async getConfig() { return parseConfig(await this._in(VREQ.GETCFG, CFG_SIZE)); }
-  async setConfig(cfg) { await this._out(VREQ.SETCFG, 0, serializeConfig(cfg)); }
+  // 0.42+: the extension page rides along as cfg.ext (loaded here, sent live after the main config when it changed)
+  async getConfig() {
+    const cfg = parseConfig(await this._in(VREQ.GETCFG, CFG_SIZE));
+    if (this.hasExt) { try { cfg.ext = await this.getExt(); } catch { cfg.ext = defaultExt(); this._extSent = null; } }
+    return cfg;
+  }
+  async setConfig(cfg) {
+    await this._out(VREQ.SETCFG, 0, serializeConfig(cfg));
+    if (cfg.ext && this.hasExt) {
+      const buf = serializeExt(cfg.ext), h = hexOf(buf);
+      if (h !== this._extSent) { await this._out(VREQ.SETEXT, 0, buf); this._extSent = h; }
+    }
+  }
   async save() { await this._out(VREQ.SAVE); }
-  async defaults() { await this._out(VREQ.DEFAULTS); }
+  async defaults() { await this._out(VREQ.DEFAULTS); this._extSent = null; }
   async rumbleTest(ms = 400) { await this._out(VREQ.RUMBLE, ms); }
   async ledTest(i) { await this._out(VREQ.LEDTEST, i < 0 ? 0xffff : i); }
   // Lights page preview on the real LEDs (firmware 0.35+): bits 0..4 frets, 5 strum up, 6 down, 7 star power, 8..15 whammy

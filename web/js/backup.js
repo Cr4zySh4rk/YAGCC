@@ -1,6 +1,6 @@
 // Backup and restore of the controller's settings as a JSON file (in the spirit of GP2040-CE's
 // "Data Backup and Restoration"): pick which sections to save or restore.
-import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, NUM_ATILT_SRC, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX } from './protocol.js?v=dev';
+import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, NUM_ATILT_SRC, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX, NUM_MODE_ROWS, MAP_ROW, NUM_SRC, EXT_PIN_NAMES } from './protocol.js?v=dev';
 
 export const BACKUP_FORMAT = 1;
 
@@ -22,6 +22,11 @@ export const SECTIONS = [
       'starColor', 'starAnim', 'starZones', 'starSpeed', 'whammyFx', 'whammyZones', 'starFlash', 'sleepMin'] },
   { id: 'modes', name: 'Modes', desc: 'Default mode, hold-a-fret modes, XInput type, keyboard bindings',
     keys: ['usbMode', 'bootModes', 'xinputType', 'starDpadLeft', 'xinputOpts', 'keys'] },
+  // firmware 0.42+: these live in the extension page (cfg.ext)
+  { id: 'controls', ext: true, name: 'Extra controls', desc: 'D-pad, Select, Home and analog stick pins, stick direction, dead zone and calibration',
+    keys: ['extPins', 'stickCh', 'stickFlags', 'deadzone', 'cal'] },
+  { id: 'mapping', ext: true, name: 'Input mapping', desc: 'What every input does in each console mode',
+    keys: ['map'] },
 ];
 
 const isPin = (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < NUM_DIGITAL_PINS);
@@ -81,13 +86,23 @@ export const LABELS = {
   atilt: 'tilt sensors', rumblePin: 'rumble motor pin', ps2Pins: 'PS2 port pins', wiiSda: 'Wii extension SDA', wiiScl: 'Wii extension SCL', rumbleFlags: 'rumble triggers', rumbleStrength: 'rumble strength', accelSda: 'accelerometer SDA pin', accelScl: 'accelerometer SCL pin', accelGate: 'gravity gate', accelMedian: 'median filter', accelLowpass: 'low pass filter',
   usbMode: 'default mode', bootModes: 'hold-a-fret modes', xinputType: 'XInput guitar type', starDpadLeft: 'star power on D-pad left', xinputOpts: 'Steam receiver option', keys: 'keyboard bindings',
 };
+Object.assign(CHECK, {
+  extPins: (v) => Array.isArray(v) && v.length === EXT_PIN_NAMES.length && v.every(isPin),
+  stickCh: (v) => Array.isArray(v) && v.length === 2 && v.every((c) => c === PIN_NONE || isInt(c, 0, 2)),
+  stickFlags: (v) => isInt(v, 0, 7), deadzone: (v) => isInt(v, 0, 50),
+  cal: (v) => Array.isArray(v) && v.length === 6 && v.every((x) => isInt(x, 0, 4095)) && v[0] < v[1] && v[1] < v[2] && v[3] < v[4] && v[4] < v[5],
+  map: (v) => Array.isArray(v) && v.length === NUM_MODE_ROWS && v.every((r) => Array.isArray(r) && r.length === MAP_ROW && r.every((x, i) => (i >= NUM_SRC ? x === 255 : x === 0 || x === 255 || isInt(x, 1, 31)))),
+});
+Object.assign(LABELS, { extPins: 'D-pad / Select / Home pins', stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: 'stick dead zone', cal: 'stick calibration', map: 'input mapping' });
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));
 
 export function makeBackup(cfg, info) {
   const settings = {};
   for (const s of SECTIONS) {
+    if (s.ext && !cfg.ext) continue;   // older firmware has no extension page
+    const from = s.ext ? cfg.ext : cfg;
     settings[s.id] = {};
-    for (const k of s.keys) if (cfg[k] !== undefined) settings[s.id][k] = cfg[k];
+    for (const k of s.keys) if (from[k] !== undefined) settings[s.id][k] = from[k];
   }
   return {
     app: 'YAGCC', format: BACKUP_FORMAT, created: new Date().toISOString(),
@@ -127,7 +142,11 @@ export function readBackup(text) {
 // Apply the chosen sections onto a config. Pins that would clash with each other are dropped.
 export function applyBackup(cfg, parsed, chosen) {
   const next = structuredClone(cfg);
-  for (const id of chosen) Object.assign(next, structuredClone(parsed.sections[id] || {}));
+  for (const id of chosen) {
+    const sec = SECTIONS.find((x) => x.id === id);
+    if (sec?.ext) { if (next.ext) Object.assign(next.ext, structuredClone(parsed.sections[id] || {})); }   // older firmware: nothing to restore into
+    else Object.assign(next, structuredClone(parsed.sections[id] || {}));
+  }
   const used = new Map();
   const claim = (pin, who) => { if (pin === PIN_NONE) return true; if (used.has(pin)) return false; used.set(pin, who); return true; };
   next.pins = next.pins.map((p, i) => (claim(p, 'f' + i) ? p : PIN_NONE));
@@ -135,6 +154,11 @@ export function applyBackup(cfg, parsed, chosen) {
   if (next.rgbEnabled && !claim(next.rgbPin, 'rgb')) next.rgbPin = PIN_NONE;
   if (next.ledType === 2 && !claim(next.ledClkPin, 'clk')) next.ledClkPin = PIN_NONE;
   if (next.hostPin !== undefined && next.hostPin !== PIN_NONE && (!claim(next.hostPin, 'host') || !claim(next.hostPin + 1, 'host'))) next.hostPin = PIN_NONE;
+  if (next.ext) {   // the optional pins must not clash with anything the main config uses
+    next.ext.extPins = next.ext.extPins.map((p) => (claim(p, 'e') ? p : PIN_NONE));
+    const bad = next.ext.stickCh.some((c, i) => c !== PIN_NONE && (c === next.whammyCh || next.ext.stickCh.indexOf(c) !== i || (next.atilt || []).some((t) => t.src === c)));
+    if (bad) next.ext.stickCh = [PIN_NONE, PIN_NONE];
+  }
   return next;
 }
 
