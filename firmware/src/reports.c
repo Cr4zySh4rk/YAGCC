@@ -3,16 +3,21 @@
 #include "config.h"
 
 // Guitar modes: A, B, Y, X, LB are the green, red, yellow, blue, orange frets (what the default map puts there) and
-// land in the native slot of that fret; D-pad up / down are the strum; Back is star power; RX is the whammy axis.
+// land in the native slot of that fret; D-pad up / down are the strum; Back is star power; RX is the whammy axis (0.43: its positive half; rest 0).
 // RB doubles as the tilt button where the native report has one (PS3 Rock Band R1, Switch R, original Xbox white).
 
 static inline bool B(const gpad_t *g, int n) { return GP_BTN(g, n) != 0; }
 
-// whammy 0..32767 out of RX (rest at -32767): what the default map's whammy source produces. Nothing on RX = at rest.
+// whammy 0..32767 = the positive half of RX (rest 0, full press +32767): what the default map's whammy source produces.
+// Nothing on RX = at rest; a negative RX (RX-, a stick pulled left) is no whammy.
 static inline int32_t gp_whammy(const gpad_t *g) {
     if (!(g->driven & DRV_RX)) return 0;
-    int32_t w = ((int32_t)g->rx + 32767) >> 1;
-    return w < 0 ? 0 : w;
+    return g->rx < 0 ? 0 : g->rx;
+}
+// Xbox 360 / original Xbox guitars send the whammy as the right stick X, resting at the minimum: 0..32767 -> -32767..32767.
+// Nothing on RX = centred, as before.
+static inline int16_t gp_whammy_axis(const gpad_t *g) {
+    return (g->driven & DRV_RX) ? (int16_t)(2 * gp_whammy(g) - 32767) : (int16_t)0;
 }
 
 // -32767..32767 -> 0..255 around 0x80
@@ -53,7 +58,7 @@ uint16_t rpt_xinput(const gpad_t *g, uint8_t *out) {
     out[5] = (uint8_t)(g->rt >> 7);
     put16(&out[6], g->lx);
     put16(&out[8], g->ly);
-    put16(&out[10], g->rx);
+    put16(&out[10], gp_whammy_axis(g));  // whammy: rests at the minimum
     // games read star power from the tilt axis too
     put16(&out[12], (g->driven & DRV_RY) ? g->ry : (B(g, OUT_BACK) ? 32767 : -32768));
     return RPT_XINPUT_LEN;
@@ -184,7 +189,7 @@ uint16_t rpt_ogxbox(const gpad_t *g, uint8_t *out) {
     out[11] = (uint8_t)(g->rt >> 7);
     put16(&out[12], g->lx);
     put16(&out[14], g->ly);
-    put16(&out[16], g->rx);   // right stick X = whammy
+    put16(&out[16], gp_whammy_axis(g));   // right stick X = whammy
     put16(&out[18], g->ry);
     return RPT_OGXBOX_LEN;
 }
@@ -212,7 +217,7 @@ uint16_t rpt_hid(const gpad_t *g, uint8_t *out) {
     out[2] = hat_of(g);           // neutral is 8 (null state)
     out[3] = ax8(g->lx);
     out[4] = ax8i(g->ly);
-    out[5] = (uint8_t)(gp_whammy(g) >> 7);
+    out[5] = ax8(g->rx);          // Z: a plain axis, whammy at rest = centre (0x80), fully pressed = 0xFF (0.43; was 0 .. 0xFF)
     // Rz follows the tilt sensor only. Pressing star power moves button 6 alone, so a game binding it
     // (Clone Hero's remap screen) records a plain button with a label, not an unnamed axis.
     out[6] = (g->driven & DRV_RY) ? ax8i(g->ry) : (g->tilt ? 0xFF : 0x00);

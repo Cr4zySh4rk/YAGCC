@@ -601,6 +601,7 @@ export function defaultExt() {
   return {
     extPins: Array(7).fill(PIN_NONE), stickCh: [PIN_NONE, PIN_NONE], stickFlags: 0, deadzone: 10,
     cal: [0, 2048, 4095, 0, 2048, 4095],
+    curve: [0, 0, 0],   // response curve -100..100 of the whammy, tilt sensor 1, tilt sensor 2 (firmware 0.43+, ext bytes 320..322)
     map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
   };
 }
@@ -615,6 +616,7 @@ export function parseExt(dv) {
     stickFlags: dv.getUint8(18) & 7, deadzone: Math.min(50, dv.getUint8(19)),
     cal: [0, 1, 2, 3, 4, 5].map((i) => dv.getUint16(20 + i * 2, true)),
     map: Array.from({ length: NUM_MODE_ROWS }, (_, m) => Array.from({ length: MAP_ROW }, (_, s) => dv.getUint8(32 + m * MAP_ROW + s))),
+    curve: [0, 1, 2].map((i) => Math.max(-100, Math.min(100, dv.getInt8(320 + i)))),
   };
 }
 export function serializeExt(e) {
@@ -629,6 +631,7 @@ export function serializeExt(e) {
     const row = e.map[m] || emptyMapRow();
     for (let s = 0; s < MAP_ROW; s++) dv.setUint8(32 + m * MAP_ROW + s, s < NUM_SRC ? row[s] : 0xff);
   }
+  (e.curve || [0, 0, 0]).slice(0, 3).forEach((c, i) => dv.setInt8(320 + i, Math.max(-100, Math.min(100, Math.round(c) | 0))));
   dv.setUint32(508, crc32(new Uint8Array(buf, 0, 508)), true);
   return buf;
 }

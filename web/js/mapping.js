@@ -49,18 +49,18 @@ export const modeFamily = (id) => testMode(id)?.family || 'xbox';
 // ---- which outputs each mode's report can carry (bit n = output n). From the firmware's own table (map_spec.md, verified
 // by its host_map probe). Everything not listed is dropped by that mode's packer, so the Test page greys it out.
 export const MODE_OUTPUTS = [
-  0xfffffffe,   // 0 XInput
-  0xfffffffe,   // 1 PS3 Guitar Hero
+  0xeffffffe,   // 0 XInput (0.43: no RX-, the native whammy is the positive half of RX)
+  0xeffffffe,   // 1 PS3 Guitar Hero
   0xfffffffe,   // 2 HID
-  0xfffffffe,   // 3 PS3 Rock Band
+  0xeffffffe,   // 3 PS3 Rock Band
   0,            // 4 keyboard: own key map, no generic map
-  0xfffffffe,   // 5 Switch
-  0xfffffffe,   // 6 Wii Rock Band
-  0xfffff7fe,   // 7 OG Xbox: everything except Guide
-  0xfffffffe,   // 8 PS4
-  0x3013f67e,   // 9 Xbox One: buttons 1-6, 9, 10, 12-17, and RX (20, 28, 29) for the whammy
+  0xeffffffe,   // 5 Switch
+  0xeffffffe,   // 6 Wii Rock Band
+  0xeffff7fe,   // 7 OG Xbox: everything except Guide
+  0xeffffffe,   // 8 PS4
+  0x2013f67e,   // 9 Xbox One: buttons 1-6, 9, 10, 12-17, and RX (20, 29) for the whammy
   0xfffffffe,   // 10 Auto (no map of its own: defaults)
-  0xfffffffe,   // 11 PS5
+  0xeffffffe,   // 11 PS5
 ].map((m) => m >>> 0);
 export const outputSupported = (mode, out) => out === MAP_DEFAULT || out === MAP_NONE || (out > 0 && out < 32 && ((MODE_OUTPUTS[mode] >>> out) & 1) === 1);
 
@@ -91,18 +91,31 @@ export function outLabel(out, mode) {
 const GUITAR_MEANING = { 1: 'green fret', 2: 'red fret', 3: 'blue fret', 4: 'yellow fret', 5: 'orange fret', 14: 'strum up', 15: 'strum down', 9: 'star power', 10: 'plus', 20: 'whammy', 21: 'tilt' };
 export function guitarMeaning(out) { return GUITAR_MEANING[out] || ''; }
 // "A (green fret)", or just "Back" when nothing guitar-ish is attached to it
+// PlayStation face buttons get a Unicode shape in front of the word (an <option> can't hold the drawn SVG symbol)
+const PS_SHAPE = ['\u00d7', '\u25cb', '\u25a1', '\u25b3'];
 export function outFull(out, mode) {
   if (out === MAP_DEFAULT || out === MAP_NONE) return outName(out, mode);
   const g = guitarMeaning(out);
-  return g ? `${outName(out, mode)} (${g})` : outName(out, mode);
+  const nm = (out >= 1 && out <= 4 && modeFamily(mode) === 'ps' ? PS_SHAPE[out - 1] + ' ' : '') + outName(out, mode);
+  return g ? `${nm} (${g})` : nm;
 }
 export const OUT_GROUPS = [
   { name: 'Buttons', outs: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13] },
   { name: 'D-pad', outs: [14, 15, 16, 17] },
   { name: 'Triggers', outs: [7, 8, 22, 23] },
   { name: 'Sticks', outs: [18, 19, 20, 21] },
-  { name: 'Half axes', outs: [24, 25, 26, 27, 28, 29, 30, 31] },
+  { name: 'Stick directions (half axes)', outs: [24, 25, 26, 27, 28, 29, 30, 31] },
 ];
+
+// ---- response curve of the analog 0..1 sources (whammy, tilt sensors): c -100..100, 0 = linear. Same maths as the firmware's padmap_curve.
+// c > 0 (expo): gentle near rest, steep at the end, y = (1-e)x + e x^3; c < 0: quick off rest, flatter at the end (the mirror image).
+export function curveY(x, c) {
+  x = Math.max(0, Math.min(1, x));
+  if (!c) return x;
+  const e = Math.min(100, Math.abs(c)) / 100, u = c > 0 ? x : 1 - x, y = (1 - e) * u + e * u * u * u;
+  return c > 0 ? y : 1 - y;
+}
+export const CURVE_SRC = { 9: 0, 11: 1, 12: 2 };   // source -> index in ext.curve
 
 // ---- engine
 const AXES = ['LX', 'LY', 'RX', 'RY', 'LT', 'RT'];
@@ -118,7 +131,8 @@ export function computePad(row, v, tp = [false, false], opts = {}) {
     if (o === MAP_NONE) continue;
     if (o === MAP_DEFAULT) { o = DEFAULT_OUT[s]; if (o == null) continue; }
     if (o > 31) continue;
-    const analog = isAnalogSrc(s), val = v[s] || 0;
+    const analog = isAnalogSrc(s), raw = v[s] || 0;
+    const val = analog && !isStickSrc(s) ? curveY(raw, opts.curve?.[CURVE_SRC[s]] || 0) : raw;   // the curve acts on the analog value only, never on the press threshold
     if (o <= 17) {
       if (pressed(s)) { buttons |= 1 << (o - 1); if (o === 7) put('LT', 1); if (o === 8) put('RT', 1); }   // a digital LT / RT also fills the axis
       continue;
@@ -128,7 +142,7 @@ export function computePad(row, v, tp = [false, false], opts = {}) {
       let out;
       if (!analog) out = pressed(s) ? 1 : 0;
       else if (isStickSrc(s)) out = trig ? Math.abs(val) : val;
-      else out = trig ? val : -1 + 2 * val;
+      else out = val;                    // 0.43: whammy / sensors 0..1 -> 0..+1 on a stick too (rest = centre)
       put(trig ? AXES[o - 18] : AXES[o - 18], out);
       continue;
     }

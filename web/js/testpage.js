@@ -5,6 +5,10 @@ import {
   OUT_GROUPS, outputSupported, computePad,
 } from './mapping.js?v=dev';
 import { createPad } from './gamepad.js?v=dev';
+import { responseHtml, wireResponse, moveDots } from './response.js?v=dev';
+import { CURVE_SRC } from './mapping.js?v=dev';
+import { ATILT_SOURCES } from './protocol.js?v=dev';
+import { createViz } from './vizcards.js?v=dev';
 
 // ctx: { state, $, toast, pushCfg, makeViewer, liveSources(s, row, mode) }
 export function createTestPage(ctx) {
@@ -41,10 +45,10 @@ export function createTestPage(ctx) {
       </div>
       <div class="stage t-stage" id="testStage"></div>
       <div class="t-chips" id="tChips" aria-label="Other inputs"></div>
-      <div class="panel t-padpanel">
-        <div class="t-padhead"><h2>What the console sees</h2><span class="dim small" id="tPadSub"></span></div>
-        <div class="t-pad" id="tPad"></div>
-        <p class="t-hint" id="tHint" role="status"></p>
+      <div class="t-viz">
+        <div class="t-padwrap"><div class="t-pad" id="tPad"></div>
+          <p class="t-hint" id="tHint" role="status"></p><p class="dim small t-padsub" id="tPadSub"></p></div>
+        <div id="tCards"></div>
       </div>
       <div class="panel t-map">
         <div class="t-maphead"><div><h2>What each input does</h2><p class="dim small" id="tMapSub"></p></div>
@@ -57,6 +61,8 @@ export function createTestPage(ctx) {
       </div>`;
     t.pad = createPad(onPick);
     ctx.$('#tPad').appendChild(t.pad.el);
+    t.viz = createViz(ctx);
+    ctx.$('#tCards').appendChild(t.viz.el);
     ctx.$('#tMode').onchange = (e) => { t.mode = +e.target.value; t.picked = true; t.sel = -1; refresh(); };
     ctx.$('#tAll').onchange = (e) => { t.showAll = e.target.checked; renderRows(); };
     ctx.$('#tRestore').onclick = restoreMode;
@@ -74,7 +80,7 @@ export function createTestPage(ctx) {
   function refresh() {
     if (!ctx.$('#tMode') || !cfg()?.ext) return;
     ctx.$('#tMode').value = String(t.mode);
-    t.pad.setMode(t.mode);
+    t.pad.setMode(t.mode); if (t.viz) t.viz.setMode(t.mode);
     ctx.$('#tRestore').textContent = `Restore default mapping for ${modeName()}`;
     renderRows();
     hint();
@@ -98,6 +104,14 @@ export function createTestPage(ctx) {
     if (o == null) return 'follows the Tune page';
     return v === MAP_DEFAULT ? '' : outFull(o, t.mode);
   };
+  // "(accelerometer Y)" / "(GP27 analog)": where tilt sensor i reads from
+  const sensorSrc = (i) => {
+    const a = cfg().atilt?.[i], d = a && ATILT_SOURCES.find((x) => x.id === a.src);
+    return d ? `(${d.kind === 'adc' ? d.name.replace(' (analog)', ' analog') : d.name.replace(/^Accelerometer/, 'accelerometer')})` : '(not set up)';
+  };
+  // the Response control: only for an analog source mapped to an analog output (axis, half axis, trigger), firmware 0.43+
+  const analogOut = (s) => { const v = row()[s], o = v === MAP_DEFAULT ? DEFAULT_OUT[s] : v; return o != null && o >= 18 && o <= 31; };
+  const respFor = (s) => (ctx.fwAtLeast(43) && CURVE_SRC[s] != null && analogOut(s) && cfg().ext.curve ? responseHtml(CURVE_SRC[s], cfg().ext.curve[CURVE_SRC[s]]) : '');
   function renderRows() {
     const box = ctx.$('#tRows');
     if (!box) return;
@@ -110,10 +124,11 @@ export function createTestPage(ctx) {
       return `<div class="mrow ${t.sel === s ? 'sel' : ''} ${wired(s) ? '' : 'unwired'}" data-row="${s}">
         <button type="button" class="m-name" data-pick="${s}" aria-pressed="${t.sel === s}" title="Pick this input, then click a button on the gamepad above">
           <span class="m-live ${src.analog ? 'bar' : ''}" data-live="${s}"><i></i></span>
-          <span class="m-label"${src.color ? ` style="--c:${src.color}"` : ''}>${src.name}${wired(s) ? '' : ' <small class="dim">not wired</small>'}</span></button>
+          <span class="m-label"${src.color ? ` style="--c:${src.color}"` : ''}>${src.name}${s === 11 || s === 12 ? ` <small class="dim">${sensorSrc(s - 11)}</small>` : ''}${wired(s) ? '' : ' <small class="dim">not wired</small>'}</span></button>
         <select data-src="${s}" aria-label="${src.name} output in ${modeName()}">${optionsFor(s)}</select>
-        <span class="m-res dim small">${bad ? 'this mode cannot send that' : resultText(s)}</span></div>`;
+        <span class="m-res dim small">${bad ? 'this mode cannot send that' : resultText(s)}</span>${respFor(s)}</div>`;
     }).join('') : '<p class="dim">Nothing is wired yet. Set up buttons first, or tick the box below to see every input.</p>';
+    wireResponse(box, (k) => cfg().ext.curve[k], (k, c) => { cfg().ext.curve[k] = c; ctx.pushCfg(); });
     const def = isDefaultRow(t.mode);
     ctx.$('#tRestore').disabled = def;
     ctx.$('#tRestoreAll').disabled = cfg().ext.map.every((_, m) => isDefaultRow(m));
@@ -187,8 +202,11 @@ export function createTestPage(ctx) {
     const m = t.mode, r = row(m);
     const live = ctx.liveSources(s, r, m);
     const fw = s.pad && s.modeRow === m;
-    const pad = fw ? s.pad : computePad(r, live.v, live.tp, { mode: m, tiltStar: live.tiltStar });
+    const pad = fw ? s.pad : computePad(r, live.v, live.tp, { mode: m, tiltStar: live.tiltStar, curve: cfg().ext.curve });
     t.pad.update(pad);
+    t.viz.update(pad, { mode: modeName().replace(/ \(.*\)$/, ''), live: !!fw });
+    t.pad.setLive(fw, fw ? 'The pad the guitar is sending right now in this mode.' : 'Worked out from your inputs; the guitar is not in this mode.');
+    t.pad.setHeader('YAGCC ' + modeName());
     const badge = ctx.$('#tBadge');
     badge.textContent = fw ? 'Live from the guitar' : 'Preview';
     badge.className = 'tag ' + (fw ? 'live' : 'prev');
@@ -199,6 +217,7 @@ export function createTestPage(ctx) {
       if (isAnalogSrc(i)) { d.firstElementChild.style.width = (Math.min(1, Math.abs(v)) * 100).toFixed(0) + '%'; d.classList.toggle('on', Math.abs(v) > 0.5); }
       else d.classList.toggle('on', v > 0.5);
     });
+    moveDots(ctx.$('#tRows'), { 0: live.v[9], 1: live.v[11], 2: live.v[12] });
     chips(s, live);
   }
   function chips(s, live) {

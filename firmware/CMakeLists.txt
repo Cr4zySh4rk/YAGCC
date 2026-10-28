@@ -35,7 +35,7 @@ endif()
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 42)
+set(YACC_VERSION_MINOR 43)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")

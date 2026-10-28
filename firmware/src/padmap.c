@@ -22,6 +22,21 @@ static inline void acc(int16_t *a, int32_t c) {
     if (iabs(c) > iabs(*a)) *a = (int16_t)c;
 }
 
+static int32_t cube15(int32_t x) {   // (x / 32767)^3 * 32767, rounded
+    const int64_t d = 32767LL * 32767LL;
+    return (int32_t)(((int64_t)x * x * x + d / 2) / d);
+}
+int16_t padmap_curve(int32_t x, int8_t c) {
+    if (x < 0) x = 0;
+    if (x > 32767) x = 32767;
+    if (c == 0) return (int16_t)x;
+    int32_t e = c < 0 ? -c : c;
+    if (e > 100) e = 100;
+    int32_t u = c > 0 ? x : 32767 - x;
+    int32_t y = ((100 - e) * u + e * cube15(u) + 50) / 100;
+    return (int16_t)(c > 0 ? y : 32767 - y);
+}
+
 int16_t padmap_cal_axis(uint16_t raw, uint16_t mn, uint16_t md, uint16_t mx, uint8_t dz) {
     if (!(mn < md && md < mx)) return 0;
     int32_t v;
@@ -77,10 +92,11 @@ void padmap_build(const padsrc_t *s, const uint8_t *row, gpad_t *g) {
         int idx = o - OUT_LX, sign = 0;
         if (o >= OUT_LXM) { idx = (o - OUT_LXM) >> 1; sign = (o & 1) ? 1 : -1; }   // 24 LX-, 25 LX+, 26 LY- ...
         int32_t c;
+        if (analog && !bipolar) a = padmap_curve(a, g_ext.curve[src == SRC_WHAMMY ? 0 : src - SRC_TILT_S1 + 1]);   // response curve, after the press test
         if (!analog)     c = p ? 32767 : 0;                              // pressed = the extreme
         else if (sign)   c = iabs(a);
         else if (idx >= 4) c = iabs(a);                                  // trigger: 0..1 (a stick: |value|)
-        else             c = bipolar ? a : 2 * a - 32767;                // 0..1 -> the stick's full range
+        else             c = a;                                          // stick: itself; whammy / sensor 0..1 -> 0..+1 (rest = centre)
         if (sign) c = sign * c;
         acc(&ax[idx], c);
         driven |= (uint8_t)(1u << idx);

@@ -1,5 +1,6 @@
 // Host tests for the 0.42 input mapping: golden (default map == 0.41 reports, byte for byte) and non-default maps.
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -74,7 +75,7 @@ static void golden(void) {
     ext_defaults(&g_ext);
     static const int16_t wh[] = {0, 1, 127, 128, 16383, 32767};
     static const int16_t sw[] = {0, 5000, 32767};         // a tilt sensor on the whammy target
-    long combos = 0, diffs = 0;
+    long combos = 0, diffs = 0, hid_z_changed = 0;
     for (int flag = 0; flag < 2; flag++) {
         g_cfg.flags = flag ? CFG_FLAG_STAR_DPAD_LEFT : 0;
         for (int mode = 0; mode < M_COUNT; mode++) {
@@ -107,6 +108,15 @@ static void golden(void) {
                             uint8_t a[64], b[64]; memset(a, 0xAA, 64); memset(b, 0xAA, 64);
                             int xb; uint16_t la = old_build(mode, &o, a, &xb), lb = new_build(mode, &g, b);
                             combos++;
+                            if (mode == MODE_HID || mode == MODE_AUTO) {
+                                // INTENTIONAL 0.43 CHANGE (only this byte): HID Z (byte 5) is a plain axis, so the whammy rests at
+                                // the centre. Expected = 0x80 + (whammy >> 8): rest 0x80, half 0xBF, full 0xFF (0.42 sent whammy >> 7).
+                                int w = wh[wi] > sw[si] ? wh[wi] : sw[si];
+                                uint8_t exp = (uint8_t)(0x80 + (w >> 8));
+                                CHECK(b[5] == exp, "hid Z whammy %d: got %02x expected %02x", w, b[5], exp);
+                                hid_z_changed += a[5] != b[5];
+                                a[5] = exp;
+                            }
                             if (la != lb || memcmp(a, b, la)) {
                                 diffs++;
                                 if (diffs < 6) { printf("DIFF mode %d bits %x kind %d wh %d sw %d:\n old", mode, bits, kind, wh[wi], sw[si]); for (int i = 0; i < la; i++) printf(" %02x", a[i]); printf("\n new"); for (int i = 0; i < lb; i++) printf(" %02x", b[i]); printf("\n"); }
@@ -115,7 +125,8 @@ static void golden(void) {
         }
     }
     g_cfg.flags = 0;
-    printf("golden: %ld report comparisons (11 modes x 512 digital x 11 tilt kinds x 6 whammy x 3 sensor x 2 flag settings), %ld differences\n", combos, diffs);
+    printf("golden: HID/Auto byte 5 (Z, whammy) deliberately differs from 0.42 in %ld of those comparisons; all other bytes identical\n", hid_z_changed);
+    printf("golden: %ld report comparisons (11 modes x 512 digital x 11 tilt kinds x 6 whammy x 3 sensor x 2 flag settings), %ld differences (HID Z byte compared against the documented 0.43 value)\n", combos, diffs);
     checks += combos; fails += diffs;
 }
 
@@ -144,7 +155,7 @@ static void mapped(void) {
       padsrc_t s = quiet(); s.whammy = 32767; gpad_t g = pack(&s, row); uint8_t o[64];
       CHECK(g.lt == 32767 && !(g.driven & DRV_RX), "lt full, rx undriven");
       rpt_xinput(&g, o); CHECK(o[4] == 255 && o[10] == 0 && o[11] == 0, "xinput LT byte, RX centred");
-      rpt_hid(&g, o);    CHECK((o[1] & 0x20) && o[5] == 0, "hid LT button, Z at rest");
+      rpt_hid(&g, o);    CHECK((o[1] & 0x20) && o[5] == 0x80, "hid LT button, Z at rest (centre)");
       rpt_ps3(&g, o);    CHECK((o[0] & 0x40) && o[5] == 0x80, "ps3 gh L2 bit, whammy at rest");
       rpt_ps4(&g, o);    CHECK(o[8] == 255 && (o[6] & 4) && o[44] == 0, "ps4 L2 analog + bit");
       rpt_switch(&g, o); CHECK((o[0] & 0x40) && o[5] == 0x80, "switch ZL");
@@ -180,8 +191,8 @@ static void mapped(void) {
       rpt_hid(&g, o); CHECK(o[3] == 0xC0, "hid X 0xC0 got %02x", o[3]);
       s.sens[0] = 0; g = pack(&s, row); CHECK(g.lx == 0, "at rest 0");
       // a sensor on the whammy target adds to the bar only while its entry is the default
-      defrow(row); s.sens_whammy[0] = 30000; s.sens[0] = 0; g = pack(&s, row); CHECK(g.rx == 2 * 30000 - 32767, "tune-page whammy sensor");
-      row[SRC_TILT_S1] = OUT_LXP; g = pack(&s, row); CHECK(g.rx == -32767, "explicit entry drops its whammy contribution"); }
+      defrow(row); s.sens_whammy[0] = 30000; s.sens[0] = 0; g = pack(&s, row); CHECK(g.rx == 30000, "tune-page whammy sensor");
+      row[SRC_TILT_S1] = OUT_LXP; g = pack(&s, row); CHECK(g.rx == 0, "explicit entry drops its whammy contribution"); }
     // ---- sensor digital press with hysteresis
     { defrow(row); row[SRC_TILT_S2] = OUT_Y; padmap_reset();
       padsrc_t s = quiet(); s.sens_thr[1] = 50; uint8_t seq[] = {0, 1, 1, 1, 0}; int v[] = {10000, 16383, 16384, 15000, 14000};
@@ -197,9 +208,9 @@ static void mapped(void) {
       padsrc_t s = quiet(); s.dig = 1u << SRC_RED; gpad_t g = pack(&s, row); CHECK(GP_BTN(&g, OUT_A), "OR of two sources");
       s.dig = 0; s.whammy = 20000; g = pack(&s, row); CHECK(GP_BTN(&g, OUT_A), "analog > 0.5 presses a digital output");
       s.whammy = 16000; g = pack(&s, row); CHECK(!GP_BTN(&g, OUT_A), "analog < 0.5 does not"); }
-    { defrow(row); row[SRC_STICK_X] = OUT_RX; row[SRC_WHAMMY] = OUT_RX;       // whammy at rest = -1, stick centred 0: farthest wins
-      padsrc_t s = quiet(); s.stick[0] = 20000; s.whammy = 30000; gpad_t g = pack(&s, row); CHECK(g.rx == 2 * 30000 - 32767, "whammy 30000 -> 27233 wins over stick 20000 (got %d)", g.rx);
-      s.whammy = 20000; s.stick[0] = -30000; g = pack(&s, row); CHECK(g.rx == -30000, "stick -30000 beats whammy 7233"); }
+    { defrow(row); row[SRC_STICK_X] = OUT_RX; row[SRC_WHAMMY] = OUT_RX;       // whammy at rest = 0 (0.43), stick centred 0: farthest wins
+      padsrc_t s = quiet(); s.stick[0] = 20000; s.whammy = 30000; gpad_t g = pack(&s, row); CHECK(g.rx == 30000, "whammy 30000 wins over stick 20000 (got %d)", g.rx);
+      s.whammy = 20000; s.stick[0] = -30000; g = pack(&s, row); CHECK(g.rx == -30000, "stick -30000 beats whammy 20000"); }
     { defrow(row); row[SRC_STICK_X] = OUT_LT;                                   // stick to a trigger: |value|
       padsrc_t s = quiet(); s.stick[0] = -20000; gpad_t g = pack(&s, row); CHECK(g.lt == 20000, "stick -> trigger is |v|"); }
     { defrow(row); row[SRC_SELECT] = 0;       // nothing
@@ -208,9 +219,73 @@ static void mapped(void) {
     { defrow(row);                          // D-pad sources and home / click defaults
       padsrc_t s = quiet(); s.dig = (1u << SRC_DPAD_LEFT) | (1u << SRC_HOME) | (1u << SRC_STICK_CLICK); gpad_t g = pack(&s, row);
       CHECK(GP_BTN(&g, OUT_DLEFT) && GP_BTN(&g, OUT_GUIDE) && GP_BTN(&g, OUT_L3), "dpad left / home / click defaults"); }
+    // ---- 0.43: a 0..1 source on a full stick axis spans 0..+1 (rest = centre), triggers and half axes unchanged
+    { defrow(row); row[SRC_WHAMMY] = OUT_LX; row[SRC_TILT_S1] = OUT_RY; row[SRC_TILT_S2] = OUT_RT;
+      padsrc_t s = quiet(); gpad_t g = pack(&s, row); uint8_t o[64];
+      CHECK(g.lx == 0 && g.ry == 0 && g.rt == 0, "rest: LX, RY, RT all 0");
+      s.whammy = 32767; s.sens[0] = 16384; s.sens[1] = 32767; g = pack(&s, row);
+      CHECK(g.lx == 32767 && g.ry == 16384 && g.rt == 32767, "full whammy = full LX, sensor 16384 -> RY 16384 (got %d %d %d)", g.lx, g.ry, g.rt);
+      row[SRC_WHAMMY] = OUT_RXM; g = pack(&s, row); CHECK(g.rx == -32767, "half axis unchanged: RX- = -|v|");
+      row[SRC_WHAMMY] = OUT_LT; g = pack(&s, row); CHECK(g.lt == 32767, "trigger unchanged");
+      row[SRC_WHAMMY] = OUT_RX; row[SRC_GREEN] = OUT_RX; s.dig = 1u << SRC_GREEN; s.whammy = 0; g = pack(&s, row); CHECK(g.rx == 32767, "digital on a full axis = +1");
+      s.dig = 0; g = pack(&s, row); CHECK(g.rx == 0, "released = 0");
+      // native whammy = positive half of RX in every mode; HID Z is a plain axis
+      defrow(row); s = quiet();
+      static const int16_t wv[] = {0, 1, 16383, 32767};
+      static const uint8_t hidz[] = {0x80, 0x80, 0xBF, 0xFF};
+      for (int i = 0; i < 4; i++) {
+          s.whammy = wv[i]; g = pack(&s, row);
+          rpt_hid(&g, o); CHECK(o[5] == hidz[i], "hid Z %02x for whammy %d", o[5], wv[i]);
+          rpt_xinput(&g, o); CHECK((int16_t)(o[10] | o[11] << 8) == 2 * wv[i] - 32767, "xinput RX keeps the guitar whammy range");
+          rpt_ps4(&g, o); CHECK(o[44] == (wv[i] >> 7), "ps4 whammy");
+      }
+      s.whammy = 0; g = pack(&s, row); rpt_hid(&g, o); CHECK(o[5] == 0x80, "HID whammy at rest = centre"); s.whammy = 32767; g = pack(&s, row); rpt_hid(&g, o); CHECK(o[5] == 0xFF, "HID whammy full = max");
+      // a negative RX (RX- / stick left) is no native whammy
+      row[SRC_GREEN] = OUT_RXM; s.dig = 1u << SRC_GREEN; s.whammy = 0; g = pack(&s, row); rpt_ps4(&g, o); CHECK(o[44] == 0, "RX- gives no whammy"); }
     // ---- tilt acting as a fret through the Tune page: only while the entry is the default
     { defrow(row); padsrc_t s = quiet(); s.tilt_fn[0] = F_GREEN; gpad_t g = pack(&s, row); CHECK(GP_BTN(&g, OUT_A), "tilt as green");
       row[SRC_TILT_SW] = OUT_B; g = pack(&s, row); CHECK(!GP_BTN(&g, OUT_A) && !GP_BTN(&g, OUT_B), "explicit entry: no green, and B only while the switch is closed"); }
+}
+
+// ---------------------------------------------------------------- 0.43 response curve
+static void curves(void) {
+    static const double xs[] = {0, .1, .25, .5, .75, .9, 1};
+    static const int cs[] = {-100, -50, 0, 50, 100};
+    printf("curve table (x * 32767 -> padmap_curve, rows c = -100 -50 0 50 100), shared with the JS unit test:\n");
+    for (int ci = 0; ci < 5; ci++) {
+        printf("  c=%4d:", cs[ci]);
+        for (int xi = 0; xi < 7; xi++) {
+            int32_t x = (int32_t)lround(xs[xi] * 32767); int c = cs[ci];
+            int y = padmap_curve(x, (int8_t)c);
+            double fx = x / 32767.0, e = abs(c) / 100.0, fy = c >= 0 ? (1 - e) * fx + e * fx * fx * fx : 1 - ((1 - e) * (1 - fx) + e * pow(1 - fx, 3));
+            CHECK(fabs(y - fy * 32767.0) <= 1.0, "curve c=%d x=%d: %d vs %.2f", c, x, y, fy * 32767.0);
+            printf(" %d", y);
+        }
+        printf("\n");
+    }
+    for (int c = -100; c <= 100; c++) {      // monotonic, end points fixed
+        int prev = -1; CHECK(padmap_curve(0, (int8_t)c) == 0 && padmap_curve(32767, (int8_t)c) == 32767, "curve end points c=%d", c);
+        for (int x = 0; x <= 32767; x += 97) { int y = padmap_curve(x, (int8_t)c); if (y < prev) { CHECK(0, "curve not monotonic c=%d x=%d", c, x); break; } prev = y; }
+    }
+    // through the pad: whammy -> LY+ and -> LY full axis, curve 100 (expo), only on the analog value, not on the press threshold
+    uint8_t row[EXT_MAP_COLS]; ext_defaults(&g_ext); defrow(row);
+    row[SRC_WHAMMY] = OUT_LYP; row[SRC_TILT_S1] = OUT_RY; row[SRC_RED] = OUT_A;
+    g_ext.curve[0] = 100; g_ext.curve[1] = -100;
+    padsrc_t s = quiet(); s.whammy = 16384; s.sens[0] = 16384; gpad_t g = pack(&s, row);
+    CHECK(abs(g.ly - padmap_curve(16384, 100)) <= 0 && g.ly < 4100, "whammy curve +100 on LY+ (got %d)", g.ly);
+    CHECK(g.ry == padmap_curve(16384, -100) && g.ry > 28000, "sensor curve -100 on RY (got %d)", g.ry);
+    row[SRC_WHAMMY] = OUT_B; s.whammy = 16384; g = pack(&s, row);
+    CHECK(GP_BTN(&g, OUT_B), "digital threshold ignores the curve (whammy 0.5000 presses)");
+    g_ext.curve[0] = g_ext.curve[1] = 0; g = pack(&s, row); CHECK(g.ry == 16384, "curve 0 = linear");
+    // validation and layout
+    ext_config_t e; ext_defaults(&e); yacc_config_t mc; memset(&mc, 0xFF, sizeof mc); mc.accel_sda = mc.accel_scl = mc.wii_sda = mc.wii_scl = PIN_NONE;
+    for (int i = 0; i < NUM_ATILT; i++) mc.atilt[i].ch = PIN_NONE;
+    CHECK(offsetof(ext_config_t, curve) == 320, "curve at offset 320");
+    ext_config_t t = e; t.curve[2] = 100; ext_seal(&t); CHECK(ext_validate(&t, &mc), "curve 100 ok");
+    t = e; t.curve[1] = -100; ext_seal(&t); CHECK(ext_validate(&t, &mc), "curve -100 ok");
+    t = e; t.curve[0] = 101; ext_seal(&t); CHECK(!ext_validate(&t, &mc), "curve 101 rejected");
+    t = e; t.curve[1] = -101; ext_seal(&t); CHECK(!ext_validate(&t, &mc), "curve -101 rejected");
+    ext_defaults(&g_ext);
 }
 
 // ---------------------------------------------------------------- stick calibration, ext page
@@ -270,6 +345,7 @@ int main(void) {
     memset(&g_cfg, 0, sizeof g_cfg);
     golden();
     mapped();
+    curves();
     stick_and_ext();
     static const char *names[] = {"XInput", "PS3 GH", "HID", "PS3 RB", "Keyboard", "Switch", "Wii RB", "OG Xbox", "PS4", "Xbox One", "Auto", "PS5"};
     printf("supported outputs (bit o = output o carried, o = 1..31):\n");

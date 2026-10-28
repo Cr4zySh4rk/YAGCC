@@ -13,5 +13,5 @@ c=src.index('// whammy 0..32767 -> full signed range'); d=src.index('static bool
 open('old_reports.inc','w').write("// Frozen copy of the 0.41 report builders, the golden reference for golden.c.\n// build.sh REFRESH=1 re-extracts it from a git revision of the repo.\n"+src[a:b]+src[c:d])
 PY
 fi
-${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -I../../src -o "$BIN" golden.c
+${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -Wno-unused-function -Wno-unused-variable -I../../src -o "$BIN" golden.c -lm
 "$BIN"

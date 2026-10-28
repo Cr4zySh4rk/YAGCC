@@ -39,6 +39,9 @@ typedef struct {
 uint8_t padmap_default_out(int src);                                   // output of source `src` at MAP_DEFAULT (0xFF for the tilt sources)
 void padmap_build(const padsrc_t *s, const uint8_t *row, gpad_t *g);   // row = EXT_MAP_COLS bytes, NULL = all defaults
 void padmap_reset(void);                                               // forget the tilt sensors' press state
+// response curve of an analog 0..1 source (x 0..32767 -> 0..32767), c = -100..100, 0 = linear. c > 0: gentle near rest, steep at
+// the end (y = (1-e)x + e x^3, e = c/100); c < 0: quick off rest, flatter at the end (the mirror image). Same maths as web/js/mapping.js
+int16_t padmap_curve(int32_t x, int8_t c);
 // raw ADC reading -> -32767..32767 around `mid` (min < mid < max), then a deadzone of dz percent, rescaled
 int16_t padmap_cal_axis(uint16_t raw, uint16_t mn, uint16_t md, uint16_t mx, uint8_t dz);
 

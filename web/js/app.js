@@ -9,6 +9,7 @@ import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
 import { createGuitar } from './guitar.js?v=dev';
 import { renderHardware, renderCompat } from './pages.js?v=dev';
 import { buildStudio, syncStudio } from './studio.js?v=dev';
+import { responseHtml, wireResponse } from './response.js?v=dev';
 import { createTestPage } from './testpage.js?v=dev';
 import { createExtras } from './extras.js?v=dev';
 import { SECTIONS, makeBackup, backupFileName, readBackup, applyBackup, download } from './backup.js?v=dev';
@@ -323,7 +324,7 @@ function liveSources(s, row, mode) {
   });
   return { v, tp, tiltStar };
 }
-const testPage = createTestPage({ state, $, toast, pushCfg: () => pushCfg(), makeViewer: (...a) => makeViewer(...a), liveSources });
+const testPage = createTestPage({ state, $, toast, pushCfg: () => pushCfg(), makeViewer: (...a) => makeViewer(...a), liveSources, fwAtLeast });
 // ADC channels the stick can't use: the whammy's and any analog tilt sensor's
 const whammyChannels = () => {
   const c = state.cfg, b = new Set();
@@ -1508,6 +1509,7 @@ function buildTilt() {
         <div class="opt first"><div><p class="dim">Reads from</p></div><select data-k="src">${srcOpts(i)}</select></div>
         ${t.src !== PIN_NONE ? `
         <div class="opt"><div><p class="dim">Acts as</p></div><select data-k="func" aria-label="Sensor ${i + 1} acts as">${tiltFuncOptions(t.target === 0 ? 'w' : tiltFuncOf(1 + i), true)}</select></div>
+        ${fwAtLeast(43) && c.ext?.curve ? responseHtml(1 + i, c.ext.curve[1 + i], 'Used when this sensor is mapped to a stick or trigger on the Test page. The press threshold is not affected.') : ''}
         <div class="tilt-meter"><div class="bar" id="tBar${i}"><i></i></div>${t.target === 1 ? `<span class="thr" style="left:${t.threshold}%"></span>` : ''}</div>
         <div class="tilt-readout"><span>reading <b id="tRaw${i}">–</b></span><span>rest ${restOf(t)} · tilted ${tiltOf(t)}</span></div>
         <div class="row" style="margin-top:10px;flex-wrap:wrap">
@@ -1517,6 +1519,7 @@ function buildTilt() {
       </div>`).join('')}
     </div>`;
   const live = () => { pushCfg(); };
+  wireResponse(document.querySelector('.tilt-sensors') || document, (k) => c.ext.curve[k], (k, v) => { c.ext.curve[k] = v; pushCfg(); });
   const sel = $('#accPins');
   sel.value = String(accelOn ? c.accelSda : PIN_NONE);
   sel.onchange = () => {
