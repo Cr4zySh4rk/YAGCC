@@ -61,6 +61,7 @@
       <button data-view="modes" data-needs-dev>Modes</button>
       <button data-view="test" data-needs-dev>Test</button>
       <button data-view="tune" data-needs-dev>Tune</button>
+      <button data-view="backup" data-needs-dev>Backup</button>
       <div class="nav-help">
         <button type="button" id="helpBtn" class="help-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="helpMenu">Help<svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
         <div id="helpMenu" class="help-menu" role="menu" aria-label="Help" hidden>
@@ -195,14 +196,22 @@
         <div id="rumbleBody"></div>
       </div>
       <p class="adv-hint" id="tuneAdvHint" hidden></p>
+      <div class="panel reset-panel">
+        <div class="opt first"><div><h2>Reset everything</h2><p class="dim">Puts every setting (buttons, whammy, tuning, lights and modes) back to factory defaults and saves that straight away.</p></div>
+          <button class="btn danger" id="resetCfg">Reset everything</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= BACKUP ================= -->
+  <section class="view" id="view-backup">
+    <div class="page-head"><h1 class="display">Backup</h1><p class="dim">Save every setting to a file, or load one back.</p></div>
+    <div id="backupGate" class="gate small-gate"><p class="dim">Connect a controller to back it up or restore it.</p><button class="btn primary" data-connect>Connect controller</button></div>
+    <div id="backupMain" style="display:none">
       <div class="panel backup-panel">
         <div class="opt first"><div><h2>Backup and restore</h2><p class="dim">Save every setting to a file, or load one back. Useful before reflashing, or to copy a setup to another guitar.</p></div>
           <div class="row"><button class="btn" id="bkSave">Download backup</button><label class="btn" for="bkFile" tabindex="0">Restore from file</label><input type="file" id="bkFile" accept=".json,application/json" hidden></div></div>
         <div id="bkRestore"></div>
-      </div>
-      <div class="panel reset-panel">
-        <div class="opt first"><div><h2>Reset everything</h2><p class="dim">Puts every setting (buttons, whammy, tuning, lights and modes) back to factory defaults and saves that straight away.</p></div>
-          <button class="btn danger" id="resetCfg">Reset everything</button></div>
       </div>
     </div>
   </section>

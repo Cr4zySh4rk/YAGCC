@@ -3,7 +3,7 @@
 #   usage: tools/model/pads/build_all.sh <dir with the source models> [out dir, default ./out]
 # Needs: node 20+ (run `npm install` in this folder once), python3 with `pip install bpy` for the Xbox 360 .blend (skipped when
 # x360_raw.glb already exists in the source dir). Source files expected in <dir>:
-#   xbox360.blend  white_xbox_controller.glb  dualshock_4_playstation_controller_1k.glb  playstation_5_dualsense_1k.glb  nintendo_switch_joycon.glb
+#   xbox360.blend  white_xbox_controller.glb  dualshock_4_playstation_controller_1k.glb  dualsense_model_updated.glb  nintendo_switch_joycon.glb
 set -e
 SRC=${1:?source dir}; OUT=${2:-out}; HERE=$(cd "$(dirname "$0")" && pwd); cd "$HERE"
 [ -f "$SRC/x360_raw.glb" ] || python3 convert_blend.py "$SRC/xbox360.blend" "$SRC/x360_raw.glb"

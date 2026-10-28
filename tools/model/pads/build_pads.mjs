@@ -75,22 +75,30 @@ const CONFIGS = {
     ],
   }),
 
-  // ---------------------------------------------------------------- DualSense (AHarmlessPotato)
+  // ---------------------------------------------------------------- DualSense (EROLDINA): one fused shell, so the small buttons are cut out of it with boxes (cfg.late)
   ds5: () => {
-    const LB = [-1.1, 0.45, -0.7, -0.45, 0.8, -0.5], RB = [0.45, 0.45, -0.7, 1.1, 0.8, -0.5];
+    const CR = [-0.575, 0.5, -0.59, -0.51, 0.95, -0.49], OP = [0.51, 0.5, -0.59, 0.575, 0.95, -0.49];      // Create / Options ovals
+    const PS = [-0.075, 0.5, -0.04, 0.075, 0.95, 0.06], MU = [-0.06, 0.5, 0.1, 0.06, 0.95, 0.2];          // PS button, mute button
+    const LB = [-0.98, 0.45, -0.7, -0.6, 0.85, -0.5], RB = [0.6, 0.45, -0.7, 0.98, 0.85, -0.5];
+    const inb = (b) => (c) => inBox(c, b);
     return {
-      name: 'ds5', src: `${SRC}/playstation_5_dualsense_1k.glb`, out: `${OUT}/pad_ds5.glb`, rotX: 90, rotY: 180,
-      budget: { part: 700, parts: { ls: 1500, rs: 1500, lt: 1800, rt: 1800, guide: 1200, lb: 900, rb: 900 }, static: 14000 },
-      drop: [(c) => [45, 46].includes(c.gi)],   // stray flat quads under the touchpad
-      pre(soup) { splitBody(soup[0], [LB, RB]); },
+      name: 'ds5', src: `${SRC}/dualsense_model_updated.glb`, out: `${OUT}/pad_ds5.glb`,
+      budget: { part: 600, parts: { ls: 1500, rs: 1500, lt: 2500, rt: 2500, lb: 900, rb: 900 }, static: 30000 },
+      drop: [(c) => [433, 434, 435, 441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451].includes(c.gi)],   // the embossed PlayStation logo: a neutral disc is drawn instead
       parts: [
-        P('btn_a', 'btn', { comp: ids(26, 34) }), P('btn_b', 'btn', { comp: ids(27, 35) }), P('btn_x', 'btn', { comp: ids(25, 33) }), P('btn_y', 'btn', { comp: ids(24, 32) }),
-        P('dpad_up', 'dpad4', { comp: ids(10, 14) }), P('dpad_right', 'dpad4', { comp: ids(11, 15) }), P('dpad_down', 'dpad4', { comp: ids(12, 16) }), P('dpad_left', 'dpad4', { comp: ids(13, 17) }),
-        P('back', 'btn', { comp: ids(40) }), P('start', 'btn', { comp: ids(39) }), P('guide', 'btn', { comp: ids(18, 19, 22, 23) }),
-        P('ls', 'stick', { comp: ids(9, 6, 38) }, stickPivot()), P('rs', 'stick', { comp: ids(8, 5, 37) }, stickPivot()),
-        P('lt', 'trig', { comp: ids(20, 30) }, hingeTop), P('rt', 'trig', { comp: ids(21, 31) }, hingeTop),
-        P('lb', 'bump', { tri: (c, p) => inBox(c, LB) && p.mat?.getName() === '1011' }, hingeBar), P('rb', 'bump', { tri: (c, p) => inBox(c, RB) && p.mat?.getName() === '1011' }, hingeBar),
+        P('btn_a', 'btn', { comp: ids(6, 655) }), P('btn_b', 'btn', { comp: ids(8, 653) }), P('btn_x', 'btn', { comp: ids(5, 652) }), P('btn_y', 'btn', { comp: ids(7, 654) }),
+        P('dpad_up', 'dpad4', { comp: ids(4, 650) }), P('dpad_right', 'dpad4', { comp: ids(3, 649) }), P('dpad_down', 'dpad4', { comp: ids(1, 648) }), P('dpad_left', 'dpad4', { comp: ids(2, 651) }),
+        P('ls', 'stick', { comp: ids(439) }, stickPivot()), P('rs', 'stick', { comp: ids(440) }, stickPivot()),
+        P('lt', 'trig', { comp: ids(437, 438) }, hingeTop), P('rt', 'trig', { comp: ids(521, 522) }, hingeTop),
       ],
+      mats(doc) { plastic(mat(doc, 'buttons_inner'), [0.93, 0.93, 0.96], 0.42); },
+      late: {
+        boxes: [CR, OP, PS, LB, RB],
+        parts: [
+          P('back', 'btn', { tri: inb(CR) }), P('start', 'btn', { tri: inb(OP) }), P('guide', 'btn', { tri: inb(PS) }), 
+          P('lb', 'bump', { tri: inb(LB) }, hingeBar), P('rb', 'bump', { tri: inb(RB) }, hingeBar),
+        ],
+      },
     };
   },
 

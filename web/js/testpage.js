@@ -9,6 +9,8 @@ import { responseHtml, wireResponse, moveDots } from './response.js?v=dev';
 import { CURVE_SRC } from './mapping.js?v=dev';
 import { ATILT_SOURCES } from './protocol.js?v=dev';
 import { createViz } from './vizcards.js?v=dev';
+import { KEY_SLOTS, KEYS, KEY_PRESETS } from './protocol.js?v=dev';
+import { createKeyboard, slotColor } from './kbviz.js?v=dev';
 
 // ctx: { state, $, toast, pushCfg, makeViewer, liveSources(s, row, mode) }
 export function createTestPage(ctx) {
@@ -31,6 +33,7 @@ export function createTestPage(ctx) {
     return testMode(run) ? run : TEST_MODES[0].id;
   };
   const modeName = () => testMode(t.mode)?.name || '';
+  const isKb = () => !!testMode(t.mode)?.keyboard;
 
   // ---- skeleton (built once per connection; the guitar viewer is attached by the app)
   function build() {
@@ -50,6 +53,7 @@ export function createTestPage(ctx) {
           <p class="t-hint" id="tHint" role="status"></p><p class="dim small t-padsub" id="tPadSub"></p></div>
         <div id="tCards"></div>
       </div>
+      <div class="t-kb" id="tKb" style="display:none"></div>
       <div class="panel t-map">
         <div class="t-maphead"><div><h2>What each input does</h2><p class="dim small" id="tMapSub"></p></div>
           <div class="row t-actions">
@@ -63,12 +67,21 @@ export function createTestPage(ctx) {
     ctx.$('#tPad').appendChild(t.pad.el);
     t.viz = createViz(ctx);
     ctx.$('#tCards').appendChild(t.viz.el);
+    t.kb = createKeyboard();
+    ctx.$('#tKb').appendChild(t.kb.el);
     ctx.$('#tMode').onchange = (e) => { t.mode = +e.target.value; t.picked = true; t.sel = -1; refresh(); };
     ctx.$('#tAll').onchange = (e) => { t.showAll = e.target.checked; renderRows(); };
     ctx.$('#tRestore').onclick = restoreMode;
     ctx.$('#tCopy').onclick = copyToAll;
     ctx.$('#tRestoreAll').onclick = restoreAll;
-    ctx.$('#tRows').addEventListener('change', (e) => { const s = e.target.closest('select[data-src]'); if (s) assign(+s.dataset.src, +s.value); });
+    ctx.$('#tRows').addEventListener('change', (e) => {
+      const s = e.target.closest('select[data-src]'); if (s) assign(+s.dataset.src, +s.value);
+      const k = e.target.closest('select[data-key]'); if (k) { cfg().keys[+k.dataset.key] = +k.value; ctx.pushCfg(); markPresets(); }
+    });
+    ctx.$('#tRows').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-kp]');
+      if (b) { cfg().keys = KEY_PRESETS[+b.dataset.kp].keys.slice(); ctx.pushCfg(); renderKeyRows(); }
+    });
     ctx.$('#tRows').addEventListener('click', (e) => {
       const n = e.target.closest('[data-pick]');
       if (n) select(t.sel === +n.dataset.pick ? -1 : +n.dataset.pick);
@@ -80,8 +93,17 @@ export function createTestPage(ctx) {
   function refresh() {
     if (!ctx.$('#tMode') || !cfg()?.ext) return;
     ctx.$('#tMode').value = String(t.mode);
-    t.pad.setMode(t.mode); if (t.viz) t.viz.setMode(t.mode);
-    ctx.$('#tRestore').textContent = `Restore default mapping for ${modeName()}`;
+    const kb = isKb();
+    ctx.$('.t-viz').style.display = kb ? 'none' : '';
+    ctx.$('#tChips').style.display = kb ? 'none' : '';
+    ctx.$('#tKb').style.display = kb ? '' : 'none';
+    ctx.$('.t-actions').style.display = kb ? 'none' : '';
+    ctx.$('.t-foot').style.display = kb ? 'none' : '';
+    ctx.$('.t-map h2').textContent = kb ? 'Which key each input presses' : 'What each input does';
+    if (!kb) {
+      t.pad.setMode(t.mode); if (t.viz) t.viz.setMode(t.mode);
+      ctx.$('#tRestore').textContent = `Restore default mapping for ${modeName()}`;
+    }
     renderRows();
     hint();
   }
@@ -115,6 +137,7 @@ export function createTestPage(ctx) {
   function renderRows() {
     const box = ctx.$('#tRows');
     if (!box) return;
+    if (isKb()) { renderKeyRows(); return; }
     const r = row();
     const list = SOURCES.filter((src) => t.showAll || wired(src.id) || r[src.id] !== MAP_DEFAULT);
     ctx.$('#tMapSub').textContent = `Showing what each input sends in ${modeName()}.` + (t.showAll ? '' : ' Only wired inputs are listed.');
@@ -134,6 +157,20 @@ export function createTestPage(ctx) {
     ctx.$('#tRestoreAll').disabled = cfg().ext.map.every((_, m) => isDefaultRow(m));
   }
 
+  // ---- keyboard mode: the key bindings (cfg.keys), same list as the Modes page
+  const keyOpts = (sel) => Object.entries(KEYS).sort((x, y) => (+x[0] === 0 ? -1 : +y[0] === 0 ? 1 : 0))
+    .map(([code, name]) => `<option value="${code}" ${+code === sel ? 'selected' : ''}>${name}</option>`).join('');
+  const markPresets = () => document.querySelectorAll('#tRows [data-kp]').forEach((b) => b.classList.toggle('on', KEY_PRESETS[+b.dataset.kp].keys.every((k, j) => k === cfg().keys[j])));
+  function renderKeyRows() {
+    const box = ctx.$('#tRows'), keys = cfg().keys;
+    ctx.$('#tMapSub').textContent = 'Keyboard mode types keys instead of acting as a gamepad. Pick the key each guitar input presses; it lights on the keyboard above as you play.';
+    box.innerHTML = `<div class="seg kb-presets" role="group" aria-label="Key presets">${KEY_PRESETS.map((p, i) => `<button type="button" data-kp="${i}" title="${p.desc}">${p.name.replace(/^Fortnite Festival \u00b7 /, '')}</button>`).join('')}</div>`
+      + KEY_SLOTS.map((name, i) => `<div class="mrow" data-krow="${i}">
+        <span class="m-name"><span class="m-live" data-klive="${i}"><i></i></span><span class="m-label" style="--c:${slotColor(i)}">${name}</span></span>
+        <select data-key="${i}" id="tKey${i}" aria-label="${name} key">${keyOpts(keys[i])}</select><span class="m-res dim small"></span></div>`).join('');
+    markPresets();
+  }
+
   // ---- selecting a source, then clicking the gamepad
   function select(s) {
     t.sel = s;
@@ -144,7 +181,7 @@ export function createTestPage(ctx) {
   }
   function hint() {
     const h = ctx.$('#tHint'), sel = t.sel;
-    if (!h) return;
+    if (!h || isKb()) return;
     t.pad?.setArmed(sel >= 0);
     h.className = 't-hint' + (sel >= 0 ? ' armed' : '');
     h.textContent = sel >= 0
@@ -152,6 +189,7 @@ export function createTestPage(ctx) {
       : 'To change something, click an input on the guitar or in the list below, then click what it should press on the gamepad.';
   }
   function onPart(name) {
+    if (isKb()) return;
     const s = name === 'whammy' ? 9 : GUITAR_PART.indexOf(name);
     if (s >= 0) select(t.sel === s ? -1 : s);
   }
@@ -199,6 +237,18 @@ export function createTestPage(ctx) {
   function update(s) {
     if (!ctx.$('#tMode') || !cfg()?.ext) return;
     if (!t.picked && s.modeRow >= 0 && testMode(s.modeRow) && s.modeRow !== t.mode) { t.mode = s.modeRow; refresh(); }
+    else if (!t.picked && s.modeRow < 0 && ctx.state.info?.mode === 4 && !isKb()) { t.mode = 4; refresh(); }   // running as a keyboard: no map row
+    if (isKb()) {
+      const pressed = ctx.keyLive(s);
+      t.kb.update(cfg().keys, pressed);
+      document.querySelectorAll('#tRows [data-klive]').forEach((d) => d.classList.toggle('on', !!pressed[+d.dataset.klive]));
+      const run = ctx.state.info?.mode === 4;
+      const badge = ctx.$('#tBadge');
+      badge.textContent = run ? 'Live from the guitar' : 'Preview';
+      badge.className = 'tag ' + (run ? 'live' : 'prev');
+      badge.title = run ? 'The guitar is in keyboard mode: these are the keys it types.' : 'The guitar is not in keyboard mode right now. This shows the keys it would type.';
+      return;
+    }
     const m = t.mode, r = row(m);
     const live = ctx.liveSources(s, r, m);
     const fw = s.pad && s.modeRow === m;

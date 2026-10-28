@@ -26,7 +26,7 @@ fallback for software WebGL / `?2d`, and as the hidden keyboard layer). The mode
 | `pad_xbox360.glb` | XInput | Xbox 360 pad by [matok39x](https://www.cgtrader.com/designers/matok39x) (CGTrader), `xbox360.blend` converted with Blender's glTF exporter | 1.1 MB |
 | `pad_xboxone.glb` | Xbox One, OG Xbox, HID | "White XBOX Controller" by [CREATRBOI](https://sketchfab.com/CREATRBOI) (Sketchfab) | 0.8 MB |
 | `pad_ds4.glb` | PS3 GH, PS3 RB, PS4 | "DualShock 4 PlayStation Controller" by [shaielwolf](https://sketchfab.com/shaielwolf) (Sketchfab) | 1.1 MB |
-| `pad_ds5.glb` | PS5 | "Playstation 5 Dualsense" by [AHarmlessPotato](https://sketchfab.com/AHarmlessPotato) (Sketchfab) | 1.2 MB |
+| `pad_ds5.glb` | PS5 | DualSense by [EROLDINA](https://sketchfab.com/jeroldina) (Sketchfab) | 1.6 MB |
 | `pad_joycon.glb` | Switch, Wii RB | "Nintendo Switch Joycon" by [Hayley Jacka](https://sketchfab.com/HayleyJacka) (Sketchfab) | 0.7 MB |
 
 No DualShock 3 model was provided, so the PS3 modes show the DualShock 4. An earlier `dualshock4.glb` (12 MB, 400k triangles, flat colours, blank caps) was
@@ -40,7 +40,8 @@ of the Xbox 360 / Xbox One pads were reset to plain white plastic; the Xbox 360 
 shell) had its triggers and bumpers cut out with exact plane cuts and was levelled (it sits tilted in the source); the Joy-Con pair is the right Joy-Con plus a copy
 turned 180 degrees with a blue body (hue-shifted texture), a minus bar instead of the plus, its capture button moved to the bottom and the shoulder
 buttons at the top. Button labels the source lacks are drawn at run time as flat decals (letters on the Xbox pads, PlayStation symbols on the DualSense,
-arrows and capture on the left Joy-Con, view / menu icons) from simple geometric shapes and a plain font; the existing marks in the models were kept.
+D-pad arrows, Create / Options marks and a neutral ring on the PS button of the DualSense, arrows and capture on the left Joy-Con, view / menu icons) from simple geometric shapes and a plain font; the existing marks in the models were kept. The DualSense source (21 MB, ~600k triangles, no textures, shell fused into three meshes) was simplified hard; its Create / Options / PS buttons and the L1 / R1 bumpers are cut out of the shell with box cuts (`late` stage in `pads/engine.mjs`), its embossed PlayStation logo was removed and the shell recoloured to white.
+In the page the default view is the pad tilted back about 45 degrees (trigger edge up and away); dragging orbits all the way round (full turn, face-on to underside) and the view eases back to the default only after 8 s of no input.
 
 ## Node names (identical in every file)
 

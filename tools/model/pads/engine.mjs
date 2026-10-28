@@ -91,6 +91,13 @@ export async function run(cfg) {
   const nm = cfg.soup ? null : normalise(soup, cfg.width || 2, cfg.centre);
   if (cfg.pre) cfg.pre(soup, doc);
   const res = carve(soup, cfg.parts, { drop: cfg.drop });
+  if (cfg.late) {   // second carve on what is left: cut the remaining prims along boxes first (ids of the first carve stay valid), then pick by triangle position
+    const rem = res.P.map((q) => { const tr = []; for (let t = 0; t < q.taken.length; t++) if (!q.taken[t]) tr.push(t); return tr.length ? subset(q.p, tr) : null; }).filter(Boolean);
+    res.P.forEach((q) => q.taken.fill(1));
+    for (const s of rem) for (const bx of cfg.late.boxes) splitBox(s, bx);
+    const r2 = carve(rem, cfg.late.parts, {}); const off = res.P.length;
+    r2.out.forEach((o) => o.picked.forEach((x) => { x[0] += off; })); res.P.push(...r2.P); res.out.push(...r2.out);
+  }
   if (cfg.post) for (const q of res.P) { const W = cfg.post; for (let i = 0; i < q.p.pos.length; i += 3) { const v = xp(W, q.p.pos[i], q.p.pos[i+1], q.p.pos[i+2]); q.p.pos.set(v, i); const n = xn(W, q.p.nor[i], q.p.nor[i+1], q.p.nor[i+2]); q.p.nor.set(n, i); } }
   if (cfg.mats) cfg.mats(doc);
   const d = write(soup, res, cfg, cfg.out, doc);

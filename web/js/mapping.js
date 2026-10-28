@@ -30,10 +30,11 @@ export const NUM_OUT = 32;
 export const DEFAULT_OUT = [1, 2, 4, 3, 5, 14, 15, 9, 10, 20, null, null, null, 14, 15, 16, 17, 9, 11, 18, 19, 12];
 export const TILT_AXIS_MODES = [0];   // only XInput shows the tilt on the generic pad (RY); other reports keep it in a native field
 
-// ---- modes shown on the Test page (keyboard and Auto have no map)
+// ---- modes shown on the Test page (Auto has no map; keyboard has key bindings instead of a map)
 export const TEST_MODES = [
   { id: 0, name: 'XInput (Xbox 360 / PC)', family: 'xbox' },
-  { id: 2, name: 'HID (PC)', family: 'xbox' },
+  { id: 2, name: 'HID gamepad (PC)', family: 'xbox' },
+  { id: 4, name: 'Keyboard (Fortnite Festival)', family: 'xbox', keyboard: true },   // no gamepad map: its own key bindings (cfg.keys)
   { id: 1, name: 'PS3 Guitar Hero', family: 'ps' },
   { id: 3, name: 'PS3 Rock Band', family: 'ps' },
   { id: 6, name: 'Wii Rock Band', family: 'nin' },

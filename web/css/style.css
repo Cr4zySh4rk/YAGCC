@@ -435,7 +435,7 @@ p.warn { color: var(--warn); margin-top: 8px; }
 .guitar-view.loading-3d svg.guitar { visibility: hidden; }
 .guitar-view.loading-3d::before { content: "Loading 3D guitar…"; position: absolute; inset: 0; display: grid; place-items: center; font: 500 13px var(--sans); color: var(--faint); animation: g3d-wait 1.6s ease-in-out infinite; }
 @keyframes g3d-wait { 50% { opacity: .35; } }
-canvas.guitar3d { display: block; width: 100%; cursor: grab; touch-action: pan-y; animation: g3d-in .5s ease-out; }
+canvas.guitar3d { display: block; width: 100%; cursor: grab; touch-action: none; animation: g3d-in .5s ease-out; }
 canvas.guitar3d.grabbing { cursor: grabbing; }
 .guitar-view.is-3d::after { content: "Drag to turn · double-click to reset"; position: absolute; right: 4px; bottom: 2px; font: 500 11px var(--sans); color: var(--faint); pointer-events: none; }
 .stage.compact .guitar-view.is-3d::after { display: none; }
@@ -586,6 +586,7 @@ nav button.nav-off:hover { color: var(--dim); }
   .help-menu { right: 8px; left: auto; top: calc(100% - 4px); }
   .adv-toggle span:first-child { font-size: 13px; }
 }
+@media (max-width: 480px) { nav button { padding: 0 4px; font-size: 13px; } nav button.active::after { left: 3px; right: 3px; } .help-btn { gap: 3px; } }
 
 /* ---- navigation: install hero next-step card ---- */
 .next-card { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 18px 20px; border: 1px solid var(--line-2); border-left: 3px solid var(--ok); border-radius: var(--r); background: var(--panel); max-width: 34em; }
@@ -938,7 +939,7 @@ body.has-savebar #toasts { bottom: 90px; }
 .gp-card.is-3d { position: relative; }
 .gp-3d { position: relative; margin: 2px -4px 0; border-radius: 14px; background: radial-gradient(ellipse 62% 56% at 50% 46%, color-mix(in srgb, var(--text) 8%, transparent), transparent 74%); }
 .gp-3d[hidden] { display: none; }
-canvas.pad3d { display: block; width: 100%; cursor: grab; touch-action: pan-y; animation: g3d-in .5s ease-out; }
+canvas.pad3d { display: block; width: 100%; cursor: grab; touch-action: none; animation: g3d-in .5s ease-out; }
 canvas.pad3d.grabbing { cursor: grabbing; }
 .gp-card.is-3d .gp-3d::after { content: "Drag to turn \00b7  double-click to reset"; position: absolute; right: 8px; bottom: 4px; font: 500 11px var(--sans); color: var(--faint); pointer-events: none; }
 .gp-svg.gp-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -1058,3 +1059,21 @@ canvas.pad3d.grabbing { cursor: grabbing; }
 .tilt-card .resp { grid-template-columns: minmax(0, 1fr) auto; margin: 8px 0; }
 .tilt-card .resp-t, .tilt-card .resp input, .tilt-card .resp-chips, .tilt-card .resp-n { grid-column: 1 / -1; }
 @media (max-width: 760px) { .resp { grid-template-columns: minmax(0, 1fr) auto; } .resp-t, .resp input, .resp-chips, .resp-n { grid-column: 1 / -1; } }
+
+/* ---------- Test page: keyboard mode ---------- */
+.t-kb { margin: 4px 0 18px; }
+.kb { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; padding: 14px; background: var(--inset); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.kb-main { flex: 1 1 520px; min-width: 0; display: grid; gap: 4px; }
+.kb-nav { flex: 0 0 auto; display: grid; gap: 4px; width: 150px; max-width: 100%; }
+.kb-row { display: grid; grid-template-columns: repeat(60, minmax(0, 1fr)); gap: 4px; }
+.kb-row.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kc { position: relative; height: 40px; border-radius: 6px; border: 1px solid var(--line-2, var(--line)); background: var(--panel); color: var(--dim); display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; overflow: hidden; padding: 0 2px; transition: background .08s, transform .08s, box-shadow .08s; }
+.kc b { font: 600 11px var(--mono); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kc small { font: 700 8px/1.1 var(--mono); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c, var(--dim)); }
+.kc.bound { border-color: var(--c); color: var(--text); background: color-mix(in srgb, var(--c) 14%, var(--panel)); }
+.kc.on { background: var(--c); color: #0b0f17; transform: translateY(1px); box-shadow: 0 0 14px color-mix(in srgb, var(--c) 70%, transparent); }
+.kc.on small { color: #0b0f17; }
+.kspace { height: 40px; }
+.kb-keys { margin: 10px 0 0; }
+.t-kb .kb-hint { margin: 8px 0 0; }
+@media (max-width: 600px) { .kb { padding: 8px; } .kc { height: 34px; } .kc b { font-size: 9px; } .kc small { font-size: 6.5px; } .kb-row, .kb-main, .kb-nav { gap: 3px; } .kb-nav { width: 120px; } .kspace { height: 34px; } }

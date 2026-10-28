@@ -45,7 +45,9 @@ const MODELS = {
   ds4: { file: 'pad_ds4.glb', ratio: 1.6, trig: -14, bump: 5, tilt: 0.28, press: 0.007, decals: {} },
   ds5: {
     file: 'pad_ds5.glb', ratio: 1.6, trig: -14, bump: 5, tilt: 0.28, press: 0.007,
-    decals: { btn_a: { g: 'cross', c: SYM.a, s: 0.62 }, btn_b: { g: 'circle', c: SYM.b, s: 0.62 }, btn_x: { g: 'square', c: SYM.x, s: 0.62 }, btn_y: { g: 'triangle', c: SYM.y, s: 0.62 } },
+    decals: { btn_a: { g: 'cross', c: SYM.a, s: 0.62 }, btn_b: { g: 'circle', c: SYM.b, s: 0.62 }, btn_x: { g: 'square', c: SYM.x, s: 0.62 }, btn_y: { g: 'triangle', c: SYM.y, s: 0.62 },
+      dpad_up: { g: 'arrow_up', c: GREY, s: 0.5 }, dpad_down: { g: 'arrow_down', c: GREY, s: 0.5 }, dpad_left: { g: 'arrow_left', c: GREY, s: 0.5 }, dpad_right: { g: 'arrow_right', c: GREY, s: 0.5 },
+      back: { g: 'create', c: GREY, s: 0.8 }, start: { g: 'menu', c: GREY, s: 0.8 }, guide: { g: 'ring', c: '#aeb4c0', s: 0.6 } },
   },
   joycon: {
     file: 'pad_joycon.glb', ratio: 1.2, trig: -10, bump: 5, tilt: 0.3, press: 0.006,
@@ -70,6 +72,8 @@ function glyphCanvas(def, T) {
     x.rotate(a); x.beginPath(); x.moveTo(30, 0); x.lineTo(-18, -28); x.lineTo(-18, 28); x.closePath(); x.fill();
   } else if (g === 'view') { x.lineWidth = 9; x.strokeRect(-30, -24, 40, 34); x.strokeRect(-12, -6, 40, 34); }
   else if (g === 'menu') { x.lineWidth = 10; x.beginPath(); for (const y of [-24, 0, 24]) { x.moveTo(-30, y); x.lineTo(30, y); } x.stroke(); }
+  else if (g === 'create') { x.lineWidth = 10; x.beginPath(); x.moveTo(-28, 4); x.lineTo(-28, 26); x.lineTo(28, 26); x.lineTo(28, 4); x.moveTo(0, 22); x.lineTo(0, -26); x.moveTo(-17, -12); x.lineTo(0, -28); x.lineTo(17, -12); x.stroke(); }
+  else if (g === 'ring') { x.lineWidth = 12; x.beginPath(); x.arc(0, 0, 40, 0, Math.PI * 2); x.stroke(); x.beginPath(); x.arc(0, 0, 12, 0, Math.PI * 2); x.fill(); }
   else if (g === 'capture') { x.lineWidth = 9; x.strokeRect(-30, -24, 60, 48); x.beginPath(); x.arc(0, 0, 11, 0, Math.PI * 2); x.stroke(); }
   const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4; return t;
 }
@@ -101,7 +105,7 @@ export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}
     const canvas = document.createElement('canvas');
     canvas.className = 'pad3d';
     canvas.setAttribute('role', 'img');
-    canvas.setAttribute('aria-label', 'Live 3D view of the controller. Drag to turn it, double-click to reset. The list of buttons below the drawing works with the keyboard.');
+    canvas.setAttribute('aria-label', 'Live 3D view of the controller. Drag to turn it all the way round, double-click to reset. The list of buttons below the drawing works with the keyboard.');
     let renderer;
     try { renderer = new T.WebGLRenderer({ canvas, antialias: !lite, alpha: true, powerPreference: 'low-power' }); } catch (e) { onFail?.(e); return; }
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
@@ -131,8 +135,7 @@ export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}
     const camera = new T.PerspectiveCamera(24, 1.6, 0.05, 60);
     const controls = new T.OrbitControls(camera, canvas);
     controls.enableDamping = true; controls.dampingFactor = 0.09; controls.enablePan = false; controls.enableZoom = false; controls.rotateSpeed = 0.7;
-    controls.minPolarAngle = 0.25; controls.maxPolarAngle = Math.PI * 0.62;
-    controls.minAzimuthAngle = -0.9; controls.maxAzimuthAngle = 0.9;
+    controls.minPolarAngle = 0.02; controls.maxPolarAngle = Math.PI - 0.02;   // free orbit: a full turn around the vertical axis, from the face straight on over the trigger edge to the underside
     let lastTouch = -1e9;
     controls.addEventListener('start', () => { lastTouch = Infinity; canvas.classList.add('grabbing'); });
     controls.addEventListener('end', () => { lastTouch = performance.now(); canvas.classList.remove('grabbing'); });
@@ -194,7 +197,7 @@ export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}
       const bb = rig.bb, c = bb.getCenter(new T.Vector3()), s = bb.getSize(new T.Vector3());
       target.copy(c); controls.target.copy(target);
       // distance at which all 8 corners of the box fit the view (binary search; cheap)
-      const el = 0.99, dir = new T.Vector3(0, Math.sin(el), Math.cos(el)), corner = new T.Vector3();
+      const el = 0.8, dir = new T.Vector3(0, Math.sin(el), Math.cos(el)), corner = new T.Vector3();
       const fits = (d) => {
         camera.position.copy(target).addScaledVector(dir, d); camera.lookAt(target); camera.updateMatrixWorld(true); camera.updateProjectionMatrix();
         for (let i = 0; i < 8; i++) { corner.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).project(camera); if (Math.abs(corner.x) > 0.93 || Math.abs(corner.y) > 0.93) return false; }
@@ -311,8 +314,16 @@ export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}
         }
       }
       if (st.armed) moving = true;   // the hover pulse
-      // drift back to the front view a few seconds after the user lets go
-      if (performance.now() - lastTouch > 3500 && camera.position.distanceToSquared(home) > 1e-6) { camera.position.lerp(home, kSlow * 0.5); if (camera.position.distanceToSquared(home) < 1e-6) camera.position.copy(home); moving = true; }
+      // drift back to the default pose after a long idle (8 s), along the orbit sphere (never through the pad)
+      if (performance.now() - lastTouch > 8000) {
+        const sph = (v) => { const r = v.length(); return { r, th: Math.atan2(v.x, v.z), ph: Math.acos(Math.min(1, Math.max(-1, v.y / r))) }; };
+        const sp = sph(camera.position.clone().sub(target)), sh = sph(home.clone().sub(target));
+        let dth = sh.th - sp.th; dth = Math.atan2(Math.sin(dth), Math.cos(dth));
+        if (Math.abs(dth) > 1e-3 || Math.abs(sh.ph - sp.ph) > 1e-3 || Math.abs(sh.r - sp.r) > 1e-3) {
+          const k2 = kSlow * 0.5; sp.th += dth * k2; sp.ph += (sh.ph - sp.ph) * k2; sp.r += (sh.r - sp.r) * k2;
+          camera.position.set(target.x + sp.r * Math.sin(sp.ph) * Math.sin(sp.th), target.y + sp.r * Math.cos(sp.ph), target.z + sp.r * Math.sin(sp.ph) * Math.cos(sp.th)); camera.lookAt(target); moving = true;
+        } else if (camera.position.distanceToSquared(home) > 1e-9) { camera.position.copy(home); moving = true; }
+      }
       if (controls.update()) moving = true;
       if (lastTouch === Infinity) moving = true;
       if (moving || needsDraw) { renderer.render(scene, camera); needsDraw = false; }

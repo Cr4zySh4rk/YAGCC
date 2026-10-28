@@ -68,9 +68,10 @@ export function subset(p, tris, pivot = [0,0,0]) {
   return { pos: new Float32Array(pos), nor: new Float32Array(nor), uv: new Float32Array(uv), idx: Uint32Array.from(idx), mat: p.mat, hasUV: p.hasUV };
 }
 export function merge(list) {
-  const pos = [], nor = [], uv = [], idx = []; let off = 0;
-  for (const p of list) { pos.push(...p.pos); nor.push(...p.nor); uv.push(...p.uv); for (const i of p.idx) idx.push(i + off); off += p.pos.length / 3; }
-  return { pos: new Float32Array(pos), nor: new Float32Array(nor), uv: new Float32Array(uv), idx: Uint32Array.from(idx), mat: list[0].mat, hasUV: list.some((p) => p.hasUV) };
+  const nv = list.reduce((a, p) => a + p.pos.length / 3, 0), ni = list.reduce((a, p) => a + p.idx.length, 0);
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), idx = new Uint32Array(ni); let off = 0, vo = 0, io_ = 0;
+  for (const p of list) { pos.set(p.pos, vo * 3); nor.set(p.nor, vo * 3); if (p.uv && p.uv.length === (p.pos.length / 3) * 2) uv.set(p.uv, vo * 2); for (let k = 0; k < p.idx.length; k++) idx[io_++] = p.idx[k] + off; off += p.pos.length / 3; vo += p.pos.length / 3; }
+  return { pos, nor, uv, idx, mat: list[0].mat, hasUV: list.some((p) => p.hasUV) };
 }
 export const bboxOf = (p) => { const mn = [1e9,1e9,1e9], mx = [-1e9,-1e9,-1e9]; for (let i = 0; i < p.pos.length; i += 3) for (let d = 0; d < 3; d++) { mn[d] = Math.min(mn[d], p.pos[i+d]); mx[d] = Math.max(mx[d], p.pos[i+d]); } return { min: mn, max: mx, c: mn.map((v, d) => (v + mx[d]) / 2), s: mn.map((v, d) => mx[d] - v) }; };
 export const fmt = (a) => a.map((v) => v.toFixed(3)).join(',');
