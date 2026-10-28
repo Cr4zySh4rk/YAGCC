@@ -72,6 +72,16 @@ export function write(soup, res, cfg, outPath, srcDoc) {
     const lb = { min: bb.min.map((v, d) => v - piv[d]), max: bb.max.map((v, d) => v - piv[d]) };
     // bumpers: unit direction of a press = into the body, i.e. against the mean surface normal of the part (the runtime uses it when a model sets bumpTravel)
     let dir; if (part.role === 'bump') { const m = [0, 0, 0]; for (const q of prims) for (let i = 0; i < q.nor.length; i += 3) for (let d = 0; d < 3; d++) m[d] -= q.nor[i+d]; const l = Math.hypot(...m) || 1; dir = m.map((v) => +(v / l).toFixed(4)); }
+    // dirOut: a bumper whose mesh also has a big inner / hidden surface (Joy-Con): use only the outward-facing triangles (area weighted) so the mean normal is the visible top surface
+    if (dir && part.dirOut) {
+      const c0 = [0, 1, 2].map((d) => (bb.min[d] + bb.max[d]) / 2 - piv[d]), m = [0, 0, 0];
+      for (const q of prims) for (let t = 0; t < q.idx.length; t += 3) {
+        const [a, b, c] = [0, 1, 2].map((k) => q.idx[t+k] * 3), e1 = [0, 1, 2].map((d) => q.pos[b+d] - q.pos[a+d]), e2 = [0, 1, 2].map((d) => q.pos[c+d] - q.pos[a+d]);
+        const n = [e1[1]*e2[2]-e1[2]*e2[1], e1[2]*e2[0]-e1[0]*e2[2], e1[0]*e2[1]-e1[1]*e2[0]], ce = [0, 1, 2].map((d) => (q.pos[a+d] + q.pos[b+d] + q.pos[c+d]) / 3 - c0[d]);
+        if (n[0]*ce[0] + n[1]*ce[1] + n[2]*ce[2] > 0) for (let d = 0; d < 3; d++) m[d] -= n[d];
+      }
+      const l = Math.hypot(...m) || 1; dir = m.map((v) => +(v / l).toFixed(4)); console.log('dirOut', part.name, dir);
+    }
     node.setExtras({ ...(part.x || {}), ...(dir ? { dir } : {}), role: part.role, size: [lb.max[0]-lb.min[0], lb.max[2]-lb.min[2]].map((v) => +v.toFixed(4)), top: [+((lb.min[0]+lb.max[0])/2).toFixed(4), +lb.max[1].toFixed(4), +((lb.min[2]+lb.max[2])/2).toFixed(4)], hgt: +(lb.max[1]-lb.min[1]).toFixed(4) });
     top.addChild(node); byName.set(part.name, node);
   }

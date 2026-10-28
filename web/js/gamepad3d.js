@@ -50,7 +50,7 @@ const MODELS = {
       back: { g: 'create', c: GREY, s: 0.8 }, start: { g: 'menu', c: GREY, s: 0.8 }, guide: { g: 'ring', c: '#aeb4c0', s: 0.6 } },
   },
   joycon: {
-    file: 'pad_joycon.glb', ratio: 1.2, trig: -10, bump: 5, tilt: 0.3, press: 0.006,
+    file: 'pad_joycon.glb', ratio: 1.2, trig: -10, bump: 0, bumpTravel: 0.03, tilt: 0.3, press: 0.006,
     decals: { dpad_up: ARROW('up'), dpad_down: ARROW('down'), dpad_left: ARROW('left'), dpad_right: ARROW('right'), capture: { g: 'capture', c: '#e8e8ec', bg: '#1e1e22', s: 0.95 } },
   },
 };

@@ -168,13 +168,13 @@ const CONFIGS = {
         P('btn_x', 'btn', { comp: (c, p) => /^R:Button_X_/.test(p.name) }), P('btn_y', 'btn', { comp: (c, p) => /^R:Button_Y_/.test(p.name) }),
         P('start', 'btn', { comp: (c, p) => /^R:Button_Plus_/.test(p.name) }), P('guide', 'btn', { comp: (c, p) => /^R:Home_Button_/.test(p.name) }),
         P('rs', 'stick', { comp: (c, p) => /^R:Joystick_/.test(p.name) }, stickPivot()),
-        P('rb', 'bump', { comp: (c, p) => /^R:(Button_R_|Button_Rmiddle_)/.test(p.name) }, hingeBar), P('rt', 'trig', { comp: (c, p) => /^R:Button_ZR_/.test(p.name) }, hingeTop),
+        P('rb', 'bump', { comp: (c, p) => /^R:(Button_R_|Button_Rmiddle_)/.test(p.name), dirOut: true }, hingeBar), P('rt', 'trig', { comp: (c, p) => /^R:Button_ZR_/.test(p.name) }, hingeTop),
         // left Joy-Con is the mirror image: by position up = Y, down = B, left = A, right = X
         P('dpad_up', 'dpad4', { comp: (c, p) => /^L:Button_Y_/.test(p.name) }), P('dpad_down', 'dpad4', { comp: (c, p) => /^L:Button_B_/.test(p.name) }),
         P('dpad_left', 'dpad4', { comp: (c, p) => /^L:Button_A_/.test(p.name) }), P('dpad_right', 'dpad4', { comp: (c, p) => /^L:Button_X_/.test(p.name) }),
         P('back', 'btn', { comp: (c, p) => /^L:Button_Plus_/.test(p.name) }), P('capture', 'btn', { comp: (c, p) => /^L:Home_Button_/.test(p.name) }),
         P('ls', 'stick', { comp: (c, p) => /^L:Joystick_/.test(p.name) }, stickPivot()),
-        P('lb', 'bump', { comp: (c, p) => /^L:(Button_R_|Button_Rmiddle_)/.test(p.name) }, hingeBar), P('lt', 'trig', { comp: (c, p) => /^L:Button_ZR_/.test(p.name) }, hingeTop),
+        P('lb', 'bump', { comp: (c, p) => /^L:(Button_R_|Button_Rmiddle_)/.test(p.name), dirOut: true }, hingeBar), P('lt', 'trig', { comp: (c, p) => /^L:Button_ZR_/.test(p.name) }, hingeTop),
       ],
     };
   },
