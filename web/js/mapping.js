@@ -117,11 +117,20 @@ export function curveY(x, c) {
   return c > 0 ? y : 1 - y;
 }
 export const CURVE_SRC = { 9: 0, 11: 1, 12: 2 };   // source -> index in ext.curve
+// 0.44 stick range of the 0..1 sources: ext.range[RANGE_SRC[s]], 0 = 'From centre' (rest = stick centre), 1 = 'Full sweep' (rest = the opposite end of the axis)
+export const RANGE_SRC = { 9: 0, 10: 1, 11: 2, 12: 3 };
+export const RANGE_FROM_CENTRE = 0, RANGE_FULL = 1;
+// is output o a stick axis (full or half), i.e. one where the range choice means something? (triggers are always 0..1)
+export const isStickOut = (o) => (o >= 18 && o <= 21) || (o >= 24 && o <= 31);
+// travel direction of a stick output: the full axes act as their + direction (right / up), half axes as named; null for anything else
+export const stickDir = (o) => (o >= 18 && o <= 21 ? (o & 1 ? 'up' : 'right') : o >= 24 && o <= 31 ? ((o - 24) >> 1) & 1 ? ((o & 1) ? 'up' : 'down') : ((o & 1) ? 'right' : 'left') : null);
+export const isAnalogOut = (o) => o >= 18 && o <= 31;
+export const isDigitalOut = (o) => o >= 1 && o <= 17;
 
 // ---- engine
 const AXES = ['LX', 'LY', 'RX', 'RY', 'LT', 'RT'];
 // v[s]: digital 0/1; whammy and tilt sensors 0..1; stick -1..1. tp[0..1]: tilt sensors past their own threshold.
-// row: 24 map bytes of the mode. opts.mode: for the tilt axis; opts.tiltStar: a tilt input is acting as star power.
+// row: 24 map bytes of the mode. opts.curve / opts.range: ext.curve / ext.range (0.43 / 0.44); opts.mode: for the tilt axis; opts.tiltStar: a tilt input is acting as star power.
 export function computePad(row, v, tp = [false, false], opts = {}) {
   let buttons = 0;
   const ax = { LX: 0, LY: 0, RX: 0, RY: 0, LT: 0, RT: 0 };
@@ -133,6 +142,7 @@ export function computePad(row, v, tp = [false, false], opts = {}) {
     if (o === MAP_DEFAULT) { o = DEFAULT_OUT[s]; if (o == null) continue; }
     if (o > 31) continue;
     const analog = isAnalogSrc(s), raw = v[s] || 0;
+    const sweep = row && row[s] !== MAP_DEFAULT && RANGE_SRC[s] != null && opts.range?.[RANGE_SRC[s]] === RANGE_FULL && isStickOut(o);   // 0.44: only an explicit map entry
     const val = analog && !isStickSrc(s) ? curveY(raw, opts.curve?.[CURVE_SRC[s]] || 0) : raw;   // the curve acts on the analog value only, never on the press threshold
     if (o <= 17) {
       if (pressed(s)) { buttons |= 1 << (o - 1); if (o === 7) put('LT', 1); if (o === 8) put('RT', 1); }   // a digital LT / RT also fills the axis
@@ -144,11 +154,12 @@ export function computePad(row, v, tp = [false, false], opts = {}) {
       if (!analog) out = pressed(s) ? 1 : 0;
       else if (isStickSrc(s)) out = trig ? Math.abs(val) : val;
       else out = val;                    // 0.43: whammy / sensors 0..1 -> 0..+1 on a stick too (rest = centre)
-      put(trig ? AXES[o - 18] : AXES[o - 18], out);
+      if (sweep) out = 2 * (analog ? val : pressed(s) ? 1 : 0) - 1;
+      put(AXES[o - 18], out);
       continue;
     }
-    const k = o - 24, mag = analog ? Math.abs(val) : pressed(s) ? 1 : 0;
-    put(AXES[k >> 1], (k & 1 ? 1 : -1) * mag);
+    const k = o - 24, mag = analog ? Math.abs(val) : pressed(s) ? 1 : 0, sg = k & 1 ? 1 : -1;
+    put(AXES[k >> 1], sweep ? sg * (2 * mag - 1) : sg * mag);
   }
   if (ax.LT > 0.5) buttons |= 1 << 6;      // an analog trigger past half also sets the digital bit
   if (ax.RT > 0.5) buttons |= 1 << 7;

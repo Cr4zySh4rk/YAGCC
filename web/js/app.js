@@ -9,9 +9,9 @@ import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
 import { createGuitar } from './guitar.js?v=dev';
 import { renderHardware, renderCompat } from './pages.js?v=dev';
 import { buildStudio, syncStudio } from './studio.js?v=dev';
-import { responseHtml, wireResponse } from './response.js?v=dev';
+import { responseHtml, wireResponse, rangeHtml, wireRange } from './response.js?v=dev';
 import { createTestPage } from './testpage.js?v=dev';
-import { TEST_MODES, testMode, modeFamily, outName, outputSupported, OUT_GROUPS } from './mapping.js?v=dev';
+import { TEST_MODES, testMode, modeFamily, outName, outputSupported, OUT_GROUPS, RANGE_SRC, stickDir } from './mapping.js?v=dev';
 import { createExtras } from './extras.js?v=dev';
 import { SECTIONS, makeBackup, backupFileName, readBackup, applyBackup, download } from './backup.js?v=dev';
 
@@ -91,6 +91,9 @@ function assignSelect(src, label) {
   const extra = v === 'mixed' ? '<option value="mixed" selected disabled>Different per mode (see Test page)</option>' : v === 'none' ? '<option value="none" selected disabled>Nothing (set on the Test page)</option>' : '';
   return `<select data-assign="${src}" aria-label="${label} assign to">${extra}${grp('Guitar', guitar)}${pads.join('')}</select>`;
 }
+// firmware 0.44+: a 0..1 source (tilt switch, sensors) on a stick axis can rest at the centre or at the opposite end
+const rangeOk = () => fwAtLeast(44) && !!state.cfg?.ext?.range;
+const rangeFor = (src, v) => { const d = v.startsWith('o:') ? stickDir(+v.slice(2)) : null; return rangeOk() && d ? rangeHtml(RANGE_SRC[src], state.cfg.ext.range[RANGE_SRC[src]], d) : ''; };
 const assignNote = (v) => (v.startsWith('o:') || v === 'mixed') ? `<p class="dim small assign-note">Applied to all modes; fine-tune per mode on the <a href="#" data-goto-test>Test page</a>.</p>` : '';
 function wireAssign(root) {
   root.querySelectorAll('select[data-assign]').forEach((s) => (s.onchange = () => {
@@ -1227,13 +1230,14 @@ function buildTiltSwitch() {
     <div class="opt first"><div><h3>${tiltFuncOk() ? 'Tilt switch' : 'Tilt for star power'}</h3><p class="dim">A tilt switch wired to a free pin ${tiltFuncOk() ? 'presses an input when the neck is lifted.' : 'triggers star power when the neck is lifted.'}</p></div>
       <label class="switch"><input type="checkbox" id="tsOn" ${c.tiltEnabled ? 'checked' : ''}><i></i></label></div>
     ${c.tiltEnabled ? `<div class="opt"><div><h3>Switch pin</h3><p class="dim">Or use Setup to find it by tilting twice.</p></div>${tiltPinSelect('tsPin')}</div>
-      ${tiltMapUi() ? `<div class="opt"><div><h3>Assign to</h3><p class="dim">Any guitar or gamepad input, including stick directions. A stick axis goes to full deflection while tilted.</p></div>${assignSelect(10, 'Tilt switch')}</div>${assignNote(assignValue(10))}`
+      ${tiltMapUi() ? `<div class="opt"><div><h3>Assign to</h3><p class="dim">Any guitar or gamepad input, including stick directions. A stick axis goes to full deflection while tilted.</p></div>${assignSelect(10, 'Tilt switch')}</div>${assignNote(assignValue(10))}${rangeFor(10, assignValue(10))}`
       : tiltFuncOk() ? `<div class="opt"><div><h3>Acts as</h3><p class="dim">The input a tilt presses.</p></div><select id="tsFunc" aria-label="Tilt switch acts as">${tiltFuncOptions(tiltFuncOf(0), false)}</select></div>` : ''}
       ${tiltTypeHtml('tsType')}
       <div class="tilt-live" id="tsLive"><i></i><span id="tsLiveTxt">Tilt: not active</span><span class="dim small">Hold the guitar level, then tilt it up to check.</span></div>` : ''}`;
   $('#tsOn').onchange = (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); buildTiltSwitch(); };
   $('#tsPin')?.addEventListener('change', (e) => { c.tiltPin = +e.target.value; pushCfg(); buildTiltSwitch(); });
   wireAssign(body);
+  if (rangeOk()) wireRange(body, (k) => state.cfg.ext.range[k], (k, v) => { state.cfg.ext.range[k] = v; pushCfg(); });
   $('#tsFunc')?.addEventListener('change', (e) => { c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR]; c.tiltFunc[0] = +e.target.value; pushCfg(); });
   body.querySelectorAll('#tsType [data-inv]').forEach((b) => b.addEventListener('click', () => { c.tiltInvert = b.dataset.inv === '1'; pushCfg(); buildTiltSwitch(); }));
   if (state.status) updateTiltSwitch(state.status);
@@ -1548,8 +1552,8 @@ function buildTilt() {
           <b style="display:block;margin-top:8px">Done. Tilt the neck to try it.</b>` : `<b>Done. ${qt.target === 1 ? 'Tilt the neck to try star power.' : qt.target === 2 ? `Tilt the neck to press ${pressWord(tiltFuncOf(1 + qtSlot))}.` : 'Tilt the guitar to move the whammy.'}</b>`}
           <div class="tilt-meter"><div class="bar" id="qBar"><i></i></div>${qShowThr ? `<span class="thr" id="qThrMark" style="left:${qs.threshold}%"></span>` : ''}</div>
           <div class="tilt-readout"><span><span class="tilt-state" id="qSt">–</span></span><span id="qUsing">Using Accelerometer${found2 || qsChip === 2 ? ' ' + qsChip : ''} ${'XYZ'[axisIdx(qs.src)]} axis.</span></div>
-          ${qShowThr ? `<div class="slider-row"><label for="qThr">${!mapUi ? (qt.target === 1 ? 'Star power' : 'Press') : qAv === 'f:' + FUNC_STAR ? 'Star power' : 'Press'} at</label><output class="val" id="qThrV">${qs.threshold} %</output><input type="range" id="qThr" min="5" max="95" step="1" value="${qs.threshold}"></div>`
-            : qResp ? responseHtml(1 + qtSlot, c.ext.curve[1 + qtSlot], 'Shapes how far the stick or trigger moves.')
+          ${qShowThr ? `<div class="slider-row"><label for="qThr">${!mapUi ? (qt.target === 1 ? 'Star power at' : 'Press at') : qAv === 'f:' + FUNC_STAR ? 'Star power at' : 'Trigger point'}</label><output class="val" id="qThrV">${qs.threshold} %</output><input type="range" id="qThr" min="5" max="95" step="1" value="${qs.threshold}"></div>`
+            : qKind === 'analog' && (qResp || rangeOk()) ? (qResp ? responseHtml(1 + qtSlot, c.ext.curve[1 + qtSlot], 'Shapes how far the stick or trigger moves.') : '') + rangeFor(11 + qtSlot, qAv)
             : qKind === 'w' || !mapUi ? '<p class="dim small">Adds to the whammy bar: whichever is further wins.</p>' : ''}
           <div><button class="btn small" id="qRedo">Redo</button></div>
         </div></li>` : ''}
@@ -1591,11 +1595,12 @@ function buildTilt() {
         ${mapUi ? `<div class="opt"><div><p class="dim">Assign to</p></div>${assignSelect(11 + i, 'Sensor ' + (i + 1))}</div>${assignNote(cav[i])}`
           : `<div class="opt"><div><p class="dim">Acts as</p></div><select data-k="func" aria-label="Sensor ${i + 1} acts as">${tiltFuncOptions(t.target === 0 ? 'w' : tiltFuncOf(1 + i), true)}</select></div>`}
         ${(mapUi ? ckind[i] === 'analog' : true) && fwAtLeast(43) && c.ext?.curve ? responseHtml(1 + i, c.ext.curve[1 + i], mapUi ? 'Shapes how far the stick or trigger moves.' : 'Used when this sensor is mapped to a stick or trigger on the Test page. The press threshold is not affected.') : ''}
+        ${mapUi && ckind[i] === 'analog' ? rangeFor(11 + i, cav[i]) : ''}
         <div class="tilt-meter"><div class="bar" id="tBar${i}"><i></i></div>${cthr[i] ? `<span class="thr" style="left:${t.threshold}%"></span>` : ''}</div>
         <div class="tilt-readout"><span>reading <b id="tRaw${i}">–</b></span><span>rest ${restOf(t)} · tilted ${tiltOf(t)}</span></div>
         <div class="row" style="margin-top:10px;flex-wrap:wrap">
           <button class="btn small" data-cap="rest">Set rest (guitar level)</button><button class="btn small" data-cap="tilt">Set tilted (neck up)</button></div>
-        ${cthr[i] ? `<div class="slider-row"><label>${(mapUi ? cav[i] === 'f:' + FUNC_STAR : tiltFuncOf(1 + i) === FUNC_STAR) ? 'Star power' : 'Press'} at</label><output class="val">${t.threshold} %</output><input type="range" data-k="threshold" min="5" max="95" step="1" value="${t.threshold}"></div>`
+        ${cthr[i] ? `<div class="slider-row"><label>${(mapUi ? cav[i] === 'f:' + FUNC_STAR : tiltFuncOf(1 + i) === FUNC_STAR) ? 'Star power at' : mapUi ? 'Trigger point' : 'Press at'}</label><output class="val">${t.threshold} %</output><input type="range" data-k="threshold" min="5" max="95" step="1" value="${t.threshold}"></div>`
           : !mapUi || ckind[i] === 'w' ? '<p class="dim small" style="margin-top:8px">Adds to the whammy bar: whichever is further wins. The whammy dead zone above applies.</p>' : ''}` : ''}
       </div>`).join('')}
     </div>`;
@@ -1603,6 +1608,7 @@ function buildTilt() {
   body.onchange = (e) => { if (mapUi && e.target.matches?.('[data-curve]')) buildTilt(); };   // the guided card and the sensor card show the same curve
   wireAssign(body);
   wireResponse(body, (k) => c.ext.curve[k], (k, v) => { c.ext.curve[k] = v; pushCfg(); });
+  if (rangeOk()) wireRange(body, (k) => c.ext.range[k], (k, v) => { c.ext.range[k] = v; pushCfg(); });
   const sel = $('#accPins');
   sel.value = String(accelOn ? c.accelSda : PIN_NONE);
   sel.onchange = () => {

@@ -288,6 +288,68 @@ static void curves(void) {
     ext_defaults(&g_ext);
 }
 
+// ---------------------------------------------------------------- 0.44 stick range (full sweep)
+static void sweep(void) {
+    uint8_t row[EXT_MAP_COLS]; ext_defaults(&g_ext); defrow(row);
+    CHECK(offsetof(ext_config_t, range) == 323, "range at offset 323");
+    printf("full sweep table (sensor 1 -> LY+ / LY- / RX+ / LT, x * 32767 = 0 3277 16384 32767):\n");
+    static const int xs[] = {0, 3277, 16384, 32767};
+    static const uint8_t outs[] = {OUT_LYP, OUT_LYM, OUT_RXP, OUT_LT};
+    for (int oi = 0; oi < 4; oi++) {
+        printf("  out %2d:", outs[oi]);
+        for (int xi = 0; xi < 4; xi++) {
+            int x = xs[xi];
+            defrow(row); row[SRC_TILT_S1] = outs[oi];
+            g_ext.range[2] = 0; padsrc_t s = quiet(); s.sens[0] = x; gpad_t g0 = pack(&s, row);
+            g_ext.range[2] = 1; gpad_t g1 = pack(&s, row);
+            int v0 = oi == 0 || oi == 1 ? g0.ly : oi == 2 ? g0.rx : g0.lt, v1 = oi == 0 || oi == 1 ? g1.ly : oi == 2 ? g1.rx : g1.lt;
+            int sg = oi == 1 ? -1 : 1;
+            CHECK(v0 == sg * x, "from centre out %d x %d: %d", outs[oi], x, v0);
+            CHECK(v1 == (oi == 3 ? x : sg * (2 * x - 32767)), "full sweep out %d x %d: %d", outs[oi], x, v1);
+            printf(" %d", v1);
+        }
+        printf("\n");
+    }
+    g_ext.range[2] = 0;
+    // full stick axis (LY) acts as the + direction; whammy (curve first) and the switch
+    defrow(row); row[SRC_WHAMMY] = OUT_LY; row[SRC_TILT_SW] = OUT_RXP; row[SRC_TILT_S2] = OUT_RXM;
+    g_ext.range[0] = 1; g_ext.range[1] = 1; g_ext.range[3] = 1; g_ext.curve[0] = 100;
+    padsrc_t s = quiet(); s.whammy = 16384; gpad_t g = pack(&s, row);
+    CHECK(g.ly == 2 * padmap_curve(16384, 100) - 32767, "whammy full sweep on LY after the curve (%d)", g.ly);
+    CHECK(g.rx == -32767 && !!(g.driven & DRV_RX), "switch released rests at -1 on RX+ (sensor 2 on RX- rests at +1: tie, first wins) (%d)", g.rx);
+    s.dig |= 1u << SRC_TILT_SW; g = pack(&s, row); CHECK(g.rx == 32767, "switch tilted = full RX+ (%d)", g.rx);
+    row[SRC_TILT_S2] = 0; s.dig = 0; g = pack(&s, row); CHECK(g.rx == -32767, "switch released = RX at -1");
+    // the same switch from centre
+    g_ext.range[1] = 0; g = pack(&s, row); CHECK(g.rx == 0, "switch from centre released = 0");
+    s.dig |= 1u << SRC_TILT_SW; g = pack(&s, row); CHECK(g.rx == 32767, "switch from centre tilted = full");
+    // switch on LY+ / LY- full sweep
+    g_ext.range[1] = 1; defrow(row); row[SRC_TILT_SW] = OUT_LYM; s.dig = 0; g = pack(&s, row);
+    CHECK(g.ly == 32767, "switch on LY- released rests at +1 (%d)", g.ly);
+    s.dig = 1u << SRC_TILT_SW; g = pack(&s, row); CHECK(g.ly == -32767, "switch on LY- tilted = full down (%d)", g.ly);
+    // combining on one axis: farthest from neutral wins; a from-centre source never disturbs a resting full sweep (tie -> first source)
+    g_ext.curve[0] = 0; defrow(row); row[SRC_TILT_S1] = OUT_LYP; row[SRC_TILT_S2] = OUT_LYP; row[SRC_RED] = OUT_LYM;
+    g_ext.range[2] = 1; g_ext.range[3] = 0;
+    s = quiet(); s.sens[0] = 16384; s.sens[1] = 30000; g = pack(&s, row);
+    CHECK(g.ly == 30000, "sensor 1 sweep at +1/2 (≈0) loses to sensor 2 from centre 30000 (%d)", g.ly);
+    s.sens[0] = 32767; s.sens[1] = 0; g = pack(&s, row); CHECK(g.ly == 32767, "sweep full + other at rest -> 32767");
+    s.sens[0] = 0; g = pack(&s, row); CHECK(g.ly == -32767, "sweep at rest = -1 beats a resting from-centre source");
+    s.dig = 1u << SRC_RED; s.sens[0] = 16384; g = pack(&s, row); CHECK(g.ly == -32767, "red on LY- ties with the sweep... first source wins (%d)", g.ly);
+    // neutral stays 0 with no sweep: nothing mapped -> no change
+    g_ext.range[2] = 1; defrow(row); s = quiet(); g = pack(&s, row); CHECK(g.ly == 0 && g.rx == 0, "default map ignores the range");
+    // an explicit analog trigger ignores the range
+    row[SRC_TILT_S1] = OUT_RT; s.sens[0] = 20000; g = pack(&s, row); CHECK(g.rt == 20000, "trigger ignores the range");
+    // whammy left on the mode default ignores the range
+    g_ext.range[0] = 1; defrow(row); s = quiet(); s.whammy = 0; g = pack(&s, row); CHECK(g.rx == 0, "default whammy ignores the range");
+    // validation
+    ext_defaults(&g_ext);
+    ext_config_t e; ext_defaults(&e); yacc_config_t mc; memset(&mc, 0xFF, sizeof mc); mc.accel_sda = mc.accel_scl = mc.wii_sda = mc.wii_scl = PIN_NONE;
+    for (int i = 0; i < NUM_ATILT; i++) mc.atilt[i].ch = PIN_NONE;
+    ext_config_t t = e; t.range[3] = 1; ext_seal(&t); CHECK(ext_validate(&t, &mc), "range 1 ok");
+    t = e; t.range[0] = 2; ext_seal(&t); CHECK(!ext_validate(&t, &mc), "range 2 rejected");
+    t = e; t.range[2] = 0xFF; ext_seal(&t); CHECK(!ext_validate(&t, &mc), "range 255 rejected");
+    ext_defaults(&g_ext);
+}
+
 // ---------------------------------------------------------------- stick calibration, ext page
 static void stick_and_ext(void) {
     CHECK(padmap_cal_axis(2048, 0, 2048, 4095, 0) == 0, "mid");
@@ -346,6 +408,7 @@ int main(void) {
     golden();
     mapped();
     curves();
+    sweep();
     stick_and_ext();
     static const char *names[] = {"XInput", "PS3 GH", "HID", "PS3 RB", "Keyboard", "Switch", "Wii RB", "OG Xbox", "PS4", "Xbox One", "Auto", "PS5"};
     printf("supported outputs (bit o = output o carried, o = 1..31):\n");

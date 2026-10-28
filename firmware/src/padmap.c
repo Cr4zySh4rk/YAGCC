@@ -93,6 +93,11 @@ void padmap_build(const padsrc_t *s, const uint8_t *row, gpad_t *g) {
         if (o >= OUT_LXM) { idx = (o - OUT_LXM) >> 1; sign = (o & 1) ? 1 : -1; }   // 24 LX-, 25 LX+, 26 LY- ...
         int32_t c;
         if (analog && !bipolar) a = padmap_curve(a, g_ext.curve[src == SRC_WHAMMY ? 0 : src - SRC_TILT_S1 + 1]);   // response curve, after the press test
+        // 0.44 "full sweep": an explicitly mapped 0..1 source (whammy, tilt switch, sensors) on a stick axis rests at the opposite end:
+        // -1 + 2x along the axis (the response curve is already in x). Triggers are always 0..1.
+        bool sweep = row && row[src] != MAP_DEFAULT && src >= SRC_WHAMMY && src <= SRC_TILT_S2 && idx < 4 &&
+                     g_ext.range[src == SRC_WHAMMY ? 0 : src - SRC_TILT_SW + 1] == 1;
+        if (sweep) { int32_t x = !analog ? (p ? 32767 : 0) : a; c = 2 * x - 32767; if (sign) c = sign * c; acc(&ax[idx], c); driven |= (uint8_t)(1u << idx); continue; }
         if (!analog)     c = p ? 32767 : 0;                              // pressed = the extreme
         else if (sign)   c = iabs(a);
         else if (idx >= 4) c = iabs(a);                                  // trigger: 0..1 (a stick: |value|)

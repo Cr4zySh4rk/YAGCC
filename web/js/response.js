@@ -2,6 +2,52 @@
 // mapping table and the Tune page's tilt sensor cards. The graph follows the live 0..1 value with a dot.
 import { curveY } from './mapping.js?v=dev';
 
+// ---- stick range (firmware 0.44+): where a 0..1 source rests when it drives a stick axis. k = index in ext.range (0 whammy, 1 tilt switch, 2 sensor 1, 3 sensor 2)
+const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+const VEC = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+// tiny stick circle: a dot where the stick rests, an arrow to where full press takes it
+export function rangeSvg(v, dir) {
+  const a = VEC[dir] || VEC.up, from = v ? [-a[0], -a[1]] : [0, 0], R = 11, cx = 15, cy = 15;
+  const p = (q) => `${(cx + q[0] * R).toFixed(1)} ${(cy + q[1] * R).toFixed(1)}`;
+  return `<svg class="rng-g" viewBox="0 0 30 30" aria-hidden="true"><circle class="rg-ring" cx="15" cy="15" r="13"/><path class="rg-arrow" d="M${p(from)}L${p(a)}"/><circle class="rg-dot" cx="${(cx + from[0] * R).toFixed(1)}" cy="${(cy + from[1] * R).toFixed(1)}" r="2.6"/><circle class="rg-end" cx="${(cx + a[0] * R).toFixed(1)}" cy="${(cy + a[1] * R).toFixed(1)}" r="1.8"/></svg>`;
+}
+const rangeText = (v, dir) => `${v ? OPP[dir] : 'centre'} \u2192 ${dir}`;
+export function rangeHtml(k, v, dir) {
+  return `<div class="rng" data-rng="${k}" data-dir="${dir}">
+    <span class="resp-t">Stick rests at</span>
+    <span class="seg" role="group" aria-label="Stick rests at"><button type="button" data-rv="0" class="${v ? '' : 'on'}" aria-pressed="${!v}">Centre</button><button type="button" data-rv="1" class="${v ? 'on' : ''}" aria-pressed="${!!v}">Opposite end</button></span>
+    <span class="rng-fig">${rangeSvg(v, dir)}<span class="rng-t">${rangeText(v, dir)}</span></span>
+    <span class="resp-n dim small">${v ? 'Rest is the opposite end; full press reaches the other end.' : 'Moves from the centre toward the chosen direction.'} Applies to all modes.</span></div>`;
+}
+const showRange = (n, v) => {
+  const dir = n.dataset.dir;
+  n.querySelectorAll('[data-rv]').forEach((b) => { const on = +b.dataset.rv === v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  n.querySelector('.rng-fig').innerHTML = `${rangeSvg(v, dir)}<span class="rng-t">${rangeText(v, dir)}</span>`;
+  n.querySelector('.resp-n').textContent = `${v ? 'Rest is the opposite end; full press reaches the other end.' : 'Moves from the centre toward the chosen direction.'} Applies to all modes.`;
+};
+// root: element holding .rng blocks; get(k) / set(k, v) read and write ext.range[k]; blocks of the same k stay in step
+export function wireRange(root, get, set) {
+  root.querySelectorAll('.rng').forEach((n) => {
+    const k = +n.dataset.rng;
+    n.querySelectorAll('[data-rv]').forEach((b) => b.addEventListener('click', () => {
+      const v = +b.dataset.rv;
+      set(k, v);
+      root.querySelectorAll(`.rng[data-rng="${k}"]`).forEach((m) => showRange(m, v));
+    }));
+  });
+}
+// the sensor's trigger point (per sensor, all modes), for the Test page rows
+export function triggerHtml(i, thr) {
+  return `<div class="tpt" data-tpt="${i}"><span class="resp-t">Trigger point</span><input type="range" min="5" max="95" step="1" value="${thr}" aria-label="Trigger point"><output class="resp-v">${thr} %</output><span class="resp-n dim small">The tilt where it counts as pressed. Applies to all modes.</span></div>`;
+}
+export function wireTrigger(root, get, set) {
+  root.querySelectorAll(".tpt").forEach((n) => {
+    const i = +n.dataset.tpt, inp = n.querySelector('input');
+    inp.value = get(i);
+    inp.addEventListener('input', () => { n.querySelector('output').textContent = inp.value + ' %'; set(i, +inp.value); });
+  });
+}
+
 const PTS = 24;
 export const curvePath = (c) => Array.from({ length: PTS + 1 }, (_, i) => { const x = i / PTS; return `${i ? 'L' : 'M'}${(2 + x * 56).toFixed(1)} ${(38 - curveY(x, c) * 36).toFixed(1)}`; }).join('');
 export const curveName = (c) => (c === 0 ? 'Linear' : c > 0 ? `Expo + ${c}` : `Expo − ${-c}`);

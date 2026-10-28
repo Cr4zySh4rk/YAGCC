@@ -5,8 +5,8 @@ import {
   OUT_GROUPS, outputSupported, computePad,
 } from './mapping.js?v=dev';
 import { createPadAuto as createPad } from './gamepad3d.js?v=dev';
-import { responseHtml, wireResponse, moveDots } from './response.js?v=dev';
-import { CURVE_SRC } from './mapping.js?v=dev';
+import { responseHtml, wireResponse, moveDots, rangeHtml, wireRange, triggerHtml, wireTrigger } from './response.js?v=dev';
+import { CURVE_SRC, RANGE_SRC, stickDir } from './mapping.js?v=dev';
 import { ATILT_SOURCES } from './protocol.js?v=dev';
 import { createViz } from './vizcards.js?v=dev';
 import { KEY_SLOTS, KEYS, KEY_PRESETS } from './protocol.js?v=dev';
@@ -134,6 +134,10 @@ export function createTestPage(ctx) {
   // the Response control: only for an analog source mapped to an analog output (axis, half axis, trigger), firmware 0.43+
   const analogOut = (s) => { const v = row()[s], o = v === MAP_DEFAULT ? DEFAULT_OUT[s] : v; return o != null && o >= 18 && o <= 31; };
   const respFor = (s) => (ctx.fwAtLeast(43) && CURVE_SRC[s] != null && analogOut(s) && cfg().ext.curve ? responseHtml(CURVE_SRC[s], cfg().ext.curve[CURVE_SRC[s]]) : '');
+  // firmware 0.44+: a tilt sensor / switch / whammy mapped to a digital output shows the sensor's Trigger point; on a stick axis or direction the 'Stick rests at' choice (applies to all modes)
+  const explicitOut = (s) => { const v = row()[s]; return v >= 1 && v <= 31 ? v : null; };
+  const rangeFor = (s) => { const o = explicitOut(s), d = o != null && RANGE_SRC[s] != null && cfg().ext.range ? stickDir(o) : null; return ctx.fwAtLeast(44) && d ? rangeHtml(RANGE_SRC[s], cfg().ext.range[RANGE_SRC[s]], d) : ''; };
+  const trigFor = (s) => { const o = explicitOut(s); return ctx.fwAtLeast(44) && (s === 11 || s === 12) && o != null && o <= 17 && cfg().atilt?.[s - 11] ? triggerHtml(s - 11, cfg().atilt[s - 11].threshold) : ''; };
   function renderRows() {
     const box = ctx.$('#tRows');
     if (!box) return;
@@ -149,9 +153,11 @@ export function createTestPage(ctx) {
           <span class="m-live ${src.analog ? 'bar' : ''}" data-live="${s}"><i></i></span>
           <span class="m-label"${src.color ? ` style="--c:${src.color}"` : ''}>${src.name}${s === 11 || s === 12 ? ` <small class="dim">${sensorSrc(s - 11)}</small>` : ''}${wired(s) ? '' : ' <small class="dim">not wired</small>'}</span></button>
         <select data-src="${s}" aria-label="${src.name} output in ${modeName()}">${optionsFor(s)}</select>
-        <span class="m-res dim small">${bad ? 'this mode cannot send that' : resultText(s)}</span>${respFor(s)}</div>`;
+        <span class="m-res dim small">${bad ? 'this mode cannot send that' : resultText(s)}</span>${respFor(s)}${rangeFor(s)}${trigFor(s)}</div>`;
     }).join('') : '<p class="dim">Nothing is wired yet. Set up buttons first, or tick the box below to see every input.</p>';
     wireResponse(box, (k) => cfg().ext.curve[k], (k, c) => { cfg().ext.curve[k] = c; ctx.pushCfg(); });
+    if (cfg().ext.range) wireRange(box, (k) => cfg().ext.range[k], (k, v) => { cfg().ext.range[k] = v; ctx.pushCfg(); });
+    wireTrigger(box, (i) => cfg().atilt[i].threshold, (i, v) => { cfg().atilt[i].threshold = v; ctx.pushCfg(); });
     const def = isDefaultRow(t.mode);
     ctx.$('#tRestore').disabled = def;
     ctx.$('#tRestoreAll').disabled = cfg().ext.map.every((_, m) => isDefaultRow(m));
@@ -252,7 +258,7 @@ export function createTestPage(ctx) {
     const m = t.mode, r = row(m);
     const live = ctx.liveSources(s, r, m);
     const fw = s.pad && s.modeRow === m;
-    const pad = fw ? s.pad : computePad(r, live.v, live.tp, { mode: m, tiltStar: live.tiltStar, curve: cfg().ext.curve });
+    const pad = fw ? s.pad : computePad(r, live.v, live.tp, { mode: m, tiltStar: live.tiltStar, curve: cfg().ext.curve, range: cfg().ext.range });
     t.pad.update(pad);
     t.viz.update(pad, { mode: modeName().replace(/ \(.*\)$/, ''), live: !!fw });
     t.pad.setLive(fw, fw ? 'The pad the guitar is sending right now in this mode.' : 'Worked out from your inputs; the guitar is not in this mode.');

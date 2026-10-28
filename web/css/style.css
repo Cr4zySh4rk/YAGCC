@@ -1077,3 +1077,21 @@ canvas.pad3d.grabbing { cursor: grabbing; }
 .kb-keys { margin: 10px 0 0; }
 .t-kb .kb-hint { margin: 8px 0 0; }
 @media (max-width: 600px) { .kb { padding: 8px; } .kc { height: 34px; } .kc b { font-size: 9px; } .kc small { font-size: 6.5px; } .kb-row, .kb-main, .kb-nav { gap: 3px; } .kb-nav { width: 120px; } .kspace { height: 34px; } }
+
+/* stick range control (firmware 0.44) */
+.rng { display: grid; grid-template-columns: auto auto 1fr; gap: 6px 12px; align-items: center; padding: 6px 10px; border-radius: 10px; background: var(--inset); font-size: 13px; }
+.rng .seg { margin: 0; }
+.rng .seg button { padding: 5px 12px; font-size: 13px; }
+.rng-fig { display: inline-flex; align-items: center; gap: 8px; }
+.rng-g { width: 30px; height: 30px; flex: none; }
+.rng-g .rg-ring { fill: var(--panel); stroke: var(--line-2); stroke-width: 1; }
+.rng-g .rg-arrow { stroke: var(--cyan); stroke-width: 1.6; stroke-linecap: round; fill: none; }
+.rng-g .rg-dot { fill: var(--dim); }
+.rng-g .rg-end { fill: var(--cyan); }
+.rng-t { font: 600 12px var(--mono); color: var(--text); }
+.mrow .rng, .mrow .tpt { grid-column: 1 / -1; }
+.tilt-card .rng, .tilt-steps .rng { grid-template-columns: minmax(0, 1fr); margin: 8px 0; }
+.tilt-card .rng .resp-n, .tilt-steps .rng .resp-n { grid-column: auto; }
+.tpt { display: grid; grid-template-columns: auto minmax(120px, 220px) auto 1fr; gap: 6px 12px; align-items: center; padding: 6px 10px; border-radius: 10px; background: var(--inset); font-size: 13px; }
+.tpt .resp-n { grid-column: auto; }
+@media (max-width: 760px) { .rng { grid-template-columns: minmax(0, 1fr); } .tpt { grid-template-columns: minmax(0, 1fr) auto; } .tpt input, .tpt .resp-n { grid-column: 1 / -1; } }
