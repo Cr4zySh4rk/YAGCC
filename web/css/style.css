@@ -1095,3 +1095,23 @@ canvas.pad3d.grabbing { cursor: grabbing; }
 .tpt { display: grid; grid-template-columns: auto minmax(120px, 220px) auto 1fr; gap: 6px 12px; align-items: center; padding: 6px 10px; border-radius: 10px; background: var(--inset); font-size: 13px; }
 .tpt .resp-n { grid-column: auto; }
 @media (max-width: 760px) { .rng { grid-template-columns: minmax(0, 1fr); } .tpt { grid-template-columns: minmax(0, 1fr) auto; } .tpt input, .tpt .resp-n { grid-column: 1 / -1; } }
+
+/* ---------- Setup: Tilt sensors step ---------- */
+.ts-q { margin: 4px 0 10px; font-size: 17px; font-weight: 600; }
+.ts-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ts-ch { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 14px; min-height: 84px; background: var(--inset); border: 1px solid var(--line-2); border-radius: var(--r); color: var(--text); font: inherit; cursor: pointer; }
+.ts-ch b { font-weight: 600; }
+.ts-ch span { color: var(--dim); font-size: 13px; }
+.ts-ch:hover:not(:disabled) { background: var(--raised); }
+.ts-ch.on { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); background: var(--raised); }
+.ts-ch:disabled { opacity: .5; cursor: not-allowed; }
+.ts-skip { border-color: var(--blue); background: var(--blue); }
+.ts-skip, .ts-skip span { color: #fff; }
+.ts-skip:hover:not(:disabled) { background: var(--blue); filter: brightness(1.1); }
+#tsCh button small { display: block; font-weight: 400; font-size: 11px; opacity: .8; }
+#tsCh button:disabled { opacity: .45; cursor: not-allowed; }
+#stepCard .tilt-quick { margin-top: 10px; padding: 10px 14px; }
+#stepCard .tilt-steps { gap: 8px; margin-top: 6px; }
+#stepCard .tilt-quick h3 { margin: 0; }
+#stepCard .step-nav .row { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 700px) { .ts-choices { grid-template-columns: minmax(0, 1fr); } .ts-ch { min-height: 0; } }

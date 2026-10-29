@@ -148,7 +148,7 @@ Tune page, firmware 0.30+. A small vibration motor (coin / ERM) on any free GPIO
 
 ### Tilt sensors
 
-Set up on the **Tune** page (firmware 0.29+). Besides the digital tilt switch from Setup there are two sensor slots, and each one reads from:
+Set up in the **Setup** wizard's **Tilt sensors** step (right after the tilt switch; firmware 0.29+) or on the **Tune** page. The Setup step asks *Do you have an accelerometer or an analog tilt sensor wired?* (**Accelerometer (I²C)**, **Analog tilt sensor (GP26–28)** or **No, skip**, which changes nothing), then runs the same guided capture as Tune (pins and *found* check for an accelerometer, or a GP26–28 pin that isn't the whammy's or a stick's, then capture level / tilted and *Assign to*), with *Add a second tilt sensor* at the end. Besides the digital tilt switch from Setup there are two sensor slots, and each one reads from:
 
 * an analog input (**GP26–GP28**, any not used by the whammy bar),
 * one axis (**X, Y or Z**) of an I²C accelerometer: LIS3DH, SC7A20, LIS3DSH, ADXL345 or MPU-6050 and its clones, found automatically at either of its addresses,
