@@ -8,7 +8,7 @@
 #include "hardware/sync.h"
 
 #define WDT_START_MS 8000   // start-up: flash reads, radio firmware download, USB host start
-#define WDT_RUN_MS   2000   // main loop; the longest legitimate stall is a flash sector erase + program (< 0.5 s)
+#define WDT_RUN_MS   8000   // main loop (0.48: was 2 s; Bluetooth pairing key writes and radio bus stalls must never trip it)
 #define CANARY 0x59414743u
 
 uint8_t g_reset_reason, g_reset_count;

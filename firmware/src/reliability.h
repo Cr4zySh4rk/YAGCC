@@ -47,7 +47,7 @@ static inline uint8_t rel_count_next(uint8_t reason, uint32_t s2) {
     uint8_t c = rel_magic_ok(s2) ? (uint8_t)((s2 >> 8) & 0xFF) : 0;
     return c < 255 ? (uint8_t)(c + 1) : c;
 }
-static inline bool rel_skip_bt(uint8_t reason, uint8_t count) { return reason == RR_BT_INIT || count >= REL_BT_SKIP_AFTER; }
+static inline bool rel_skip_bt(uint8_t reason, uint8_t count) { (void)count; return reason == RR_BT_INIT; }   // 0.48: only right after a radio hang at start-up, for one boot
 
 // Control request shape: direction and length a vendor request must have. A request with the wrong direction would
 // make TinyUSB write host data into the buffer a GET handler points at (g_cfg, tx_buf ...), so those are stalled.

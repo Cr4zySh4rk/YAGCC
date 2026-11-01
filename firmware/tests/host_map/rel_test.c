@@ -34,12 +34,12 @@ int main(void) {
     // Bluetooth: a hung radio skips it at once, repeated crashes of any kind skip it too
     CHECK(rel_skip_bt(RR_BT_INIT, 1));
     CHECK(!rel_skip_bt(RR_WATCHDOG, 1) && !rel_skip_bt(RR_WATCHDOG, 2));
-    CHECK(rel_skip_bt(RR_HARDFAULT, REL_BT_SKIP_AFTER));
+    CHECK(!rel_skip_bt(RR_HARDFAULT, REL_BT_SKIP_AFTER));   // 0.48: crashes alone no longer turn Bluetooth off
     CHECK(!rel_skip_bt(RR_POWER, 0) && !rel_skip_bt(RR_REBOOT, 0));
     // a crash loop is bounded: count reaches the skip threshold after REL_BT_SKIP_AFTER crashes in a row
     { uint32_t s2 = 0; uint8_t c = 0;
       for (int i = 0; i < REL_BT_SKIP_AFTER; i++) { c = rel_count_next(RR_WATCHDOG, s2); s2 = rel_pack(c, 0); }
-      CHECK(rel_skip_bt(RR_WATCHDOG, c)); }
+      CHECK(c >= REL_BT_SKIP_AFTER && !rel_skip_bt(RR_WATCHDOG, c)); }
 
     // vendor requests: every handled request has exactly the shape the handler expects
     const uint8_t gets[] = {VREQ_INFO, VREQ_STATUS, VREQ_GETCFG, VREQ_GETEXT, VREQ_BTLOG, VREQ_WEBUSB, VREQ_MS_OS};

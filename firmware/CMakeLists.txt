@@ -35,7 +35,7 @@ endif()
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 47)
+set(YACC_VERSION_MINOR 48)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")
@@ -140,7 +140,7 @@ target_compile_definitions(yacc PRIVATE
 target_link_options(yacc PRIVATE --specs=nano.specs)
 # LTO: -7 KB flash on the RP2040/RP2350 boards, -12 KB on the W boards. The timing-critical emulation and PIO USB
 # files are kept out of it (compiled exactly as without LTO), as are the SDK's pico_* libraries.
-option(YACC_LTO "Link-time optimisation" ON)
+option(YACC_LTO "Link-time optimisation" OFF)   # 0.48: off again until tested on hardware with Bluetooth
 if(YACC_LTO)
   target_compile_options(yacc PRIVATE -flto=auto -fno-fat-lto-objects)
   target_link_options(yacc PRIVATE -flto=auto -Os)

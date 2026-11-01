@@ -14,7 +14,7 @@
 #define HCI_ACL_PAYLOAD_SIZE (1021 + 4)   // classic ACL packets (DH5) can be this long
 #define HCI_ACL_CHUNK_SIZE_ALIGNMENT 4
 #define MAX_NR_GATT_CLIENTS 1
-#define MAX_NR_HCI_CONNECTIONS 1   // BLE gamepad and Wii Remote modes are exclusive, one link either way
+#define MAX_NR_HCI_CONNECTIONS 2   // 0.48: back to 2 (one link could not cover a host reconnecting before the old link is freed)
 #define MAX_NR_L2CAP_CHANNELS 4   // Wii Remote: SDP, HID control, HID interrupt
 #define MAX_NR_L2CAP_SERVICES 4
 #define MAX_NR_SM_LOOKUP_ENTRIES 3
