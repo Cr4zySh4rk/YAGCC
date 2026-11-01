@@ -75,6 +75,7 @@ extern uint32_t g_reset_pc;        // PC of the last HardFault (0 if none)
 void rel_init(void);               // first thing in main(): decode why we booted, arm the watchdog
 void rel_arm(void);                // normal-operation watchdog timeout (after the slow start-up)
 void rel_bt_phase(bool starting);  // wrap bt_init: a reset while starting skips Bluetooth next boot
+uint16_t rel_stack_free(void);     // bytes of the main stack never used so far (0 = overflowed)
 void rel_task(void);               // main loop: feed the watchdog, check the stack canary
 void rel_disarm(void);             // before BOOTSEL / deep sleep
 void rel_bootsel(void);            // disarm + reset_usb_boot

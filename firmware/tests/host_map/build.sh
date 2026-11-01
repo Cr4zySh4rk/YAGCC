@@ -27,3 +27,6 @@ ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -DYACC_HOST_TEST -I../../src -o "$REL" re
 BA="${TMPDIR:-/tmp}/yagcc_bt_addr_test"
 ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$BA" bt_addr_test.c
 "$BA"
+BP="${TMPDIR:-/tmp}/yagcc_bt_policy_test"
+${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$BP" bt_policy_test.c
+"$BP"

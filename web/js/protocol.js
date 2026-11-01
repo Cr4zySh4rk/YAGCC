@@ -472,16 +472,36 @@ export function serializeConfig(c) {
   return buf;
 }
 
-// Bluetooth event log (firmware 0.14+): 8 byte records, oldest first
+// Bluetooth event log (firmware 0.14+): 8 byte records, oldest first.
+// Entries 21..27 (firmware 0.50+) are translated (btlog.* keys); older logs without them parse as before.
+const hex = (n) => n.toString(16);
+// Security Manager pairing failure reasons (Core spec, Vol 3 Part H 3.5.5) and PDU opcodes, as readable text
+const smReason = (r) => ({
+  1: t('btlog.reason.passkey'), 2: t('btlog.reason.oob'), 3: t('btlog.reason.authreq'), 4: t('btlog.reason.confirm'),
+  5: t('btlog.reason.unsupported'), 6: t('btlog.reason.keysize'), 7: t('btlog.reason.command'), 8: t('btlog.reason.unspecified'),
+  9: t('btlog.reason.repeated'), 10: t('btlog.reason.parameters'), 11: t('btlog.reason.dhkey'), 12: t('btlog.reason.numeric'),
+  13: t('btlog.reason.busy'), 14: t('btlog.reason.cross'), 15: t('btlog.reason.key_rejected'),
+})[r] || '';
+const smOpcode = (o) => ({
+  1: t('btlog.sm.request'), 2: t('btlog.sm.response'), 3: t('btlog.sm.confirm'), 4: t('btlog.sm.random'), 5: t('btlog.sm.failed'),
+  6: t('btlog.sm.encryption_info'), 7: t('btlog.sm.central_id'), 8: t('btlog.sm.identity_info'), 9: t('btlog.sm.identity_address'),
+  10: t('btlog.sm.signing_info'), 11: t('btlog.sm.security_request'), 12: t('btlog.sm.public_key'), 13: t('btlog.sm.dhkey_check'),
+})[o] || '';
+const paren = (s) => (s ? ` (${s})` : '');
+const discReason = (r) => ({
+  5: t('btlog.disc.auth'), 8: t('btlog.disc.timeout'), 0x13: t('btlog.disc.host_ended'), 0x14: t('btlog.disc.host_low_resources'),
+  0x15: t('btlog.disc.host_power_off'), 0x16: t('btlog.disc.guitar_ended'), 0x22: t('btlog.disc.response_timeout'),
+  0x28: t('btlog.disc.instant'), 0x3d: t('btlog.disc.mic'), 0x3e: t('btlog.disc.not_established'),
+})[r] || '';
 const BT_EVENTS = {
   1: (a, b) => `radio on${a & 1 ? ', pairing requested' : ''}${a & 2 ? ', after a mode change' : ''} (mode ${b})`,
   2: () => 'Bluetooth ready',
-  3: (a) => `advertising${a ? ' (discoverable)' : ' (paired hosts only)'}`,
+  3: (a, b) => `advertising${a ? ` (discoverable${b === 1 ? ', ' + t('btlog.no_bond') : ''})` : ' (paired hosts only)'}`,
   4: (a, b) => (a === 0 ? `host connected (address type ${b})` : `connection failed, status 0x${a.toString(16)}`),
   5: (a, b) => (b === 0 && a ? 'link encrypted' : `encryption ${a ? 'on' : 'failed'}, status 0x${b.toString(16)}`),
-  6: (a) => `disconnected, reason 0x${a.toString(16)}`,
+  6: (a) => `disconnected, reason 0x${a.toString(16)}${paren(discReason(a))}`,
   7: (a) => `pairing request ${a ? 'accepted' : 'declined (not in pairing mode)'}`,
-  8: (a, b) => (a === 0 ? 'paired' : `pairing failed, status 0x${a.toString(16)}, reason 0x${b.toString(16)}`),
+  8: (a, b) => (a === 0 ? 'paired' : `pairing failed, status 0x${a.toString(16)}, reason 0x${b.toString(16)}${paren(smReason(b))}`),
   9: (a) => (a ? 'host subscribed to input' : 'host unsubscribed'),
   10: (a) => (a ? 'USB host present: Bluetooth paused' : 'no USB host: Bluetooth resumed'),
   11: (a, b) => `pairing window open for ${b} s${a ? ', this mode\'s hosts forgotten' : ''}`,
@@ -495,13 +515,33 @@ const BT_EVENTS = {
   19: (a, b) => `host read ${['?', 'input', 'output', 'feature'][a] || a} report ${b}`,
   20: (a, b) => {
     const from = b & 0x8000 ? 'host →' : '→ host';
-    if (b & 0x4000) return `${from} pairing PDU 0x${a.toString(16)}`;
+    if (b & 0x4000) return `${from} pairing PDU 0x${a.toString(16)}${paren(smOpcode(a))}${a === 5 && (b & 0xff) ? paren(t('btlog.pair_failed_reason', { code: '0x' + hex(b & 0xff), text: smReason(b & 0xff) || '?' })) : ''}`;
     if (b & 0x2000) return `${from} L2CAP signalling 0x${a.toString(16)}`;
     const ATT = { 0x01: 'error', 0x02: 'MTU request', 0x03: 'MTU response', 0x04: 'find information', 0x05: 'find information response', 0x06: 'find by type', 0x07: 'find by type response', 0x08: 'read by type', 0x09: 'read by type response', 0x0a: 'read', 0x0b: 'read response', 0x0c: 'read blob', 0x0d: 'read blob response', 0x0e: 'read multiple', 0x10: 'read by group type', 0x11: 'read by group type response', 0x12: 'write', 0x13: 'write response', 0x16: 'prepare write', 0x18: 'execute write', 0x1b: 'notification', 0x1d: 'indication', 0x1e: 'confirmation', 0x52: 'write command' };
     if (a === 0x01 && b & 0x1000) return `${from} ATT error 0x${((b >> 8) & 0x0f).toString(16)} to ${ATT[b & 0xff] || '0x' + (b & 0xff).toString(16)}`;
     const h = b & 0x0fff;
     return `${from} ATT ${ATT[a] || '0x' + a.toString(16)}${h ? ` handle 0x${h.toString(16)}` : ''}`;
   },
+  // ---- firmware 0.50+
+  21: (a) => (a ? t('btlog.sm_reencrypt_started') : t('btlog.sm_pairing_started')),
+  22: (a, b) => {
+    const io = [t('btlog.io.display_only'), t('btlog.io.display_yes_no'), t('btlog.io.keyboard_only'), t('btlog.io.no_input_no_output'), t('btlog.io.keyboard_display')][a & 7] || '?';
+    const auth = [b & 1 ? t('btlog.auth.bonding') : t('btlog.auth.no_bonding'), b & 8 ? t('btlog.auth.secure_connections') : t('btlog.auth.legacy'),
+      b & 4 ? t('btlog.auth.mitm') : t('btlog.auth.no_mitm'), (b >> 8) & 1 ? t('btlog.auth.oob') : t('btlog.auth.no_oob')].join(', ');
+    const who = a & 0x20 ? t('btlog.who.host') : t('btlog.who.guitar');
+    return a & 0x10 ? t('btlog.pair_response', { who, io, auth }) : t('btlog.pair_request', { who, io, auth });
+  },
+  23: (a, b) => t('btlog.link_params', { ms: (b * 1.25).toFixed(2), latency: a }),
+  24: (a, b) => t('btlog.ccc_write', { value: a, handle: '0x' + hex(b) }),
+  25: (a, b) => {
+    const why = [t('btlog.reset.power'), t('btlog.reset.watchdog'), t('btlog.reset.hardfault'), t('btlog.reset.stack'), t('btlog.reset.requested'), t('btlog.reset.radio')][a] || `#${a}`;
+    return t('btlog.restarted', { why, n: b });
+  },
+  26: (a, b) => {
+    const where = [t('btlog.where.connect'), t('btlog.where.pairing_started'), t('btlog.where.pairing_complete'), t('btlog.where.reencrypted'), t('btlog.where.disconnect')][a] || `#${a}`;
+    return b === 0 ? t('btlog.stack_overflow', { where }) : t('btlog.stack_free', { where, bytes: b });
+  },
+  27: (a, b) => (a ? t('btlog.ident_ok', { index: b }) : t('btlog.ident_unknown')),
 };
 // Test firmware: log kept in flash, 16 byte records, grouped by power-on
 export function parseBtLogFlash(dv) {

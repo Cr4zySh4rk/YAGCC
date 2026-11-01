@@ -35,7 +35,7 @@ endif()
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 49)
+set(YACC_VERSION_MINOR 50)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")
@@ -184,6 +184,11 @@ if(PICO_BOARD STREQUAL "pico_w" OR PICO_BOARD STREQUAL "pico2_w")
     # bonds are kept in the two flash sectors just below the YAGCC config sector (the last one)
     PICO_FLASH_BANK_TOTAL_SIZE=8192
     PICO_FLASH_BANK_STORAGE_OFFSET=\(PICO_FLASH_SIZE_BYTES-12288\)
+    # 4 KB main stack (the whole of scratch Y, which nothing else uses): the radio's work runs in an interrupt on this
+    # stack, on top of whatever the main loop is in (main + rgb_task are ~0.9 KB), and an LE Secure Connections pairing
+    # adds the P-256 key agreement (~1 KB) and the Security Manager. With the default 2 KB that overflows exactly when
+    # a host starts pairing, which the stack canary (reliability.c) answers with a reset.
+    PICO_STACK_SIZE=0x1000
   )
   target_link_libraries(yacc pico_cyw43_arch_none pico_btstack_ble pico_btstack_classic pico_btstack_cyw43 pico_rand)
   # Wii Remote emulation over Bluetooth Classic (Santroller's lib/wii_remote_emulation, GPL-3.0)

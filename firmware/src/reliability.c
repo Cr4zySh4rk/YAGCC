@@ -10,6 +10,7 @@
 #define WDT_START_MS 8000   // start-up: flash reads, radio firmware download, USB host start
 #define WDT_RUN_MS   8000   // main loop (0.48: was 2 s; Bluetooth pairing key writes and radio bus stalls must never trip it)
 #define CANARY 0x59414743u
+#define STACK_PAINT 0xA5A5A5A5u
 
 uint8_t g_reset_reason, g_reset_count;
 uint32_t g_reset_pc;
@@ -25,7 +26,20 @@ void rel_init(void) {
     watchdog_hw->scratch[2] = rel_pack(g_reset_count, REL_CODE_NONE);
     watchdog_hw->scratch[3] = 0;
     __StackBottom = CANARY;   // the stack grows down towards this word: overwritten = overflow
+    {   // paint the free stack so rel_stack_free() can tell how deep it ever got (Bluetooth log)
+        uint32_t *p = &__StackBottom + 1, *end = (uint32_t *)((uintptr_t)__builtin_frame_address(0) - 128);
+        while (p < end) *p++ = STACK_PAINT;
+    }
     watchdog_enable(WDT_START_MS, true);
+}
+// Bytes of stack that were never touched since start-up (the stack is painted in rel_init). Cheap enough for the radio's
+// interrupt context; 0 means the canary word itself is gone.
+uint16_t rel_stack_free(void) {
+    if (__StackBottom != CANARY) return 0;
+    const uint32_t *p = &__StackBottom + 1, *top = (const uint32_t *)__builtin_frame_address(0);
+    uint32_t n = 0;
+    while (p < top && *p == STACK_PAINT) { p++; n += 4; }
+    return n > 0xFFFF ? 0xFFFF : (uint16_t)n;
 }
 void rel_arm(void) { watchdog_enable(WDT_RUN_MS, true); }
 void rel_bt_phase(bool starting) {

@@ -19,6 +19,7 @@
 // several modes keeps a working key for each of them.
 #include "bt.h"
 #include "bt_addr.h"
+#include "bt_policy.h"
 
 #ifndef YACC_HAS_BT
 
@@ -53,6 +54,7 @@ void bt_log_flash_clear(void) {}
 #include "ble/le_device_db_tlv.h"
 #include "config.h"
 #include "ext_config.h"
+#include "reliability.h"
 #include "rgb.h"
 #include "rumble.h"
 #include "wiimote.h"
@@ -93,7 +95,15 @@ static btstack_packet_callback_registration_t s_hci_cb, s_sm_cb, s_l2cap_cb;
 
 // ---------------------------------------------------------------- event log (read over USB by the configurator)
 enum { L_BOOT = 1, L_WORKING, L_ADV, L_CONNECT, L_ENCRYPT, L_DISCONNECT, L_JUSTWORKS, L_PAIRED, L_SUBSCRIBE,
-       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS, L_LTK, L_PEER, L_CONNUPD, L_SVCCHG, L_MTU, L_READ, L_PDU };
+       L_PAUSE, L_WINDOW, L_REENCRYPT, L_PARAMS, L_LTK, L_PEER, L_CONNUPD, L_SVCCHG, L_MTU, L_READ, L_PDU,
+       // 0.50: what the Security Manager does, so a pairing that stalls or fails says where
+       L_SMSTART,    // a: 0 pairing started, 1 re-encryption of a bond started
+       L_PAIRCAPS,   // a: IO capability | 0x10 response | 0x20 from the host, b: OOB << 8 | AuthReq (pairing request / response)
+       L_CONNPARAM,  // a: latency, b: interval (1.25 ms) the link was created with
+       L_CCC,        // a: value written, b: handle (Service Changed client configuration)
+       L_RESET,      // a: why the last start-up happened (RR_*), b: consecutive unclean resets
+       L_STACK,      // a: where (0 connect, 1 pairing started, 2 pairing complete, 3 re-encrypted, 4 disconnect), b: stack bytes never used
+       L_IDENT };    // a: 1 host's identity resolved against a bond / 0 not, b: bond index
 #define LOG_N 48
 static struct { uint32_t t; uint8_t code, a; uint16_t b; } s_log[LOG_N];
 static uint8_t s_log_head, s_log_count;
@@ -201,8 +211,12 @@ static void pdu_log(uint8_t packet_type, uint8_t in, uint8_t *p, uint16_t len) {
         else if (n >= 3 && d[0] != 0x1B && d[0] != 0x1D && d[0] != 0x0B && d[0] != 0x0D && d[0] != 0x09 && d[0] != 0x11)
             b |= little_endian_read_16(d, 1) & 0x0FFF;  // requests / notifications carry a handle
         if (d[0] == 0x1B && !in) return;                 // input report notifications: too many to keep
-    } else if (cid == 6) b |= 0x4000;
-    else if (cid == 5) b |= 0x2000;
+    } else if (cid == 6) {
+        b |= 0x4000 | (n >= 2 ? d[1] : 0);                 // SM: reason of a Pairing Failed (0x05), IO capability of a request / response
+        if ((d[0] == 0x01 || d[0] == 0x02) && n >= 4)
+            flog_push(to_ms_since_boot(get_absolute_time()), L_PAIRCAPS, (uint8_t)((d[1] & 7) | (d[0] == 2 ? 0x10 : 0) | (in ? 0x20 : 0)),
+                      (uint16_t)((d[2] << 8) | d[3]));
+    } else if (cid == 5) b |= 0x2000;
     else return;
     flog_push(to_ms_since_boot(get_absolute_time()), L_PDU, d[0], b);
 }
@@ -286,16 +300,39 @@ static void build_adv(bool discoverable) {
     s_adv_len = (uint8_t)(a - s_adv);
 }
 
-static void set_adv(bool discoverable) {
+// Does the device database of this mode hold a bond with a real key? (An entry left by a pairing that never finished
+// has none.) Stack running.
+static bool entry_has_ltk(int i) {
+    sm_key_t ltk; memset(ltk, 0, sizeof(ltk));
+    le_device_db_encryption_get(i, NULL, NULL, ltk, NULL, NULL, NULL, NULL);
+    return bt_ltk_valid(ltk);
+}
+static bool has_valid_bond(void) {
+    for (int i = 0; i < le_device_db_max_count(); i++) {
+        int type; le_device_db_info(i, &type, NULL, NULL);
+        if (type != BD_ADDR_TYPE_UNKNOWN && entry_has_ltk(i)) return true;
+    }
+    return false;
+}
+static void blog_stack(uint8_t where) {
+    if (g_cfg.flags & CFG_FLAG_BT_DEBUG_LOG) blog(L_STACK, where, rel_stack_free());
+}
+
+// window: a pairing window is open. Without a valid bond for this mode the guitar is findable anyway (the flags are
+// always "general discoverable", any host may connect; only the interval differs), so a pairing that never completed
+// can't leave it unreachable.
+static void set_adv(bool window) {
     bd_addr_t null_addr = {0};
     if (s_paused) { gap_advertisements_enable(0); return; }
+    bool bonded = has_valid_bond();
+    bool discoverable = bt_adv_discoverable(bonded, window);
     build_adv(discoverable);
     gap_advertisements_enable(0);
-    uint16_t itv = discoverable ? 0x0030 : 0x00A0;  // 30 ms while pairing, 100 ms waiting for a known host
+    uint16_t itv = discoverable ? 0x0030 : 0x00A0;  // 30 ms while pairing / without a bond, 100 ms waiting for a known host
     gap_advertisements_set_params(itv, itv, 0 /* connectable undirected */, 1 /* own random address */, null_addr, 0x07, 0x00);
     gap_advertisements_set_data(s_adv_len, s_adv);
     gap_advertisements_enable(1);
-    blog(L_ADV, discoverable, 0);
+    blog(L_ADV, discoverable, bonded ? 2 : 1);
 }
 
 static uint16_t att_read(hci_con_handle_t con, uint16_t handle, uint16_t offset, uint8_t *buf, uint16_t size) {
@@ -430,7 +467,7 @@ static uint16_t gatt_read(hci_con_handle_t con, uint16_t handle, uint16_t offset
 static int gatt_write(hci_con_handle_t con, uint16_t handle, uint16_t mode, uint16_t offset, uint8_t *buf, uint16_t size) {
     (void)con;
     if (mode == ATT_TRANSACTION_MODE_NONE && handle == ATT_CHARACTERISTIC_GATT_SERVICE_CHANGED_01_CLIENT_CONFIGURATION_HANDLE && offset == 0 && size == 2)
-        s_sc_cccd = little_endian_read_16(buf, 0);
+    { s_sc_cccd = little_endian_read_16(buf, 0); blog(L_CCC, (uint8_t)s_sc_cccd, handle); }
     return 0;
 }
 
@@ -466,6 +503,26 @@ static void open_pairing(bool forget, uint32_t ms) {   // stack running; its con
     if (!s_paused) rgb_set_bt(RGB_BT_PAIRING);
 }
 
+// A new link. BTstack tells every handler about it once, and the ATT server forwards the same event to the handler
+// registered with att_server_register_packet_handler as well: this one function sees it twice, so the second
+// delivery of an already known handle (or of a failure within the same few ms) is dropped.
+static void on_connected(uint8_t status, hci_con_handle_t h, uint8_t peer_type, const uint8_t *pa, uint16_t interval, uint16_t latency) {
+    static uint32_t fail_ms;
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    if (status == ERROR_CODE_SUCCESS) {
+        if (h == s_con) return;
+        s_con = h;
+    } else {
+        if (now - fail_ms < 5) return;
+        fail_ms = now;
+    }
+    blog(L_CONNECT, status, peer_type);
+    if (status != ERROR_CODE_SUCCESS) return;
+    blog(L_PEER, pa[3], (uint16_t)((pa[4] << 8) | pa[5]));   // last three bytes: tells two hosts apart
+    blog(L_CONNPARAM, (uint8_t)latency, interval);
+    blog_stack(0);
+}
+
 static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint16_t size) {
     (void)channel; (void)size;
     if (type != HCI_EVENT_PACKET) return;
@@ -496,11 +553,17 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
         }
         case HCI_EVENT_LE_META:
             if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_CONNECTION_COMPLETE) {
-                s_con = hci_subevent_le_connection_complete_get_connection_handle(packet);
-                blog(L_CONNECT, hci_subevent_le_connection_complete_get_status(packet), hci_subevent_le_connection_complete_get_peer_address_type(packet));
                 bd_addr_t pa;
                 hci_subevent_le_connection_complete_get_peer_address(packet, pa);
-                blog(L_PEER, pa[3], (uint16_t)((pa[4] << 8) | pa[5]));   // last three bytes: tells two hosts apart
+                on_connected(hci_subevent_le_connection_complete_get_status(packet), hci_subevent_le_connection_complete_get_connection_handle(packet),
+                             hci_subevent_le_connection_complete_get_peer_address_type(packet), pa,
+                             hci_subevent_le_connection_complete_get_conn_interval(packet), hci_subevent_le_connection_complete_get_conn_latency(packet));
+            } else if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_ENHANCED_CONNECTION_COMPLETE_V1) {
+                bd_addr_t pa;
+                hci_subevent_le_enhanced_connection_complete_v1_get_peer_addresss(packet, pa);
+                on_connected(hci_subevent_le_enhanced_connection_complete_v1_get_status(packet), hci_subevent_le_enhanced_connection_complete_v1_get_connection_handle(packet),
+                             hci_subevent_le_enhanced_connection_complete_v1_get_peer_address_type(packet), pa,
+                             hci_subevent_le_enhanced_connection_complete_v1_get_conn_interval(packet), hci_subevent_le_enhanced_connection_complete_v1_get_conn_latency(packet));
             } else if (hci_event_le_meta_get_subevent_code(packet) == HCI_SUBEVENT_LE_CONNECTION_UPDATE_COMPLETE) {
                 blog(L_CONNUPD, hci_subevent_le_connection_update_complete_get_status(packet),
                      hci_subevent_le_connection_update_complete_get_conn_interval(packet));
@@ -514,6 +577,7 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
             blog(L_DISCONNECT, hci_event_disconnection_complete_get_reason(packet), 0);
+            blog_stack(4);
             if (hci_event_disconnection_complete_get_connection_handle(packet) == s_sc_handle) { s_sc_handle = HCI_CON_HANDLE_INVALID; s_sc_index = -1; }
             s_sc_cccd = 0;
             s_con = HCI_CON_HANDLE_INVALID;
@@ -521,8 +585,22 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             set_adv(s_pairing);
             rgb_set_bt(s_pairing && !s_paused ? RGB_BT_PAIRING : RGB_BT_OFF);
             break;
+        case SM_EVENT_PAIRING_STARTED:
+            blog(L_SMSTART, 0, 0);
+            blog_stack(1);
+            break;
+        case SM_EVENT_REENCRYPTION_STARTED:
+            blog(L_SMSTART, 1, 0);
+            break;
+        case SM_EVENT_IDENTITY_RESOLVING_SUCCEEDED:
+            blog(L_IDENT, 1, sm_event_identity_resolving_succeeded_get_index(packet));
+            break;
+        case SM_EVENT_IDENTITY_RESOLVING_FAILED:
+            blog(L_IDENT, 0, 0);
+            break;
         case SM_EVENT_REENCRYPTION_COMPLETE:
             blog(L_REENCRYPT, sm_event_reencryption_complete_get_status(packet), 0);
+            blog_stack(3);
             if (sm_event_reencryption_complete_get_status(packet) == ERROR_CODE_SUCCESS)
                 check_host(sm_event_reencryption_complete_get_handle(packet));
             break;
@@ -546,13 +624,22 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             // locked out; "pairing mode" forgets old hosts and advertises faster
             sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
             break;
-        case SM_EVENT_PAIRING_COMPLETE:
-            blog(L_PAIRED, sm_event_pairing_complete_get_status(packet), sm_event_pairing_complete_get_reason(packet));
-            if (sm_event_pairing_complete_get_status(packet) == ERROR_CODE_SUCCESS) {
+        case SM_EVENT_PAIRING_COMPLETE: {
+            uint8_t st = sm_event_pairing_complete_get_status(packet);
+            int idx = sm_le_device_index(sm_event_pairing_complete_get_handle(packet));
+            blog(L_PAIRED, st, sm_event_pairing_complete_get_reason(packet));
+            blog_stack(2);
+            if (st == ERROR_CODE_SUCCESS) {
                 s_pairing = false;
-                hash_remember(sm_le_device_index(sm_event_pairing_complete_get_handle(packet)));   // a new bond discovers everything
+                hash_remember(idx);   // a new bond discovers everything
+            } else if (idx >= 0 && !bt_bond_survives(st, entry_has_ltk(idx))) {
+                // The Security Manager writes the host's entry while the keys are exchanged. A pairing that fails
+                // afterwards must not leave something that looks paired: next start would advertise "paired hosts only".
+                le_device_db_remove(idx);
+                if (s_tlv) { s_tlv->delete_tag(s_tlv_ctx, HASH_TAG(s_mode, idx)); s_tlv->delete_tag(s_tlv_ctx, CCC_TAG(s_mode, idx)); }
             }
             break;
+        }
         case HCI_EVENT_HIDS_META:
             switch (hci_event_hids_meta_get_subevent_code(packet)) {
                 case HIDS_SUBEVENT_INPUT_REPORT_ENABLE:
@@ -645,6 +732,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     s_running = true;
     if (g_cfg.xinput_opts & XOPT_WIIMOTE) { wii_init(pair); return; }   // a Wii Remote instead of a BLE gamepad
     blog(L_BOOT, (uint8_t)(pair | (open_window << 1)), s_mode);
+    if (g_reset_reason != RR_POWER) blog(L_RESET, g_reset_reason, g_reset_count);   // a stack overflow / HardFault / watchdog reset shows here
     s_want_pair = pair;
     s_want_window = open_window && !pair;
 

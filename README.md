@@ -219,6 +219,10 @@ Firmware side. The configurator part is documented with the Test page.
 * **Ext config page**: 512 bytes (`firmware/src/ext_config.h`) in the two flash pages after the main config page, same sector, saved and reset together with it (`0x34`, `0x35`). A missing or invalid page means defaults; one that is present but unreadable is kept by automatic saves until you save explicitly.
 * **Vendor requests**: `0x3D` get ext page (IN, 512 bytes), `0x3E` set it (OUT, 512 bytes, validated, applied live, not saved; an invalid page stalls). `0x31` status is 96 bytes (bytes 55..95: map row, generic buttons / axes, stick, flags) when the host asks for 96.
 
+### Bluetooth pairing fix (0.50)
+
+Since 0.47 Bluetooth pairing never completed: the LE Secure Connections key exchange needs about 2.4 KB of stack, the Pico W builds had 2 KB, and 0.47's new stack-overflow check reset the guitar the moment a host started pairing (older versions overflowed into unused memory without noticing). 0.50 gives the Pico W / Pico 2 W builds a 4 KB stack, logs the unused stack bytes and the reset reason, advertises as discoverable whenever no host is paired (so the guitar can never lock itself out), removes half-finished pairings, logs each connection once, and logs every pairing step (requests, IO capabilities, result, encryption, disconnect reasons) for the Bluetooth log viewer.
+
 ### Bluetooth fix (0.48)
 
 0.47 made Bluetooth connect unreliably (Windows and macOS). 0.48 goes back to two Bluetooth connection slots (a host reconnecting before the old link is freed needs the second), turns link-time optimisation off again by default, raises the running watchdog timeout to 8 s (pairing key writes and radio stalls must never trip it), and only skips Bluetooth for one start-up right after the radio hung while starting (crashes alone no longer turn it off). The 0.47 latency and other reliability changes stay.
