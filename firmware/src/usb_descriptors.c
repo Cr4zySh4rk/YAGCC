@@ -266,7 +266,7 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
             9, TUSB_DESC_INTERFACE, ITF_PAD, 0, 2, 0xFF, 0x5D, 0x01, 0,
             17, 0x21, 0x10, 0x01, xinput_subtype(), 0x25, EP_PAD_IN, 0x14, 0x03, 0x03, 0x03, 0x04, 0x13, EP_PAD_OUT, 0x08, 0x03, 0x03,
             7, TUSB_DESC_ENDPOINT, EP_PAD_IN, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(0x20), 1,
-            7, TUSB_DESC_ENDPOINT, EP_PAD_OUT, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(0x20), 8,
+            7, TUSB_DESC_ENDPOINT, EP_PAD_OUT, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(0x20), 1,   // OUT 1 ms like Santroller's wired pad (was 8)
         };
         memcpy(p, x, sizeof(x)); p += sizeof(x); n_itf++;
     } else if (g_usb_mode == MODE_OGXBOX) {
@@ -461,7 +461,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                     static char ser2[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 6];
                     size_t k = strlen(serial);
                     memcpy(ser2, serial, k);
-                    ser2[k++] = '-'; ser2[k++] = g_xinput_wireless ? 'r' : 'w'; ser2[k++] = '4'; ser2[k++] = '0'; ser2[k] = 0;
+                    ser2[k++] = '-'; ser2[k++] = g_xinput_wireless ? 'r' : 'w'; ser2[k++] = '4'; ser2[k++] = g_xinput_wireless ? '0' : '1'; ser2[k] = 0;   // wired: salt 41, its OUT endpoint interval changed (receiver layout unchanged: 40)
                     s = ser2;
                 } else s = serial;
                 break;

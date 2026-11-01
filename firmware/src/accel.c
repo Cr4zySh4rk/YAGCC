@@ -25,7 +25,7 @@
 #define ACCEL_I2C_HZ        400000
 #define ACCEL_POLL_US       1000      // faster than the chips' 200..400 Hz output, the data ready flag picks new samples
 #define ACCEL_PROBE_STEP_US 80000     // while a slot is empty, try its next candidate address this often (6 addresses ~ 0.5 s)
-#define ACCEL_XFER_US       2000      // per transfer timeout
+#define ACCEL_XFER_US       600       // per transfer timeout (a healthy 8..14 byte read is 0.25..0.4 ms at 400 kHz): bounds a stuck bus to ~1.2 ms
 #define ACCEL_MAX_FAILS     10        // consecutive failed polls before probing again (Santroller: 10)
 #define ACCEL_STALE_US      1000000   // no new sample this long: the chip stopped, probe again
 #define ACCEL_1G            16384.0f
@@ -136,6 +136,29 @@ static void stop_bus(void) {
     }
     bus = NULL; cur_sda = cur_scl = -1;
     for (int n = 0; n < NUM_ACCEL; n++) { memset(&dev[n], 0, sizeof(dev[n])); }
+}
+
+// A chip that was reset (or the MCU restarted) mid-byte can hold SDA low for good, and every transfer then times out.
+// The standard fix: with the pins as plain GPIOs, clock SCL up to 9 times until the chip lets go of SDA, then give a
+// STOP. Pulses are open drain (output low / input with pull-up) so a slow chip can stretch the clock. Runs only while
+// SDA is seen low with no chip answering, at most once per probe step (80 ms), and takes about 100 us.
+static void bus_recover(uint8_t sda, uint8_t scl) {
+    if (gpio_get(sda)) return;
+    i2c_deinit(bus);
+    gpio_init(sda); gpio_init(scl);
+    gpio_set_dir(sda, GPIO_IN); gpio_set_dir(scl, GPIO_IN);
+    gpio_pull_up(sda); gpio_pull_up(scl);
+    gpio_put(scl, 0);
+    for (int i = 0; i < 9 && !gpio_get(sda); i++) {
+        gpio_set_dir(scl, GPIO_OUT); busy_wait_us(5);    // SCL low
+        gpio_set_dir(scl, GPIO_IN);  busy_wait_us(5);    // SCL released (high)
+    }
+    gpio_put(sda, 0); gpio_set_dir(sda, GPIO_OUT); busy_wait_us(5);   // STOP: SDA low -> high while SCL high
+    gpio_set_dir(sda, GPIO_IN); busy_wait_us(5);
+    i2c_init(bus, ACCEL_I2C_HZ);
+    gpio_set_function(sda, GPIO_FUNC_I2C);
+    gpio_set_function(scl, GPIO_FUNC_I2C);
+    gpio_pull_up(sda); gpio_pull_up(scl);
 }
 
 // SDA on an even GPIO and SCL on the odd one of the same I2C block (GP4 / GP5, GP2 / GP3, ...)
@@ -319,6 +342,7 @@ void accel_task(void) {
         if ((int32_t)(now - s->next_us) < 0) continue;
         if (!s->type) {
             if (n == 1 && !other->type) { s->next_us = now + ACCEL_PROBE_STEP_US; continue; }   // chip 1 is found first
+            if (!other->type) bus_recover(sda, scl);         // nothing answers on the bus: is SDA stuck low?
             probe_step(s, other);
             now = time_us_32();
             if (s->type) {   // found: the second chip is polled half a period after the first

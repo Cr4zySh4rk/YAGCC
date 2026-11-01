@@ -35,7 +35,7 @@ endif()
 pico_sdk_init()
 
 set(YACC_VERSION_MAJOR 0)
-set(YACC_VERSION_MINOR 46)
+set(YACC_VERSION_MINOR 47)
 
 # Board ids reported to the web app
 if(PICO_BOARD STREQUAL "pico")
@@ -66,6 +66,7 @@ add_executable(yacc
   src/usb_descriptors.c
   src/usb_drivers.c
   src/config.c
+  src/reliability.c
   src/ext_config.c
   src/padmap.c
   src/reports.c
@@ -133,14 +134,24 @@ target_compile_definitions(yacc PRIVATE
   # strings only, so the float / exponent / long long / ptrdiff code is dead weight
   PICO_PRINTF_SUPPORT_FLOAT=0
   PICO_PRINTF_SUPPORT_EXPONENTIAL=0
+  # Core 1 is never started: do not reserve its 2 KB stack (multicore_launch_core1() would panic, nothing calls it)
+  PICO_CORE1_STACK_SIZE=0
 )
 target_link_options(yacc PRIVATE --specs=nano.specs)
-option(YACC_LTO "Link-time optimisation" OFF)
+# LTO: -7 KB flash on the RP2040/RP2350 boards, -12 KB on the W boards. The timing-critical emulation and PIO USB
+# files are kept out of it (compiled exactly as without LTO), as are the SDK's pico_* libraries.
+option(YACC_LTO "Link-time optimisation" ON)
 if(YACC_LTO)
   target_compile_options(yacc PRIVATE -flto=auto -fno-fat-lto-objects)
   target_link_options(yacc PRIVATE -flto=auto -Os)
-  file(GLOB_RECURSE YACC_NOLTO_SOURCES ${PICO_SDK_PATH}/src/rp2_common/pico_*/*.c ${PICO_SDK_PATH}/src/common/pico_*/*.c)
-  set_property(SOURCE ${YACC_NOLTO_SOURCES} APPEND PROPERTY COMPILE_OPTIONS -fno-lto)
+  file(GLOB_RECURSE YACC_NOLTO_SOURCES ${PICO_SDK_PATH}/src/rp2_common/pico_*/*.c ${PICO_SDK_PATH}/src/common/pico_*/*.c
+    ${CMAKE_CURRENT_LIST_DIR}/lib/pico_pio_usb/src/*.c)
+  set_property(SOURCE ${YACC_NOLTO_SOURCES}
+    lib/psx_emulation/pio_spi.c
+    lib/psx_emulation/psx_emulation.cpp
+    lib/wii_extension_emulation/wii_extension_backend.c
+    lib/wii_extension_emulation/wii_extension_emulation.cpp
+    APPEND PROPERTY COMPILE_OPTIONS -fno-lto)
 endif()
 
 target_link_libraries(yacc

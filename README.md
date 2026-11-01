@@ -219,6 +219,12 @@ Firmware side. The configurator part is documented with the Test page.
 * **Ext config page**: 512 bytes (`firmware/src/ext_config.h`) in the two flash pages after the main config page, same sector, saved and reset together with it (`0x34`, `0x35`). A missing or invalid page means defaults; one that is present but unreadable is kept by automatic saves until you save explicitly.
 * **Vendor requests**: `0x3D` get ext page (IN, 512 bytes), `0x3E` set it (OUT, 512 bytes, validated, applied live, not saved; an invalid page stalls). `0x31` status is 96 bytes (bytes 55..95: map row, generic buttons / axes, stick, flags) when the host asks for 96.
 
+### Performance and reliability (0.47)
+
+* **Latency:** inputs are sampled right before each report is built and sent; the ADC reads one channel per pass (each still at 1 kHz); LED frames go out without stalling the loop (WS2812 through the PIO FIFO, APA102 in small pieces); accelerometer I2C transfers are bounded to 0.6 ms. Every USB mode polls at 1 ms (1000 Hz) except the Xbox 360 wireless-receiver OUT endpoint (8 ms) and the original Xbox (4 ms), which match the real devices / Santroller. The wired XInput OUT endpoint is now 1 ms, so its USB serial suffix changed (Windows binds it as a new Xbox 360 controller once).
+* **Size:** link-time optimisation is on by default (timing-critical PIO-USB, PSX and Wii emulation files are excluded), the unused core-1 stack is gone and Bluetooth keeps one connection: about 4.5 KB less flash and 2 KB less RAM on the Pico, 9 KB / 4 KB on the Pico W.
+* **Reliability:** a 2 s hardware watchdog (8 s during start-up); a crash, hang or stack overflow restarts the guitar in its saved mode without triggering any hold-a-fret shortcut, and the reason is reported in status bytes 77..82; if the Bluetooth radio hangs at start-up (or after three crashes in a row) the next start skips Bluetooth so USB keeps working; vendor requests are checked for direction and length (a malformed request could previously write into the live settings); a stuck accelerometer bus is cleared automatically.
+
 ## Boards
 
 | Build | Board |

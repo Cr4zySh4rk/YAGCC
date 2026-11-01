@@ -21,6 +21,7 @@
 #include "hardware/irq.h"
 #include "hardware/pll.h"
 #include "hardware/watchdog.h"
+#include "reliability.h"
 #include "hardware/structs/watchdog.h"
 #include "tusb.h"
 #include "config.h"
@@ -44,6 +45,7 @@ static void wake_irq(void) {
 }
 
 static void sleep_now(void) {
+    rel_disarm();                                        // asleep for hours: the watchdog would reset us (the wake-up reboot re-arms it)
     rumble_stop();
     rumble_task();
     tud_disconnect();                                    // the host must not find a half-dead device

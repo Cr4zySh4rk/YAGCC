@@ -42,6 +42,7 @@ static bool strum_lock_active;
 static int32_t adc_acc[NUM_ADC_CH];           // value * 16
 static uint16_t adc_val[NUM_ADC_CH];
 static uint32_t last_adc_us;
+static uint8_t adc_next;                      // channel converted on the next call
 static uint32_t last_poll_us;
 
 // ---- tilt inputs acting as buttons (0.41) ----
@@ -143,23 +144,24 @@ void input_poll(void) {
 
     tilt_update();
 
-    // analog, 1 kHz
-    if (elapsed(now, last_adc_us, 1000)) {
+    // analog: one channel per call, each channel still every 1 ms. A channel costs ~40 us (18 conversions at
+    // 2 us), so a pass never holds the loop for more than that, instead of all channels (~120 us) at once.
+    if (elapsed(now, last_adc_us, 1000u / NUM_ADC_CH)) {
         last_adc_us = now;
         uint8_t sh = g_cfg.whammy_smooth;
-        for (int c = 0; c < NUM_ADC_CH; c++) {
-            adc_select_input(c);
-            // The sample capacitor still holds the previous channel's charge: without throw-away
-            // conversions an unconnected (floating) pin just mirrors its neighbour, which made
-            // the whammy appear on several channels at once.
-            (void)adc_read(); (void)adc_read();
-            uint32_t sum = 0;
-            for (int i = 0; i < 16; i++) sum += adc_read();     // 16x oversampling: finer steps for small-swing sensors
-            int32_t target = (int32_t)(sum >> 2);              // (sum/16) << 4
-            adc_acc[c] += (target - adc_acc[c]) >> sh;
-            if (sh == 0) adc_acc[c] = target;
-            adc_val[c] = (uint16_t)(adc_acc[c] >> 4);
-        }
+        int c = adc_next;
+        adc_next = (uint8_t)(c + 1 == NUM_ADC_CH ? 0 : c + 1);
+        adc_select_input(c);
+        // The sample capacitor still holds the previous channel's charge: without throw-away
+        // conversions an unconnected (floating) pin just mirrors its neighbour, which made
+        // the whammy appear on several channels at once.
+        (void)adc_read(); (void)adc_read();
+        uint32_t sum = 0;
+        for (int i = 0; i < 16; i++) sum += adc_read();     // 16x oversampling: finer steps for small-swing sensors
+        int32_t target = (int32_t)(sum >> 2);              // (sum/16) << 4
+        adc_acc[c] += (target - adc_acc[c]) >> sh;
+        if (sh == 0) adc_acc[c] = target;
+        adc_val[c] = (uint16_t)(adc_acc[c] >> 4);
     }
 }
 

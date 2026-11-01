@@ -68,6 +68,9 @@ static void wireless_command(const uint8_t *b, uint32_t n) {
 
 bool xinput_send(const uint8_t *report, uint16_t len) {
     if (!tud_ready() || ep_in == 0 || len > sizeof(in_buf)) return false;
+    // the OUT endpoint is re-armed by the transfer callback; if that ever failed (stalled / busy at that moment) it would
+    // stay idle for good and the host's rumble packets would NAK: try again
+    if (ep_out && g_usb_mode != MODE_XBONE && !usbd_edpt_busy(0, ep_out)) usbd_edpt_xfer(0, ep_out, out_buf, sizeof(out_buf));
     if (usbd_edpt_busy(0, ep_in)) return false;
     if (g_xinput_wireless && g_usb_mode == MODE_XINPUT) {
         if (wireless_reply()) return false;                     // the report goes out next time

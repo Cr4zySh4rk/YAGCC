@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
 #include "hardware/watchdog.h"
+#include "reliability.h"
 #include "hardware/structs/watchdog.h"
 #include "hardware/clocks.h"
 #include "tusb.h"
@@ -95,7 +96,8 @@ static uint16_t build_status(void) {
     memcpy(p, ax, sizeof(ax)); p += sizeof(ax);                   // 60 LX LY RX RY LT RT
     memcpy(p, g_stick, 4); p += 4;                                // 72 stick X, Y
     *p++ = g_ext_flags;                                           // 76 bit0 stick fitted, bit1 D-pad wired
-    memset(p, 0, (size_t)(tx_buf + STATUS_LEN - p)); p = tx_buf + STATUS_LEN;   // 77..95 reserved
+    rel_fill_status(p); p += 6;                                   // 77 reset reason (RR_*), 78 consecutive unclean resets, 79..82 PC of the last HardFault
+    memset(p, 0, (size_t)(tx_buf + STATUS_LEN - p)); p = tx_buf + STATUS_LEN;   // 83..95 reserved
     return (uint16_t)(p - tx_buf);
 }
 
@@ -161,6 +163,8 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
     if (stage != CONTROL_STAGE_SETUP) return true;
 
     if (req->bRequest >= VREQ_INFO && req->bRequest <= 0x3F) g_config_seen = true;   // the configurator, not just Chrome reading the WebUSB URL
+    // wrong direction / length: stall. (A GET with an OUT data stage would make TinyUSB write host bytes into g_cfg / tx_buf.)
+    if (!vreq_shape_ok(req->bRequest, req->bmRequestType_bit.direction == TUSB_DIR_IN, req->wLength)) return false;
     switch (req->bRequest) {
         case VREQ_WEBUSB:
             if (req->wIndex == 2) {
@@ -454,6 +458,11 @@ static bool boot_pressed(int f) {
 }
 
 static uint8_t pick_mode(void) {
+    // the watchdog, a HardFault or a stack overflow restarted us: a fret may be held, but no shortcut was asked for
+    if (rel_unclean(g_reset_reason)) {
+        watchdog_hw->scratch[0] = watchdog_hw->scratch[1] = 0;
+        return g_cfg.usb_mode < NUM_MODES ? g_cfg.usb_mode : MODE_XINPUT;
+    }
     // the configurator asked for setup mode from PS3 mode: honour it for this boot only
     if (watchdog_caused_reboot() && watchdog_hw->scratch[0] == SETUP_MAGIC) {
         watchdog_hw->scratch[0] = 0;
@@ -478,7 +487,7 @@ static uint8_t pick_mode(void) {
     watchdog_hw->scratch[0] = 0;
     // star power + plus at plug-in -> straight to the UF2 bootloader
     if (boot_pressed(F_STAR) && boot_pressed(F_PLUS)) {
-        reset_usb_boot(0, 0);
+        rel_bootsel();
     }
     // star power alone -> Bluetooth pairing (forget the old host), like PS + Create on a PlayStation pad
     if (boot_pressed(F_STAR) && !boot_pressed(F_PLUS)) g_bt_pair_at_boot = true;
@@ -503,6 +512,7 @@ static uint8_t pick_mode(void) {
 int main(void) {
     // Pico-PIO-USB (the authentication host port) needs a system clock that is a multiple of 12 MHz
     set_sys_clock_khz(120000, true);
+    rel_init();                       // why did we boot; arms the watchdog (long timeout while starting up)
     config_load();
     input_init();
     settle_inputs();
@@ -510,12 +520,17 @@ int main(void) {
 
     rgb_init();                       // first, so the LED state machine is claimed before the radio picks one
     // Bluetooth stays off in the modes that use the USB host port (both need PIO1 / DMA) and on boards without a radio
-    bool bt_ok = bt_supported() && !(needs_host(g_usb_mode) && g_cfg.host_dp_pin != PIN_NONE);
+    // (not after repeated crashes or a radio hang: the guitar must still work over USB)
+    bool bt_ok = bt_supported() && !(needs_host(g_usb_mode) && g_cfg.host_dp_pin != PIN_NONE) && !rel_skip_bt(g_reset_reason, g_reset_count);
     if (bt_ok && g_bt_pair_at_boot && !(g_cfg.flags & CFG_FLAG_BT_ENABLED)) {
         g_cfg.flags |= CFG_FLAG_BT_ENABLED;   // pairing turns Bluetooth on for good
         config_save_auto();
     }
-    if (bt_ok) bt_init(g_cfg.flags & CFG_FLAG_BT_ENABLED, g_bt_pair_at_boot, g_bt_mode_switched);
+    if (bt_ok) {
+        rel_bt_phase(true);           // a reset inside bt_init means the radio hung: next boot skips Bluetooth
+        bt_init(g_cfg.flags & CFG_FLAG_BT_ENABLED, g_bt_pair_at_boot, g_bt_mode_switched);
+        rel_bt_phase(false);
+    }
     if (g_usb_mode == MODE_XBONE) xbone_init();
     // Windows found by Auto mode: XInput as a wireless receiver slot, which Steam handles (Santroller)
     g_xinput_wireless = g_usb_mode == MODE_XINPUT && g_auto_host == HOST_WINDOWS && (g_cfg.xinput_opts & XOPT_RECEIVER);
@@ -551,7 +566,9 @@ int main(void) {
     bool auto_was_mounted = false;
     uint64_t auto_lost_at = 0;
 
+    rel_arm();                        // start-up is done: from here the main loop must feed the watchdog every 2 s
     while (true) {
+        rel_task();                   // feed the watchdog, check the stack canary
         tud_task();
         if (g_usb_mode == MODE_AUTO && !g_setup_session) {
             uint8_t host = auto_task(to_ms_since_boot(get_absolute_time()));
@@ -632,7 +649,6 @@ int main(void) {
         }
         if (needs_host(g_usb_mode)) usb_host_task();
         bt_task();
-        input_poll();
         accel_task();
         if (!tud_mounted()) rumble_stop();
         rumble_task();
@@ -669,7 +685,7 @@ int main(void) {
             while (true) tight_loop_contents();
         }
         if (reboot_mode >= 0 && now >= reboot_at) {
-            if (reboot_mode == 1) reset_usb_boot(0, 0);
+            if (reboot_mode == 1) rel_bootsel();
             else watchdog_reboot(0, 0, 10);
         }
         if (save_pending) {
@@ -708,6 +724,7 @@ int main(void) {
             }
         } else { switch_start = 0; switch_fret = -1; }
 
+        input_poll();                // sampled right before the report is built and queued: none of the slow tasks above sit in between
         pad_t st;
         read_pad(&st);
         padsrc_t src;

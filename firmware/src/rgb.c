@@ -98,12 +98,15 @@ static void release(int pin) {
     gpio_pull_up(pin);
 }
 
+static uint16_t pend_n, pend_i;                            // frame being sent out, see output()
+
 static void attach(int pin, int clk, int type) {
     if (pin == cur_pin && clk == cur_clk && type == cur_type) return;
     if (cur_pin >= 0 && cur_type != LED_APA102) pio_sm_set_enabled(rgb_pio, rgb_sm, false);
     release(cur_pin);
     release(cur_clk);
     cur_pin = cur_clk = cur_type = -1;
+    pend_i = pend_n = 0;
     if (pin < 0) return;
     if (type == LED_APA102) {
         if (clk < 0 || clk == pin) return;
@@ -217,32 +220,56 @@ static void order_bytes(uint8_t r, uint8_t g, uint8_t b, uint8_t c[3]) {
     }
 }
 
+// Output never blocks the main loop: output() only encodes the frame into pend_*, and pump() (called on every
+// rgb_task() pass) hands a few words / bytes to the LED chain each time. A 9 LED WS2812 frame takes ~270 us on the
+// wire (a pio_sm_put_blocking loop held the loop ~30-230 us), an APA102 frame ~90-160 us of bit-banging.
+#define APA_PUMP_BYTES 8                                   // ~16 us of bit-banging per pass
+static uint32_t pend_w[MAX_LEDS];                          // WS2812 / SK6812 words
+static uint8_t pend_b[4 + 4 * MAX_LEDS + 4 + 1];           // APA102 bytes: start frame, LEDs, end frame
+
+static void pump(void) {
+    if (pend_i >= pend_n) return;
+    if (cur_type == LED_APA102) {
+        for (int k = 0; k < APA_PUMP_BYTES && pend_i < pend_n; k++) apa102_byte(pend_b[pend_i++]);
+    } else {
+        while (pend_i < pend_n && !pio_sm_is_tx_fifo_full(rgb_pio, rgb_sm)) pio_sm_put(rgb_pio, rgb_sm, pend_w[pend_i++]);
+        // The 8 word FIFO holds a whole frame of up to 8 LEDs, which then drains by itself (~240 us). A longer chain
+        // must not starve (a >50 us gap latches the frame early and garbles the rest), so only its tail waits here:
+        // at most (n - 8) words, 30-40 us each.
+        while (pend_i < pend_n && pend_n > 8) pio_sm_put_blocking(rgb_pio, rgb_sm, pend_w[pend_i++]);
+    }
+}
+
 static void output(const px_t *px, int n) {
     uint8_t c[3];
+    pend_i = pend_n = 0;
     if (cur_type == LED_APA102) {
-        for (int i = 0; i < 4; i++) apa102_byte(0x00);                    // start frame
+        uint16_t m = 0;
+        for (int i = 0; i < 4; i++) pend_b[m++] = 0x00;                   // start frame
         for (int i = 0; i < n; i++) {
             order_bytes(px[i].r, px[i].g, px[i].b, c);
-            apa102_byte(0xE0 | px[i].gb);                                 // 111 + 5-bit brightness
-            apa102_byte(c[0]); apa102_byte(c[1]); apa102_byte(c[2]);
+            pend_b[m++] = 0xE0 | px[i].gb;                                // 111 + 5-bit brightness
+            pend_b[m++] = c[0]; pend_b[m++] = c[1]; pend_b[m++] = c[2];
         }
         // end frame: the data runs one half clock behind per LED, so n/2 more clocks push it to the last one.
         // Zeros rather than 0xFF: SK9822 clones latch on them, and an extra LED past the chain stays dark.
         int end = (n + 15) / 16; if (end < 4) end = 4;
-        for (int i = 0; i < end; i++) apa102_byte(0x00);
-        return;
-    }
-    for (int i = 0; i < n; i++) {
-        uint8_t r = px[i].r, g = px[i].g, b = px[i].b;
-        if (cur_type == LED_SK6812_RGBW) {
-            uint8_t w = r < g ? (r < b ? r : b) : (g < b ? g : b);        // move the shared white into W
-            uint32_t word = ((uint32_t)(g - w) << 24) | ((uint32_t)(r - w) << 16) | ((uint32_t)(b - w) << 8) | w;
-            pio_sm_put_blocking(rgb_pio, rgb_sm, word);
-            continue;
+        for (int i = 0; i < end; i++) pend_b[m++] = 0x00;
+        pend_n = m;
+    } else {
+        for (int i = 0; i < n; i++) {
+            uint8_t r = px[i].r, g = px[i].g, b = px[i].b;
+            if (cur_type == LED_SK6812_RGBW) {
+                uint8_t w = r < g ? (r < b ? r : b) : (g < b ? g : b);    // move the shared white into W
+                pend_w[i] = ((uint32_t)(g - w) << 24) | ((uint32_t)(r - w) << 16) | ((uint32_t)(b - w) << 8) | w;
+            } else {
+                order_bytes(r, g, b, c);
+                pend_w[i] = (((uint32_t)c[0] << 16) | ((uint32_t)c[1] << 8) | c[2]) << 8;
+            }
         }
-        order_bytes(r, g, b, c);
-        pio_sm_put_blocking(rgb_pio, rgb_sm, (((uint32_t)c[0] << 16) | ((uint32_t)c[1] << 8) | c[2]) << 8);
+        pend_n = (uint16_t)n;
     }
+    pump();
 }
 
 // one shared (not inlined) colour path keeps rgb_task small
@@ -570,10 +597,11 @@ void rgb_task(void) {
     if (!program_loaded) return;
     int clk = (g_cfg.led_type == LED_APA102 && g_cfg.led_clk_pin < NUM_DIGITAL_PINS) ? (int)g_cfg.led_clk_pin : -1;
     attach(enabled ? (int)g_cfg.rgb_pin : -1, clk, g_cfg.led_type);
-    if (!enabled || cur_pin < 0) return;
+    if (!enabled || cur_pin < 0) { pend_i = pend_n = 0; return; }
+    pump();                                                 // finish the previous frame a few words at a time
 
     uint32_t now = time_us_32();
-    if ((uint32_t)(now - last_frame) < FRAME_US) return;
+    if ((uint32_t)(now - last_frame) < FRAME_US || pend_i < pend_n) return;
     frame_us = now - last_frame;
     last_frame = now;
 
