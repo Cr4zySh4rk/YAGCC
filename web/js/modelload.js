@@ -1,3 +1,4 @@
+import { t } from './i18n.js?v=dev';
 // Shared by the 3D guitar and the 3D pad: fetch a .glb with progress + timeout, a per-key in-memory cache (a model loaded once is instant next time),
 // and the "buffering" overlay (spinner, caption, progress %, slow-connection hint, and the error state with Retry).
 const SLOW_MS = 8000, TIMEOUT_MS = 30000;
@@ -40,7 +41,7 @@ export function createLoadBox(host) {
   const el = document.createElement('div'); el.className = 'm3d-load'; el.hidden = true;
   el.setAttribute('role', 'status');
   el.innerHTML = `<svg class="m3d-spin" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><circle class="m3d-ring" cx="24" cy="24" r="${R}"/><circle class="m3d-arc" cx="24" cy="24" r="${R}"/></svg>
-<div class="m3d-cap"></div><div class="m3d-hint"></div><button type="button" class="btn m3d-retry" hidden>Retry</button>`;
+<div class="m3d-cap"></div><div class="m3d-hint"></div><button type="button" class="btn m3d-retry" hidden>${t('model.retry')}</button>`;
   host.appendChild(el);
   const $ = (s) => el.querySelector(s), cap = $('.m3d-cap'), hint = $('.m3d-hint'), btn = $('.m3d-retry'), arc = $('.m3d-arc');
   let timer = 0, label = '', retry = null;
@@ -50,7 +51,7 @@ export function createLoadBox(host) {
     show(l, lite = false) {
       label = l; clearTimeout(timer); el.hidden = false; el.classList.remove('err'); el.classList.toggle('scrim', lite);
       el.classList.remove('det'); arc.style.strokeDasharray = ''; btn.hidden = true; cap.textContent = label; hint.textContent = '';
-      timer = setTimeout(() => { hint.textContent = 'Slow connection: still loading'; }, SLOW_MS);
+      timer = setTimeout(() => { hint.textContent = t('model.slow_connection_still_loading'); }, SLOW_MS);
     },
     progress(f) {
       if (el.hidden || el.classList.contains('err') || !(f >= 0)) return;
@@ -67,7 +68,7 @@ export function createLoadBox(host) {
 // The "simple view" note shown above the 2D drawing when the model could not be loaded.
 export function createFallbackNote(anchor, retry) {
   const n = document.createElement('div'); n.className = 'm3d-note'; n.setAttribute('role', 'status');
-  n.innerHTML = '<span>Showing the simple view</span><button type="button" class="btn m3d-retry">Retry</button>';
+  n.innerHTML = `<span>${t('model.showing_simple_view')}</span><button type="button" class="btn m3d-retry">${t('model.retry')}</button>`;
   n.querySelector('button').addEventListener('click', retry);
   anchor.parentNode.insertBefore(n, anchor);
   return n;

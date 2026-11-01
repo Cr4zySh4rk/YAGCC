@@ -3,6 +3,7 @@
 // three.js (MIT) is bundled in vendor/three-yagcc.js and only downloaded when a 3D view is created.
 
 import { loadGLB } from './modelload.js?v=dev';
+import { t } from './i18n.js?v=dev';
 let libP = null;
 const lib = () => (libP ||= import('../vendor/three-yagcc.js?v=dev').catch((e) => { libP = null; throw e; }));
 const cache = new Map();   // 'guitar' -> loaded model (instant the second time; a failed load is dropped so Retry re-fetches)
@@ -53,7 +54,7 @@ export function createGuitar3D(host, { onReady, onFail, onPart, onLoading, onPro
     const canvas = document.createElement('canvas');
     canvas.className = 'guitar3d';
     canvas.setAttribute('role', 'img');
-    canvas.setAttribute('aria-label', 'Live 3D view of the guitar. Drag to turn it, double-click to reset.');
+    canvas.setAttribute('aria-label', t('guitar3d.aria_label'));
     let renderer;
     try {
       renderer = new T.WebGLRenderer({ canvas, antialias: !lite, alpha: true, powerPreference: 'low-power' });

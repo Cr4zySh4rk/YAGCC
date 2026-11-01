@@ -1,3 +1,4 @@
+import { t, localized } from './i18n.js?v=dev';
 // YAGCC wire protocol (the on-wire magic stays 'YACC' for compatibility) - mirrors firmware/src/config.h and usb_common.h
 export const VID = 0x1209;
 export const PIDS = [0x0001, 0x0002, 0x0003, 0x0004];   // 4 = Auto mode before the host is known
@@ -8,10 +9,10 @@ export const VREQ = {
 };
 
 export const FUNCS = ['green', 'red', 'yellow', 'blue', 'orange', 'strumUp', 'strumDown', 'star', 'plus'];
-export const FUNC_LABEL = {
-  green: 'Green', red: 'Red', yellow: 'Yellow', blue: 'Blue', orange: 'Orange',
-  strumUp: 'Strum up', strumDown: 'Strum down', star: 'Star power', plus: 'Plus / Start',
-};
+export const FUNC_LABEL = localized(() => ({
+  green: t('common.green'), red: t('common.red'), yellow: t('common.yellow'), blue: t('common.blue'), orange: t('common.orange'),
+  strumUp: t('common.strum_up'), strumDown: t('common.strum_down'), star: t('common.star_power'), plus: t('test.source.plus_start.name'),
+}));
 export const NUM_FRETS = 5;
 // Tilt inputs as buttons (firmware 0.41, config bytes 242..244: tilt switch, sensor 1, sensor 2). In the config
 // object `tiltFunc` is [switch, sensor 1, sensor 2], each an index into FUNCS (default star power). On the wire 0 =
@@ -25,54 +26,55 @@ export const NUM_DIGITAL_PINS = 23;
 export const MODE_NONE = 0xff;
 
 // order = how they are listed in the UI; id = firmware MODE_* value
-export const MODES = [
-  { id: 10, name: 'Auto (detect the console)', short: 'Auto', config: true, min: 30,
-    desc: 'Works out what it is plugged into and becomes the right controller: XInput on Windows and Xbox 360, PS3 guitar on PS3 and PS2, the PS3 Rock Band guitar Rock Band 4 takes on PS4 / PS5 (or PS4 mode with an auth controller on the host port), Switch, Wii Rock Band, original Xbox, Xbox One (keyboard for Fortnite Festival without an auth controller), and the HID gamepad on macOS, Linux and Android. Same detection as Santroller. Firmware 0.30+.' },
+export const MODES = localized(() => ([
+  { id: 10, name: t('compat.any_console_whatever_plugged.mode'), short: t('mode.auto_detect_console.short'), config: true, min: 30,
+    desc: t('mode.auto_detect_console.desc') },
   { id: 0, name: 'XInput (Xbox 360)', short: 'XInput', config: true,
-    desc: 'Xbox 360 guitar: Guitar Hero or Rock Band type. Plug-and-play on Windows (Clone Hero, YARG, Fortnite Festival) and on a real Xbox 360 — the console\'s security check is answered by the firmware. macOS has no XInput driver: use HID mode on a Mac.' },
+    desc: t('mode.xinput_xbox_360.desc') },
   { id: 3, name: 'PS3 Rock Band', short: 'PS3 RB', config: false,
-    desc: 'PS3 Rock Band guitar (12BA:0200). Rock Band on PS3, PS2 and RPCS3, and Rock Band 4 on PS4 / PS5 (legacy instruments). Also fine for Clone Hero / YARG.' },
+    desc: t('mode.ps3_rock_band.desc') },
   { id: 1, name: 'PS3 Guitar Hero', short: 'PS3 GH', config: false,
-    desc: 'PS3 Guitar Hero guitar (12BA:0100). Guitar Hero on PS3 / PS2 (World Tour, GH5, Band Hero) and RPCS3 / PCSX2.' },
-  { id: 2, name: 'HID Gamepad', short: 'HID', config: true,
-    desc: 'Generic HID gamepad for macOS, Linux, Android and emulators. Configurable here too (the browser asks for permission once for this mode).' },
-  { id: 4, name: 'Keyboard · Fortnite Festival', short: 'Keyboard', config: true,
-    desc: 'Shows up as a USB keyboard with Fortnite Festival key bindings, so it works on PS4, PS5, Xbox One / Series and PC without any authentication dongle. Bindings can be changed below.' },
+    desc: t('mode.ps3_guitar_hero.desc') },
+  { id: 2, name: t('mode.hid_gamepad.name'), short: 'HID', config: true,
+    desc: t('mode.hid_gamepad.desc') },
+  { id: 4, name: t('mode.keyboard_fortnite_festival.name'), short: t('setup.gate.keyboard'), config: true,
+    desc: t('mode.keyboard_fortnite_festival.desc') },
   { id: 6, name: 'Wii Rock Band', short: 'Wii RB', config: false,
-    desc: 'Wii Rock Band guitar dongle (1BAD:0004) for Rock Band 1–3 and The Beatles: Rock Band on Wii / Wii U over USB.' },
+    desc: t('mode.wii_rock_band.desc') },
   { id: 5, name: 'Nintendo Switch', short: 'Switch', config: false,
-    desc: 'HORIPAD-compatible gamepad: works with every Switch game (Fortnite Festival, rhythm games) without pairing.' },
+    desc: t('mode.nintendo_switch.desc') },
   { id: 7, name: 'Original Xbox', short: 'OG Xbox', config: false,
-    desc: 'Original Xbox controller (XID). Needs a USB-to-Xbox-port adapter cable.' },
-  { id: 8, name: 'PS4 / PS5 guitar (experimental)', short: 'PS4', config: false, host: true,
-    desc: 'Rock Band 4 guitar for PS4 and PS5. The console\'s security check is passed through to a licensed PS4 controller or auth dongle plugged into the guitar\'s USB host port. Experimental: not yet tested on a console.' },
-  { id: 11, name: 'PS5 guitar (experimental)', short: 'PS5', config: false, host: true, min: 30,
-    desc: 'Rock Band 4 guitar for PS5 games. The console\'s security check and the signing of every input report are done by a Besavior P5General dongle plugged into the guitar\'s USB host port (as Santroller does). For Rock Band 4 alone, PS3 Rock Band mode works on a PS5 with nothing extra. Experimental: not yet tested on a console.' },
-  { id: 9, name: 'Xbox One / Series guitar (experimental)', short: 'Xbox One', config: false, host: true,
-    desc: 'Rock Band 4 guitar for Xbox One and Xbox Series. The console\'s security check is passed through to a licensed Xbox One / Series controller plugged into the guitar\'s USB host port. Experimental: not yet tested on a console.' },
-];
-export const modeName = (id) => (MODES.find((m) => m.id === id) || { name: 'Unknown' }).name;
+    desc: t('mode.original_xbox.desc') },
+  { id: 8, name: t('mode.suffix_experimental', { name: t('mode.ps4_ps5_guitar.name') }), base: t('mode.ps4_ps5_guitar.name'), short: 'PS4', config: false, host: true,
+    desc: t('mode.ps4_ps5_guitar_experimental.desc') },
+  { id: 11, name: t('mode.suffix_experimental', { name: t('mode.ps5_guitar.name') }), base: t('mode.ps5_guitar.name'), short: 'PS5', config: false, host: true, min: 30,
+    desc: t('mode.ps5_guitar_experimental.desc') },
+  { id: 9, name: t('mode.xbox_one_series_guitar.name'), short: 'Xbox One', config: false, host: true,
+    desc: t('mode.xbox_one_series_guitar.desc') },
+]));
+export const modeBaseName = (id) => { const m = MODES.find((x) => x.id === id); return m ? m.base || m.name : t('mode.unknown.name'); };
+export const modeName = (id) => (MODES.find((m) => m.id === id) || { name: t('mode.unknown.name') }).name;
 
-export const BOARDS = {
+export const BOARDS = localized(() => ({
   0: 'Raspberry Pi Pico', 1: 'Raspberry Pi Pico W', 2: 'Raspberry Pi Pico 2',
-  3: 'Raspberry Pi Pico 2 W', 4: 'Pico-compatible clone', 5: 'Waveshare RP2040-Zero', 6: 'Waveshare RP2040-One',
-  7: 'SparkFun Pro Micro RP2040', 8: 'Adafruit KB2040', 255: 'Unknown board',
-};
+  3: 'Raspberry Pi Pico 2 W', 4: t('board.pico_compatible_clone'), 5: t('install.waveshare_rp2040_zero.name'), 6: 'Waveshare RP2040-One',
+  7: t('install.sparkfun_promicro.name'), 8: t('install.adafruit_kb2040.name'), 255: t('board.unknown_board'),
+}));
 
-export const DEBOUNCE_MODES = [
-  { id: 0, name: 'Hold release', desc: 'Presses register instantly; a release is held for the debounce time. Lowest latency.' },
-  { id: 1, name: 'Delay press', desc: 'A press registers only after being held for the debounce time; releases are instant.' },
-  { id: 2, name: 'Classic', desc: 'Any change must be stable for the debounce time (adds latency both ways).' },
-];
+export const DEBOUNCE_MODES = localized(() => ([
+  { id: 0, name: 'Hold release', desc: t('tune.debounce.hold_release.desc') },
+  { id: 1, name: t('tune.debounce.delay_press.name'), desc: t('tune.debounce.delay_press.desc') },
+  { id: 2, name: t('tune.debounce.classic.name'), desc: t('tune.debounce.classic.desc') },
+]));
 
 export const NUM_LEDS = 5;            // frets with LEDs (one or two LEDs each)
 export const MAX_STRUM_LEDS = 8;      // strum bar LEDs
 export const MAX_LEDS = 2 * NUM_LEDS + MAX_STRUM_LEDS;
-export const STRUM_ROLES = [
-  { id: 0, name: 'Up and down' },
-  { id: 1, name: 'Strum up' },
-  { id: 2, name: 'Strum down' },
-];
+export const STRUM_ROLES = localized(() => ([
+  { id: 0, name: t('lights.hw.strum_role.up_down.name') },
+  { id: 1, name: t('common.strum_up') },
+  { id: 2, name: t('common.strum_down') },
+]));
 // LED layout helpers. Fret LEDs keep their order relative to each other; strum LEDs go before or after them.
 export function ledLayout(c) {
   const frets = !c.noFretLeds, n = c.strumLeds || 0, per = c.fretLeds === 2 ? 2 : 1;
@@ -103,17 +105,17 @@ export function applyLedLayout(c, { frets, strum, strumFirst, per = c.fretLeds =
   strumOrder.forEach((s, k) => { c.strumMap[s] = k < strum ? sBase + k : 200 + k; });
   c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
 }
-export const LED_TYPES = [
-  { id: 0, name: 'WS2812B / NeoPixel', desc: 'One data wire. Also WS2813, SK6812 (RGB) and most addressable strips.' },
-  { id: 1, name: 'SK6812 RGBW', desc: 'One data wire, with a separate white LED in each pixel.' },
-  { id: 2, name: 'APA102 / SK9822', desc: 'APA102, SK9822 or DotStar. Data and clock wires: no timing issues on long wires, and smoother dimming. Needs a second pin for the clock.' },
-];
+export const LED_TYPES = localized(() => ([
+  { id: 0, name: 'WS2812B / NeoPixel', desc: t('lights.hw.led_type.ws2812b_neopixel.desc') },
+  { id: 1, name: 'SK6812 RGBW', desc: t('lights.hw.led_type.sk6812_rgbw.desc') },
+  { id: 2, name: 'APA102 / SK9822', desc: t('lights.hw.led_type.apa102_sk9822.desc') },
+]));
 export const LED_ORDERS = ['GRB', 'RGB', 'BRG', 'RBG', 'GBR', 'BGR'];
 
 // keyboard mode: slots in firmware order, and the HID usage codes a user can pick
-export const KEY_SLOTS = ['Green', 'Red', 'Yellow', 'Blue', 'Orange', 'Strum up', 'Strum down', 'Star power', 'Plus', 'Tilt', 'Whammy (past half way)'];
-export const KEYS = (() => {
-  const k = { 0: 'None' };
+export const KEY_SLOTS = localized(() => ([t('common.green'), t('common.red'), t('common.yellow'), t('common.blue'), t('common.orange'), t('common.strum_up'), t('common.strum_down'), t('common.star_power'), t('common.plus'), t('common.tilt'), t('modes.keys.whammy_past_half_way')]));
+export const KEYS = localized(() => ((() => {
+  const k = { 0: t('common.none') };
   for (let i = 0; i < 26; i++) k[0x04 + i] = String.fromCharCode(65 + i);
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'].forEach((d, i) => { k[0x1e + i] = d; });
   Object.assign(k, { 0x28: 'Enter', 0x29: 'Escape', 0x2a: 'Backspace', 0x2b: 'Tab', 0x2c: 'Space', 0x2d: '-', 0x2e: '=',
@@ -123,30 +125,30 @@ export const KEYS = (() => {
     0xe0: 'Left Ctrl', 0xe1: 'Left Shift', 0xe2: 'Left Alt', 0xe4: 'Right Ctrl', 0xe5: 'Right Shift', 0xe6: 'Right Alt' });
   for (let i = 0; i < 12; i++) k[0x3a + i] = 'F' + (i + 1);
   return k;
-})();
-export const KEY_PRESETS = [
-  { name: 'Fortnite Festival · Pro guitar', keys: [0x1e, 0x1f, 0x20, 0x21, 0x22, 0xe5, 0xe4, 0x4e, 0x29, 0x4e, 0x38],
-    desc: 'Frets 1–5, strum on Right Shift / Right Ctrl, overdrive (star power and tilt) on Page Down, whammy on /.' },
-  { name: 'Fortnite Festival · Lead', keys: [0x07, 0x09, 0x0d, 0x0e, 0x0f, 0x52, 0x51, 0x2c, 0x29, 0x2c, 0x00],
-    desc: 'Frets on D F J K L, overdrive on Space. Strum moves through menus.' },
-];
+})()));
+export const KEY_PRESETS = localized(() => ([
+  { name: t('modes.keys.fortnite_festival_pro_guitar.name'), keys: [0x1e, 0x1f, 0x20, 0x21, 0x22, 0xe5, 0xe4, 0x4e, 0x29, 0x4e, 0x38],
+    desc: t('modes.keys.fortnite_festival_pro_guitar.desc') },
+  { name: t('modes.keys.fortnite_festival_lead.name'), keys: [0x07, 0x09, 0x0d, 0x0e, 0x0f, 0x52, 0x51, 0x2c, 0x29, 0x2c, 0x00],
+    desc: t('modes.keys.fortnite_festival_lead.desc') },
+]));
 export const FRET_DEFAULT_COLORS = ['#22c55e', '#ef4444', '#facc15', '#3b82f6', '#fb923c'];
-export const EFFECTS = [
-  { id: 0, name: 'Static', desc: 'Always full colour. Does not react.' },
-  { id: 1, name: 'Dim on press', desc: 'Full colour at rest, dims while the fret is held.' },
-  { id: 2, name: 'Off on press', desc: 'Full colour at rest, goes dark while the fret is held.' },
-  { id: 3, name: 'Brighten on press', desc: 'Soft glow at rest, lights up fully while held.' },
-  { id: 4, name: 'Flash & fade', desc: 'Flashes on press, then fades back to a soft glow. Speed sets the fade time.' },
-  { id: 5, name: 'Breathing', desc: 'Idle LEDs breathe slowly, a press snaps to full. Speed sets the pace.' },
-  { id: 6, name: 'Rainbow', desc: 'Idle LEDs cycle through colours; a press shows the fret colour.' },
-];
-export const RGB_PRESETS = [
+export const EFFECTS = localized(() => ([
+  { id: 0, name: t('lights.effect.static.name'), desc: t('lights.effect.static.desc') },
+  { id: 1, name: t('lights.effect.dim_press.name'), desc: t('lights.effect.dim_press.desc') },
+  { id: 2, name: t('lights.effect.off_press.name'), desc: t('lights.effect.off_press.desc') },
+  { id: 3, name: t('lights.effect.brighten_press.name'), desc: t('lights.effect.brighten_press.desc') },
+  { id: 4, name: t('lights.effect.flash_fade.name'), desc: t('lights.effect.flash_fade.desc') },
+  { id: 5, name: t('lights.effect.breathing.name'), desc: t('lights.effect.breathing.desc') },
+  { id: 6, name: t('common.rainbow'), desc: t('lights.effect.rainbow.desc') },
+]));
+export const RGB_PRESETS = localized(() => ([
   { name: 'Guitar Hero', colors: FRET_DEFAULT_COLORS },
-  { name: 'Neon', colors: ['#00ffa3', '#ff2e63', '#fff200', '#00b4ff', '#ff7a00'] },
-  { name: 'Ice', colors: ['#a5f3fc', '#67e8f9', '#38bdf8', '#818cf8', '#c4b5fd'] },
-  { name: 'Fire', colors: ['#fde047', '#fbbf24', '#fb923c', '#ef4444', '#b91c1c'] },
-  { name: 'Mono white', colors: ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'] },
-];
+  { name: t('lights.theme.neon.name'), colors: ['#00ffa3', '#ff2e63', '#fff200', '#00b4ff', '#ff7a00'] },
+  { name: t('lights.theme.ice.name'), colors: ['#a5f3fc', '#67e8f9', '#38bdf8', '#818cf8', '#c4b5fd'] },
+  { name: t('common.fire'), colors: ['#fde047', '#fbbf24', '#fb923c', '#ef4444', '#b91c1c'] },
+  { name: t('lights.theme.mono_white.name'), colors: ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'] },
+]));
 
 const hex2 = (n) => n.toString(16).padStart(2, '0');
 export const rgbToHex = (r, g, b) => '#' + hex2(r) + hex2(g) + hex2(b);
@@ -160,47 +162,47 @@ export const STAR = { PULSE: 0, SOLID: 1, RAINBOW: 2, STROBE: 3, CHASE: 4, FIRE:
 export const WFX = { NONE: 0, BRIGHT: 1, PULSE: 2, HUE: 3, WAVE: 4 };
 export const ZF_SAME = 1, ZF_PER_LED = 2;
 export const LEDF_FRET2_OWN = 1, LEDF_STAR_FLASH = 2;
-export const IDLE_ANIMS = [
-  { id: 0, name: 'Off', desc: 'Dark until something happens.' },
-  { id: 1, name: 'Solid', desc: 'A steady glow in the LED colour.' },
-  { id: 2, name: 'Breathe', desc: 'Slowly swells and fades, each LED a little out of step.', speed: true },
-  { id: 3, name: 'Heartbeat', desc: 'Two soft thumps, then a rest, like a pulse.', speed: true },
-  { id: 4, name: 'Rainbow', desc: 'Every LED cycles through all the colours (ignores the LED colour).', speed: true, ownColor: true },
-  { id: 5, name: 'Rainbow wave', desc: 'A rainbow that rolls along the row (ignores the LED colour).', speed: true, ownColor: true },
-  { id: 6, name: 'Colour wave', desc: 'A wave of brightness rolls along the row in the LED colours.', speed: true },
-  { id: 7, name: 'Sparkle', desc: 'A dim glow with random white twinkles. Speed sets how often.', speed: true },
-  { id: 8, name: 'Chase', desc: 'A bright spot runs around the row with a soft tail.', speed: true },
-  { id: 9, name: 'Fire', desc: 'Flickers like embers, every LED on its own.' },
-  { id: 10, name: 'Hue drift', desc: 'The LED colours slowly slide round the colour wheel.', speed: true },
-];
-export const PRESS_FX = [
-  { id: 0, name: 'No reaction', desc: 'Pressing changes nothing.' },
-  { id: 1, name: 'Light up', desc: 'Full brightness while held, back to idle on release.' },
-  { id: 2, name: 'Flash & fade', desc: 'Flashes on press, then fades back. Speed sets how quickly.', fade: true },
-  { id: 3, name: 'Dim', desc: 'Dims while held.' },
-  { id: 4, name: 'Go dark', desc: 'Goes dark while held.' },
-  { id: 5, name: 'Strobe', desc: 'Flickers on and off while held. Speed sets how fast.', speed: true },
-  { id: 6, name: 'Ripple', desc: 'A wave spreads out to the neighbouring LEDs.', fade: true },
-  { id: 7, name: 'Random colour', desc: 'Each press lights a different random colour, then fades.', fade: true },
-  { id: 8, name: 'White spark', desc: 'A quick white flash, then the pressed colour, fading on release.', fade: true },
-  { id: 9, name: 'Sweep', desc: 'A comet shoots across the row. On the strum bar it follows the strum direction.', fade: true },
-];
-export const STAR_ANIMS = [
-  { id: 0, name: 'Pulse', desc: 'A steady pulse in the star power colour (the classic look).', speed: true },
-  { id: 1, name: 'Solid', desc: 'Held at full brightness in the star power colour.' },
-  { id: 2, name: 'Rainbow', desc: 'A fast rainbow wave rolls along the LEDs.', ownColor: true },
-  { id: 3, name: 'Strobe', desc: 'Quick on / off flashes.', speed: true },
-  { id: 4, name: 'Chase', desc: 'A bright spot runs along the LEDs.' },
-  { id: 5, name: 'Fire', desc: 'Flickering flames in the star power colour.' },
-  { id: 6, name: 'Sparkle', desc: 'A soft glow with white twinkles.' },
-];
-export const WHAMMY_FX = [
-  { id: 0, name: 'Nothing', desc: 'The whammy bar does not change the lights.' },
-  { id: 1, name: 'Brightness', desc: 'The harder you push the whammy bar, the brighter the LEDs (dimmer at rest).' },
-  { id: 2, name: 'Flutter', desc: 'LEDs shimmer faster the harder you push.' },
-  { id: 3, name: 'Colour shift', desc: 'Colours slide round the colour wheel as you push.' },
-  { id: 4, name: 'Wave', desc: 'A ripple of dimming runs along the LEDs as you push.' },
-];
+export const IDLE_ANIMS = localized(() => ([
+  { id: 0, name: t('common.off_2'), desc: t('lights.idle.off.desc') },
+  { id: 1, name: t('lights.idle.solid.name'), desc: t('lights.idle.solid.desc') },
+  { id: 2, name: t('lights.idle.breathe.name'), desc: t('lights.idle.breathe.desc'), speed: true },
+  { id: 3, name: t('lights.theme.heartbeat.name'), desc: t('lights.idle.heartbeat.desc'), speed: true },
+  { id: 4, name: t('common.rainbow'), desc: t('lights.idle.rainbow.desc'), speed: true, ownColor: true },
+  { id: 5, name: t('lights.idle.rainbow_wave.name'), desc: t('lights.idle.rainbow_wave.desc'), speed: true, ownColor: true },
+  { id: 6, name: t('lights.idle.colour_wave.name'), desc: t('lights.idle.colour_wave.desc'), speed: true },
+  { id: 7, name: t('lights.idle.sparkle.name'), desc: t('lights.idle.sparkle.desc'), speed: true },
+  { id: 8, name: t('lights.idle.chase.name'), desc: t('lights.idle.chase.desc'), speed: true },
+  { id: 9, name: t('common.fire'), desc: t('lights.idle.fire.desc') },
+  { id: 10, name: t('lights.idle.hue_drift.name'), desc: t('lights.idle.hue_drift.desc'), speed: true },
+]));
+export const PRESS_FX = localized(() => ([
+  { id: 0, name: t('lights.press.no_reaction.name'), desc: t('lights.press.no_reaction.desc') },
+  { id: 1, name: t('lights.press.light_up.name'), desc: t('lights.press.light_up.desc') },
+  { id: 2, name: t('lights.effect.flash_fade.name'), desc: t('lights.press.flash_fade.desc'), fade: true },
+  { id: 3, name: t('lights.press.dim.name'), desc: t('lights.press.dim.desc') },
+  { id: 4, name: t('lights.press.go_dark.name'), desc: t('lights.press.go_dark.desc') },
+  { id: 5, name: t('lights.press.strobe.name'), desc: t('lights.press.strobe.desc'), speed: true },
+  { id: 6, name: t('lights.press.ripple.name'), desc: t('lights.press.ripple.desc'), fade: true },
+  { id: 7, name: t('lights.press.random_colour.name'), desc: t('lights.press.random_colour.desc'), fade: true },
+  { id: 8, name: t('lights.press.white_spark.name'), desc: t('lights.press.white_spark.desc'), fade: true },
+  { id: 9, name: t('lights.press.sweep.name'), desc: t('lights.press.sweep.desc'), fade: true },
+]));
+export const STAR_ANIMS = localized(() => ([
+  { id: 0, name: t('lights.star.pulse.name'), desc: t('lights.star.pulse.desc'), speed: true },
+  { id: 1, name: t('lights.idle.solid.name'), desc: t('lights.star.solid.desc') },
+  { id: 2, name: t('common.rainbow'), desc: t('lights.star.rainbow.desc'), ownColor: true },
+  { id: 3, name: t('lights.press.strobe.name'), desc: t('lights.star.strobe.desc'), speed: true },
+  { id: 4, name: t('lights.idle.chase.name'), desc: t('lights.star.chase.desc') },
+  { id: 5, name: t('common.fire'), desc: t('lights.star.fire.desc') },
+  { id: 6, name: t('lights.idle.sparkle.name'), desc: t('lights.star.sparkle.desc') },
+]));
+export const WHAMMY_FX = localized(() => ([
+  { id: 0, name: t('common.nothing'), desc: t('lights.whammy.nothing.desc') },
+  { id: 1, name: t('common.brightness'), desc: t('lights.whammy.brightness.desc') },
+  { id: 2, name: t('lights.whammy.flutter.name'), desc: t('lights.whammy.flutter.desc') },
+  { id: 3, name: t('lights.whammy.colour_shift.name'), desc: t('lights.whammy.colour_shift.desc') },
+  { id: 4, name: t('lights.whammy.wave.name'), desc: t('lights.whammy.wave.desc') },
+]));
 export const NUM_IDLE = IDLE_ANIMS.length, NUM_PRESS = PRESS_FX.length, NUM_STAR = STAR_ANIMS.length, NUM_WFX = WHAMMY_FX.length;
 
 // old rgb_effect -> zone (both zones get it; speed = fade = rgb_speed)
@@ -303,13 +305,13 @@ export function defaultConfig() {
 export const NUM_ATILT = 2;
 export const ATILT_TARGET = { WHAMMY: 0, STAR: 1 };
 // sensor sources: 0..2 analog inputs GP26..28, 3..5 accelerometer axes, 6..8 a LIS3DH's aux ADC inputs
-export const ATILT_SOURCES = [
-  { id: 0, name: 'GP26 (analog)', kind: 'adc' }, { id: 1, name: 'GP27 (analog)', kind: 'adc' }, { id: 2, name: 'GP28 (analog)', kind: 'adc' },
-  { id: 3, name: 'Accelerometer X', kind: 'accel' }, { id: 4, name: 'Accelerometer Y', kind: 'accel' }, { id: 5, name: 'Accelerometer Z', kind: 'accel' },
+export const ATILT_SOURCES = localized(() => ([
+  { id: 0, name: t('tune.tilt.source.adc.name'), kind: 'adc' }, { id: 1, name: t('tune.tilt.source.adc.name_2'), kind: 'adc' }, { id: 2, name: t('tune.tilt.source.adc.name_3'), kind: 'adc' },
+  { id: 3, name: t('tune.tilt.source.accel.name'), kind: 'accel' }, { id: 4, name: t('tune.tilt.source.accel.name_2'), kind: 'accel' }, { id: 5, name: t('tune.tilt.source.accel.name_3'), kind: 'accel' },
   { id: 6, name: 'LIS3DH ADC 1', kind: 'lis' }, { id: 7, name: 'LIS3DH ADC 2', kind: 'lis' }, { id: 8, name: 'LIS3DH ADC 3', kind: 'lis' },
   // 9..11: a second accelerometer on the same bus at another address (firmware 0.36+)
-  { id: 9, name: 'Accelerometer 2 X', kind: 'accel2' }, { id: 10, name: 'Accelerometer 2 Y', kind: 'accel2' }, { id: 11, name: 'Accelerometer 2 Z', kind: 'accel2' },
-];
+  { id: 9, name: t('tune.tilt.source.accel2.name'), kind: 'accel2' }, { id: 10, name: t('tune.tilt.source.accel2.name_2'), kind: 'accel2' }, { id: 11, name: t('tune.tilt.source.accel2.name_3'), kind: 'accel2' },
+]));
 export const NUM_ATILT_SRC = 12;
 export const ACCEL2_MIN_MINOR = 36;
 export const ACCEL_TYPES = ['none found', 'LIS3DH', 'ADXL345', 'MPU-6050', 'SC7A20', 'LIS3DSH'];
@@ -347,7 +349,7 @@ export const CFG_SIZE_V4 = 96;
 export const CFG_VERSION = 7;
 
 export function parseConfig(dv) {
-  if (dv.getUint32(0, true) !== 0x43434159) throw new Error('Bad config magic');
+  if (dv.getUint32(0, true) !== 0x43434159) throw new Error(t('proto.parse_config.bad_config_magic'));
   const flags = dv.getUint8(21);
   const v7 = dv.byteLength >= CFG_SIZE && dv.getUint8(4) >= 7;
   const pins = [];
@@ -522,16 +524,16 @@ export function parseBtLogFlash(dv) {
 export function parseBtLog(dv) {
   const out = [];
   for (let o = 0; o + 8 <= dv.byteLength; o += 8) {
-    const t = dv.getUint32(o, true), code = dv.getUint8(o + 4), a = dv.getUint8(o + 5), b = dv.getUint16(o + 6, true);
+    const tv = dv.getUint32(o, true), code = dv.getUint8(o + 4), a = dv.getUint8(o + 5), b = dv.getUint16(o + 6, true);
     const f = BT_EVENTS[code];
-    out.push(`${(t / 1000).toFixed(2).padStart(8)} s  ${f ? f(a, b) : `event ${code} ${a} ${b}`}`);
+    out.push(`${(tv / 1000).toFixed(2).padStart(8)} s  ${f ? f(a, b) : `event ${code} ${a} ${b}`}`);
   }
   return out;
 }
 
 export function parseInfo(dv) {
   const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
-  if (magic !== 'YACC') throw new Error('Not a YAGCC device');
+  if (magic !== 'YACC') throw new Error(t('proto.parse_info.not_yagcc_device'));
   return {
     major: dv.getUint8(4), minor: dv.getUint8(5), board: dv.getUint8(6),
     btSupported: !!(dv.getUint8(7) & 1), rgbSupported: !!(dv.getUint8(7) & 2),
@@ -594,7 +596,7 @@ export const MAP_ROW = 24;
 export const MAP_DEFAULT = 0xff;
 export const MAP_NONE = 0;
 // extPins order: D-pad up, down, left, right, Select, Home, stick click
-export const EXT_PIN_NAMES = ['D-pad up', 'D-pad down', 'D-pad left', 'D-pad right', 'Select', 'Home', 'Stick click'];
+export const EXT_PIN_NAMES = localized(() => ([t('common.d_pad_up'), t('common.d_pad_down'), t('common.d_pad_left'), t('common.d_pad_right'), t('common.select'), t('common.home'), t('common.stick_click')]));
 export const STICK_INVERT_X = 1, STICK_INVERT_Y = 2, STICK_SWAP = 4;
 export const emptyMapRow = () => Array(MAP_ROW).fill(MAP_DEFAULT);
 export function defaultExt() {
@@ -616,10 +618,10 @@ export const DEV_NAME_MAX = 10, DEV_NAME_BYTES = 16, DEV_NAME_DEFAULT = 'YAGCC';
 export const devNameBadChars = (s) => [...new Set([...String(s)].filter((c) => c < ' ' || c > '~'))];
 // ok: stored form (trimmed, '' = default); error: why not
 export function checkDevName(s) {
-  const t = String(s ?? '').trim();
-  if (devNameBadChars(t).length) return { ok: false, name: t, error: 'Only letters, digits, spaces and basic punctuation (plain keyboard characters) work in a device name.' };
-  if (t.length > DEV_NAME_MAX) return { ok: false, name: t, error: 'Up to ' + DEV_NAME_MAX + ' characters.' };
-  return { ok: true, name: t };
+  const tv = String(s ?? '').trim();
+  if (devNameBadChars(tv).length) return { ok: false, name: tv, error: t('name.error.only_letters_digits_spaces_basic') };
+  if (tv.length > DEV_NAME_MAX) return { ok: false, name: tv, error: t('name.error.up_characters', { DEV_NAME_MAX }) };
+  return { ok: true, name: tv };
 }
 export const devNameValid = (s) => typeof s === 'string' && checkDevName(s).ok && s === s.trim();
 export function parseDevName(dv) {
@@ -629,10 +631,10 @@ export function parseDevName(dv) {
   return devNameValid(s) ? s : '';
 }
 export function parseExt(dv) {
-  if (dv.byteLength < EXT_SIZE) throw new Error('Short extension page');
-  if (dv.getUint32(0, true) !== EXT_MAGIC) throw new Error('Bad extension magic');
+  if (dv.byteLength < EXT_SIZE) throw new Error(t('proto.parse_ext.short_extension_page'));
+  if (dv.getUint32(0, true) !== EXT_MAGIC) throw new Error(t('proto.parse_ext.bad_extension_magic'));
   const u8 = new Uint8Array(dv.buffer, dv.byteOffset, EXT_SIZE);
-  if (dv.getUint32(508, true) !== crc32(u8.subarray(0, 508))) throw new Error('Bad extension checksum');
+  if (dv.getUint32(508, true) !== crc32(u8.subarray(0, 508))) throw new Error(t('proto.parse_ext.bad_extension_checksum'));
   return {
     extPins: [0, 1, 2, 3, 4, 5, 6].map((i) => dv.getUint8(8 + i)),
     stickCh: [dv.getUint8(16), dv.getUint8(17)],

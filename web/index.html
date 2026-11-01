@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="yagcc-build" content="?v=dev">
-  <title>YAGCC · DIY Guitar Hero controller firmware &amp; web configurator for Raspberry Pi Pico</title>
-  <meta name="description" content="Free, open-source firmware and browser configurator for DIY Guitar Hero and Rock Band guitar controllers on the Raspberry Pi Pico, Pico W and Pico 2. Map buttons on any pin, calibrate the whammy, set up RGB fret and strum LEDs, and play over USB or Bluetooth in XInput, PS3, Switch, PS4/PS5 and Xbox modes: Clone Hero, YARG, Fortnite Festival, Rock Band.">
+  <title data-i18n="meta.yagcc_diy_guitar_hero_controller">YAGCC · DIY Guitar Hero controller firmware &amp; web configurator for Raspberry Pi Pico</title>
+  <meta name="description" content="Free, open-source firmware and browser configurator for DIY Guitar Hero and Rock Band guitar controllers on the Raspberry Pi Pico, Pico W and Pico 2. Map buttons on any pin, calibrate the whammy, set up RGB fret and strum LEDs, and play over USB or Bluetooth in XInput, PS3, Switch, PS4/PS5 and Xbox modes: Clone Hero, YARG, Fortnite Festival, Rock Band." data-i18n-content="meta.description">
   <meta name="keywords" content="guitar hero controller, DIY guitar controller, Raspberry Pi Pico, Pico W, RP2040, RP2350, Clone Hero, YARG, Fortnite Festival, Rock Band, XInput guitar, PS3 guitar, Santroller alternative, GP2040-CE, WebUSB configurator, whammy, WS2812 LEDs">
   <link rel="canonical" href="https://cr4zysh4rk.github.io/YAGCC/">
   <meta name="theme-color" content="#06080e">
@@ -16,15 +16,15 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="YAGCC">
   <meta property="og:url" content="https://cr4zysh4rk.github.io/YAGCC/">
-  <meta property="og:title" content="YAGCC · DIY guitar controller firmware &amp; web configurator">
-  <meta property="og:description" content="Free firmware and browser configurator for DIY Guitar Hero / Rock Band controllers on the Raspberry Pi Pico: any-pin button mapping, whammy, RGB LEDs, Bluetooth, XInput, PS3, Switch, PS4/PS5 and Xbox modes.">
+  <meta property="og:title" content="YAGCC · DIY guitar controller firmware &amp; web configurator" data-i18n-content="meta.og_title">
+  <meta property="og:description" content="Free firmware and browser configurator for DIY Guitar Hero / Rock Band controllers on the Raspberry Pi Pico: any-pin button mapping, whammy, RGB LEDs, Bluetooth, XInput, PS3, Switch, PS4/PS5 and Xbox modes." data-i18n-content="meta.og_description">
   <meta property="og:image" content="https://cr4zysh4rk.github.io/YAGCC/img/og.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="YAGCC logo: a guitar controller neck with coloured frets and configuration sliders">
+  <meta property="og:image:alt" content="YAGCC logo: a guitar controller neck with coloured frets and configuration sliders" data-i18n-content="meta.og_image_alt">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="YAGCC · DIY guitar controller firmware &amp; web configurator">
-  <meta name="twitter:description" content="Free firmware and browser configurator for DIY Guitar Hero / Rock Band controllers on the Raspberry Pi Pico: any-pin button mapping, whammy, RGB LEDs, Bluetooth, XInput, PS3, Switch, PS4/PS5 and Xbox modes.">
+  <meta name="twitter:title" content="YAGCC · DIY guitar controller firmware &amp; web configurator" data-i18n-content="meta.og_title">
+  <meta name="twitter:description" content="Free firmware and browser configurator for DIY Guitar Hero / Rock Band controllers on the Raspberry Pi Pico: any-pin button mapping, whammy, RGB LEDs, Bluetooth, XInput, PS3, Switch, PS4/PS5 and Xbox modes." data-i18n-content="meta.og_description">
   <meta name="twitter:image" content="https://cr4zysh4rk.github.io/YAGCC/img/og.jpg">
   <script type="application/ld+json">
   {
@@ -53,26 +53,27 @@
 <body>
 <header class="top">
   <div class="top-inner">
-    <a class="brand" href="#" data-goto="flash" aria-label="YAGCC home"><img src="img/icon-96.png" alt="" width="32" height="32"><span>YAGCC</span></a>
-    <nav id="nav" aria-label="Sections">
-      <button data-view="flash" class="active" aria-current="page">Install</button>
-      <button data-view="setup" data-needs-dev>Setup</button>
-      <button data-view="lights" data-needs-dev>Lights</button>
-      <button data-view="modes" data-needs-dev>Modes</button>
-      <button data-view="test" data-needs-dev>Test</button>
-      <button data-view="tune" data-needs-dev>Tune</button>
-      <button data-view="backup" data-needs-dev>Backup</button>
+    <a class="brand" href="#" data-goto="flash" aria-label="YAGCC home" data-i18n-aria-label="nav.yagcc_home_aria_label"><img src="img/icon-96.png" alt="" width="32" height="32"><span>YAGCC</span></a>
+    <nav id="nav" aria-label="Sections" data-i18n-aria-label="nav.nav_aria_label">
+      <button data-view="flash" class="active" aria-current="page" data-i18n="nav.install">Install</button>
+      <button data-view="setup" data-needs-dev data-i18n="common.setup">Setup</button>
+      <button data-view="lights" data-needs-dev data-i18n="common.lights">Lights</button>
+      <button data-view="modes" data-needs-dev data-i18n="common.modes">Modes</button>
+      <button data-view="test" data-needs-dev data-i18n="common.test">Test</button>
+      <button data-view="tune" data-needs-dev data-i18n="nav.tune">Tune</button>
+      <button data-view="backup" data-needs-dev data-i18n="nav.backup">Backup</button>
       <div class="nav-help">
-        <button type="button" id="helpBtn" class="help-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="helpMenu">Help<svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
-        <div id="helpMenu" class="help-menu" role="menu" aria-label="Help" hidden>
-          <button type="button" role="menuitem" data-view="hardware">Wiring &amp; hardware</button>
-          <button type="button" role="menuitem" data-view="compat">Compatibility</button>
+        <button type="button" id="helpBtn" class="help-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="helpMenu"><span data-i18n="nav.help">Help</span><svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        <div id="helpMenu" class="help-menu" role="menu" aria-label="Help" hidden data-i18n-aria-label="nav.help">
+          <button type="button" role="menuitem" data-view="hardware" data-i18n="nav.wiring_hardware">Wiring &amp; hardware</button>
+          <button type="button" role="menuitem" data-view="compat" data-i18n="nav.compatibility">Compatibility</button>
         </div>
       </div>
     </nav>
     <div class="top-right">
-      <label class="adv-toggle" title="Show expert options such as tilt sensors, colour order and console ports"><span>Advanced</span><span class="switch"><input type="checkbox" id="advSw" aria-label="Show advanced settings"><i></i></span></label>
-      <div class="conn" id="connPill" role="status"><span class="led"></span><span id="connText">Not connected</span></div>
+      <label class="lang-sw" title="Language" data-i18n-title="nav.language"><svg class="lang-ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 4 5.7 4 9s-1.4 6.3-4 9c-2.6-2.7-4-5.7-4-9s1.4-6.3 4-9z"/></svg><span class="lang-cur" id="langCur" aria-hidden="true">English</span><span class="lang-code" id="langCode" aria-hidden="true">EN</span><select id="langSel" aria-label="Language" data-i18n-aria-label="nav.language"></select></label>
+      <label class="adv-toggle" title="Show expert options such as tilt sensors, colour order and console ports" data-i18n-title="nav.show_expert_options_such_as_title"><span data-i18n="nav.advanced">Advanced</span><span class="switch"><input type="checkbox" id="advSw" aria-label="Show advanced settings" data-i18n-aria-label="nav.adv_sw_aria_label"><i></i></span></label>
+      <div class="conn" id="connPill" role="status"><span class="led"></span><span id="connText" data-i18n="conn.not_connected">Not connected</span></div>
     </div>
   </div>
 </header>
@@ -84,50 +85,50 @@
   <section class="view active" id="view-flash">
     <div class="hero">
       <div class="hero-copy">
-        <h1 class="display">Set up your DIY guitar controller in the browser</h1>
-        <p class="lead">Flash a Raspberry Pi Pico, press each button twice, and play. There's nothing to install and nothing to compile, whichever pins you wired.</p>
+        <h1 class="display" data-i18n="install.set_up_diy_guitar_controller">Set up your DIY guitar controller in the browser</h1>
+        <p class="lead" data-i18n="install.flash_raspberry_pi_pico_press">Flash a Raspberry Pi Pico, press each button twice, and play. There's nothing to install and nothing to compile, whichever pins you wired.</p>
         <div class="row" id="heroConnect">
-          <button class="btn primary lg" id="connectBtn" data-connect>Connect controller</button>
-          <a class="btn lg" href="#install" id="toInstall">Install firmware first</a>
+          <button class="btn primary lg" id="connectBtn" data-connect data-i18n="common.connect_controller">Connect controller</button>
+          <a class="btn lg" href="#install" id="toInstall" data-i18n="install.to_install">Install firmware first</a>
         </div>
         <div class="next-card" id="heroNext" hidden>
           <span class="next-ic" aria-hidden="true"></span>
-          <div><b id="heroNextTitle">Your guitar is connected</b><p class="dim" id="heroNextText"></p></div>
-          <button class="btn primary lg" id="heroNextBtn" data-view-go="setup">Set up the buttons &rarr;</button>
+          <div><b id="heroNextTitle" data-i18n="conn.guitar_connected">Your guitar is connected</b><p class="dim" id="heroNextText"></p></div>
+          <button class="btn primary lg" id="heroNextBtn" data-view-go="setup" data-i18n="conn.set_up_buttons">Set up the buttons &rarr;</button>
         </div>
         <div id="browserWarn" class="notice bad" style="display:none"></div>
       </div>
-      <img class="hero-logo" src="img/logo.webp" alt="YAGCC — Yet Another Guitar Controller Configurator" width="400" height="404">
+      <img class="hero-logo" src="img/logo.webp" alt="YAGCC — Yet Another Guitar Controller Configurator" width="400" height="404" data-i18n-alt="install.yagcc_yet_another_guitar_controller_alt">
     </div>
 
-    <h2 class="section-title" id="install">Install the firmware</h2>
-    <p class="dim page-sub" id="installSub">Only needed the first time, or to update. Already running YAGCC? Use Connect above.</p>
+    <h2 class="section-title" id="install" data-i18n="install.install">Install the firmware</h2>
+    <p class="dim page-sub" id="installSub" data-i18n="install.install_sub">Only needed the first time, or to update. Already running YAGCC? Use Connect above.</p>
     <ol class="flow">
       <li>
-        <h3>Pick your board</h3>
-        <select id="boardSel" aria-label="Board"></select>
+        <h3 data-i18n="install.pick_board">Pick your board</h3>
+        <select id="boardSel" aria-label="Board" data-i18n-aria-label="conn.board"></select>
         <p class="dim small" id="boardHelp"></p>
       </li>
       <li>
-        <h3>Enter bootloader mode</h3>
-        <p class="dim">Unplug the board, hold <b>BOOTSEL</b>, plug it back in and let go. A drive called <code>RPI-RP2</code> or <code>RP2350</code> appears.</p>
-        <p class="dim small" id="bootselNote" hidden>Already running YAGCC? It can restart itself into this mode. Or hold <b>Star power + Plus</b> while plugging it in.</p>
-        <button class="btn small" id="toBootsel" hidden>Restart the guitar into update mode</button>
+        <h3 data-i18n="install.enter_bootloader_mode">Enter bootloader mode</h3>
+        <p class="dim" data-i18n-html="install.unplug_board_hold_bootsel_plug">Unplug the board, hold <b>BOOTSEL</b>, plug it back in and let go. A drive called <code>RPI-RP2</code> or <code>RP2350</code> appears.</p>
+        <p class="dim small" id="bootselNote" hidden data-i18n-html="install.bootsel_note">Already running YAGCC? It can restart itself into this mode. Or hold <b>Star power + Plus</b> while plugging it in.</p>
+        <button class="btn small" id="toBootsel" hidden data-i18n="install.to_bootsel">Restart the guitar into update mode</button>
       </li>
       <li>
-        <h3>Copy the firmware</h3>
-        <p class="dim">Drop the file onto that drive. The board restarts as a guitar controller.</p>
+        <h3 data-i18n="install.copy_firmware">Copy the firmware</h3>
+        <p class="dim" data-i18n="install.drop_file_onto_that_drive">Drop the file onto that drive. The board restarts as a guitar controller.</p>
         <div class="row">
-          <a class="btn primary" id="dlFw" download>Download firmware</a>
-          <button class="btn" id="directFw" title="Writes the file to the drive for you (Chrome, Edge)">Write to drive</button>
+          <a class="btn primary" id="dlFw" download data-i18n="install.dl_fw">Download firmware</a>
+          <button class="btn" id="directFw" title="Writes the file to the drive for you (Chrome, Edge)" data-i18n-title="install.direct_fw_title" data-i18n="install.direct_fw">Write to drive</button>
         </div>
-        <p class="dim small" style="margin:12px 0 6px">Flash nuke: erases old firmware and settings, then drops back into bootloader mode.</p>
-        <div class="row"><a class="btn small" id="dlNuke" download>Download flash nuke</a><button class="btn small" id="directNuke">Write to drive</button></div>
+        <p class="dim small" style="margin:12px 0 6px" data-i18n="install.flash_nuke_erases_old_firmware">Flash nuke: erases old firmware and settings, then drops back into bootloader mode.</p>
+        <div class="row"><a class="btn small" id="dlNuke" download data-i18n="install.dl_nuke">Download flash nuke</a><button class="btn small" id="directNuke" data-i18n="install.direct_fw">Write to drive</button></div>
       </li>
       <li>
-        <h3>Connect</h3>
-        <p class="dim">Click connect and pick <b>YAGCC Guitar Controller</b>. Setup starts right away.</p>
-        <button class="btn" data-connect>Connect controller</button>
+        <h3 data-i18n="install.connect">Connect</h3>
+        <p class="dim" data-i18n-html="install.click_connect_pick_yagcc_guitar">Click connect and pick <b>YAGCC Guitar Controller</b>. Setup starts right away.</p>
+        <button class="btn" data-connect data-i18n="common.connect_controller">Connect controller</button>
       </li>
     </ol>
     <p id="flashMsg" class="dim"></p>
@@ -136,17 +137,17 @@
   <!-- ================= SETUP ================= -->
   <section class="view" id="view-setup">
     <div id="setupGate" class="gate">
-      <h1 class="display">No controller connected</h1>
-      <p class="dim">Plug in a board running YAGCC and connect it to start the guided setup.</p>
-      <button class="btn primary lg" id="connectBtn2" data-connect>Connect controller</button>
-      <p class="dim small">Running in a console mode or as a gamepad or keyboard? <a href="#" id="findHid">Find it</a> and YAGCC restarts PS3 and Wii modes into setup for you.</p>
+      <h1 class="display" data-i18n="setup.no_controller_connected">No controller connected</h1>
+      <p class="dim" data-i18n="setup.plug_board_running_yagcc_connect">Plug in a board running YAGCC and connect it to start the guided setup.</p>
+      <button class="btn primary lg" id="connectBtn2" data-connect data-i18n="common.connect_controller">Connect controller</button>
+      <p class="dim small" data-i18n-html="setup.running_console_mode_or_as">Running in a console mode or as a gamepad or keyboard? <a href="#" id="findHid">Find it</a> and YAGCC restarts PS3 and Wii modes into setup for you.</p>
       <div id="otherMode"></div>
     </div>
     <div id="setupMain" style="display:none">
-      <div class="page-head setup-head"><h1 class="display">Setup</h1><p class="dim">Work through the steps in order. Buttons and whammy are all most guitars need; the rest is optional.</p></div>
+      <div class="page-head setup-head"><h1 class="display" data-i18n="common.setup">Setup</h1><p class="dim" data-i18n="setup.work_through_steps_order_buttons">Work through the steps in order. Buttons and whammy are all most guitars need; the rest is optional.</p></div>
       <div class="stage" id="stage"></div>
       <div class="setup-grid">
-        <ol class="step-list" id="stepList" aria-label="Setup steps"></ol>
+        <ol class="step-list" id="stepList" aria-label="Setup steps" data-i18n-aria-label="setup.step_list_aria_label"></ol>
         <div class="panel step-panel" id="stepCard"></div>
       </div>
     </div>
@@ -154,64 +155,64 @@
 
   <!-- ================= TUNE ================= -->
   <section class="view" id="view-tune">
-    <div class="page-head"><h1 class="display">Tune</h1><p class="dim">Optional: fine-tune how the guitar feels. Most people never need this page.</p></div>
-    <div id="tuneGate" class="gate small-gate"><p class="dim">Connect a controller to tune it.</p><button class="btn primary" data-connect>Connect controller</button></div>
+    <div class="page-head"><h1 class="display" data-i18n="nav.tune">Tune</h1><p class="dim" data-i18n="tune.optional_fine_tune_how_guitar">Optional: fine-tune how the guitar feels. Most people never need this page.</p></div>
+    <div id="tuneGate" class="gate small-gate"><p class="dim" data-i18n="tune.connect_controller_tune">Connect a controller to tune it.</p><button class="btn primary" data-connect data-i18n="common.connect_controller">Connect controller</button></div>
     <div id="tuneMain" style="display:none">
       <div class="stage compact"><div id="tuneStage"></div></div>
       <div class="panel" id="namePanel" hidden>
-        <h2>Name</h2>
+        <h2 data-i18n="tune.name">Name</h2>
         <div id="namePanelBody"></div>
       </div>
       <div class="cols">
         <div class="panel">
-          <h2>Button debounce</h2>
-          <p class="dim">Stops one press from counting twice. Presses still register in about 0.2 ms; the time below is how long an input is locked after it changes.</p>
-          <div class="seg" id="debPresets" role="group" aria-label="Debounce presets"></div>
-          <div class="slider-row"><label for="debT">Lockout</label><output class="val" id="debTVal"></output>
+          <h2 data-i18n="tune.button_debounce">Button debounce</h2>
+          <p class="dim" data-i18n="tune.stops_one_press_from_counting">Stops one press from counting twice. Presses still register in about 0.2 ms; the time below is how long an input is locked after it changes.</p>
+          <div class="seg" id="debPresets" role="group" aria-label="Debounce presets" data-i18n-aria-label="tune.deb_presets_aria_label"></div>
+          <div class="slider-row"><label for="debT" data-i18n="tune.lockout">Lockout</label><output class="val" id="debTVal"></output>
             <input type="range" id="debT" min="0" max="250" step="5"></div>
-          <div class="opt"><div><h3>Shared strum lockout</h3><p class="dim">Up and down share one window, so a bouncing strum bar can't fire both.</p></div>
+          <div class="opt"><div><h3 data-i18n="tune.shared_strum_lockout">Shared strum lockout</h3><p class="dim" data-i18n="tune.up_down_share_one_window">Up and down share one window, so a bouncing strum bar can't fire both.</p></div>
             <label class="switch"><input type="checkbox" id="combStrum"><i></i></label></div>
         </div>
         <div class="panel">
-          <h2>Whammy</h2>
-          <div class="slider-row"><label for="wSmooth">Smoothing</label><output class="val" id="wSmoothVal"></output>
+          <h2 data-i18n="common.whammy">Whammy</h2>
+          <div class="slider-row"><label for="wSmooth" data-i18n="tune.smoothing">Smoothing</label><output class="val" id="wSmoothVal"></output>
             <input type="range" id="wSmooth" min="0" max="6" step="1"></div>
-          <div class="slider-row"><label for="wDead">Dead zone</label><output class="val" id="wDeadVal"></output>
+          <div class="slider-row"><label for="wDead" data-i18n="tune.dead_zone">Dead zone</label><output class="val" id="wDeadVal"></output>
             <input type="range" id="wDead" min="0" max="30" step="1"></div>
-          <div class="opt"><div><h3>Invert direction</h3><p class="dim">Flip it if the bar reads backwards.</p></div>
+          <div class="opt"><div><h3 data-i18n="tune.invert_direction">Invert direction</h3><p class="dim" data-i18n="tune.flip_if_bar_reads_backwards">Flip it if the bar reads backwards.</p></div>
             <label class="switch"><input type="checkbox" id="wInv"><i></i></label></div>
         </div>
       </div>
       <div class="panel" id="tiltSwPanel">
-        <h2>Tilt switch</h2>
+        <h2 data-i18n="common.tilt_switch">Tilt switch</h2>
         <div id="tiltSwBody"></div>
       </div>
       <div class="panel tilt-panel adv" id="tiltPanel">
-        <h2>Tilt sensors</h2>
-        <p class="dim">Analog tilt sensors, or an I²C accelerometer (LIS3DH, ADXL345, MPU-6050, found automatically). Each sensor works the <b>whammy</b> or presses <b>star power</b> past an angle you set, alongside the whammy bar, the star power button and a tilt switch. A mercury or ball tilt switch is set up in Setup.</p>
+        <h2 data-i18n="common.tilt_sensors">Tilt sensors</h2>
+        <p class="dim" data-i18n-html="tune.analog_tilt_sensors_or_i2c">Analog tilt sensors, or an I²C accelerometer (LIS3DH, ADXL345, MPU-6050, found automatically). Each sensor works the <b>whammy</b> or presses <b>star power</b> past an angle you set, alongside the whammy bar, the star power button and a tilt switch. A mercury or ball tilt switch is set up in Setup.</p>
         <div id="tiltBody"></div>
       </div>
       <div class="panel tilt-panel adv" id="rumblePanel">
-        <h2>Rumble</h2>
-        <p class="dim">A small vibration motor (a coin or ERM motor) on a free pin, switched by an NPN transistor or logic-level MOSFET with a flyback diode across the motor; never straight from the pin. It follows the rumble games send (XInput, PS4, PS5, original Xbox) and can buzz when star power starts or a note is missed.</p>
+        <h2 data-i18n="backup.section.rumble.name">Rumble</h2>
+        <p class="dim" data-i18n="tune.small_vibration_motor_coin_or">A small vibration motor (a coin or ERM motor) on a free pin, switched by an NPN transistor or logic-level MOSFET with a flyback diode across the motor; never straight from the pin. It follows the rumble games send (XInput, PS4, PS5, original Xbox) and can buzz when star power starts or a note is missed.</p>
         <div id="rumbleBody"></div>
       </div>
       <p class="adv-hint" id="tuneAdvHint" hidden></p>
       <div class="panel reset-panel">
-        <div class="opt first"><div><h2>Reset everything</h2><p class="dim">Puts every setting (buttons, whammy, tuning, lights and modes) back to factory defaults and saves that straight away.</p></div>
-          <button class="btn danger" id="resetCfg">Reset everything</button></div>
+        <div class="opt first"><div><h2 data-i18n="tune.reset_everything">Reset everything</h2><p class="dim" data-i18n="tune.puts_every_setting_buttons_whammy">Puts every setting (buttons, whammy, tuning, lights and modes) back to factory defaults and saves that straight away.</p></div>
+          <button class="btn danger" id="resetCfg" data-i18n="tune.reset_everything">Reset everything</button></div>
       </div>
     </div>
   </section>
 
   <!-- ================= BACKUP ================= -->
   <section class="view" id="view-backup">
-    <div class="page-head"><h1 class="display">Backup</h1><p class="dim">Save every setting to a file, or load one back.</p></div>
-    <div id="backupGate" class="gate small-gate"><p class="dim">Connect a controller to back it up or restore it.</p><button class="btn primary" data-connect>Connect controller</button></div>
+    <div class="page-head"><h1 class="display" data-i18n="nav.backup">Backup</h1><p class="dim" data-i18n="backup.save_every_setting_file_or">Save every setting to a file, or load one back.</p></div>
+    <div id="backupGate" class="gate small-gate"><p class="dim" data-i18n="backup.connect_controller_back_up_or">Connect a controller to back it up or restore it.</p><button class="btn primary" data-connect data-i18n="common.connect_controller">Connect controller</button></div>
     <div id="backupMain" style="display:none">
       <div class="panel backup-panel">
-        <div class="opt first"><div><h2>Backup and restore</h2><p class="dim">Save every setting to a file, or load one back. Useful before reflashing, or to copy a setup to another guitar.</p></div>
-          <div class="row"><button class="btn" id="bkSave">Download backup</button><label class="btn" for="bkFile" tabindex="0">Restore from file</label><input type="file" id="bkFile" accept=".json,application/json" hidden></div></div>
+        <div class="opt first"><div><h2 data-i18n="backup.backup_restore">Backup and restore</h2><p class="dim" data-i18n="backup.save_every_setting_file_or_2">Save every setting to a file, or load one back. Useful before reflashing, or to copy a setup to another guitar.</p></div>
+          <div class="row"><button class="btn" id="bkSave" data-i18n="backup.bk_save">Download backup</button><label class="btn" for="bkFile" tabindex="0" data-i18n="backup.restore_from_file">Restore from file</label><input type="file" id="bkFile" accept=".json,application/json" hidden></div></div>
         <div id="bkRestore"></div>
       </div>
     </div>
@@ -219,56 +220,56 @@
 
   <!-- ================= LIGHTS ================= -->
   <section class="view" id="view-lights">
-    <div class="page-head"><h1 class="display">Lights</h1><p class="dim">Optional: only if you wired LEDs under the frets or on the strum bar. Check they work, then pick how they look.</p></div>
-    <div id="lightsGate" class="gate small-gate"><p class="dim">Connect a controller to set up its lights.</p><button class="btn primary" data-connect>Connect controller</button></div>
+    <div class="page-head"><h1 class="display" data-i18n="common.lights">Lights</h1><p class="dim" data-i18n="lights.optional_only_if_wired_leds">Optional: only if you wired LEDs under the frets or on the strum bar. Check they work, then pick how they look.</p></div>
+    <div id="lightsGate" class="gate small-gate"><p class="dim" data-i18n="lights.connect_controller_set_up_its">Connect a controller to set up its lights.</p><button class="btn primary" data-connect data-i18n="common.connect_controller">Connect controller</button></div>
     <div id="lightsMain" style="display:none">
-      <section class="panel led-hw" id="ledHw" aria-label="LED hardware">
+      <section class="panel led-hw" id="ledHw" aria-label="LED hardware" data-i18n-aria-label="lights.led_hw_aria_label">
         <div class="led-sum">
           <p class="led-sum-line" id="ledStatus" role="status"></p>
           <div class="row led-sum-btns">
-            <button class="btn primary" id="ledSetupGo" hidden>Set up LEDs</button>
-            <button class="btn" id="ledTestBtn">Test LEDs</button>
-            <button class="btn" id="ledSetupBtn" aria-expanded="false" aria-controls="ledSetupBody">Change setup</button>
+            <button class="btn primary" id="ledSetupGo" hidden data-i18n="lights.led_setup_go">Set up LEDs</button>
+            <button class="btn" id="ledTestBtn" data-i18n="lights.test_leds">Test LEDs</button>
+            <button class="btn" id="ledSetupBtn" aria-expanded="false" aria-controls="ledSetupBody" data-i18n="lights.change_setup">Change setup</button>
           </div>
         </div>
         <div id="ledSetupBody" hidden>
-          <div class="opt first"><div><h3>LEDs</h3><p class="dim">Turn on if you wired LEDs under the frets or on the strum bar.</p></div>
-            <label class="switch"><input type="checkbox" id="rgbOn" aria-label="LEDs on"><i></i></label></div>
+          <div class="opt first"><div><h3 data-i18n="hardware.group.led.name">LEDs</h3><p class="dim" data-i18n="lights.turn_if_wired_leds_under">Turn on if you wired LEDs under the frets or on the strum bar.</p></div>
+            <label class="switch"><input type="checkbox" id="rgbOn" aria-label="LEDs on" data-i18n-aria-label="lights.rgb_on_aria_label"><i></i></label></div>
           <div id="rgbOpts">
-            <div class="opt led-type"><div><h3>LED type</h3><p class="dim" id="ledTypeDesc"></p></div></div>
+            <div class="opt led-type"><div><h3 data-i18n="common.led_type">LED type</h3><p class="dim" id="ledTypeDesc"></p></div></div>
             <div id="ledTypeCards"></div>
-            <div class="opt"><div><h3>Data pin</h3><p class="dim">Wired to the first LED's data input (DIN, or DI on APA102).</p></div><select id="rgbPin" aria-label="Data pin"></select></div>
-            <div class="opt" id="ledClkRow"><div><h3>Clock pin</h3><p class="dim" id="ledClkHint">Wired to the first LED's clock input (CI / CKI).</p></div><select id="ledClk" aria-label="Clock pin"></select></div>
-            <div class="opt adv" id="ledOrderRow"><div><h3>Colour order</h3><p class="dim" id="ledOrderHint">If red shows up green, try RGB.</p></div><select id="ledOrder" aria-label="Colour order"></select></div>
-            <div class="slider-row"><label for="rgbBri">Brightness</label><output class="val" id="rgbBriVal"></output>
+            <div class="opt"><div><h3 data-i18n="lights.data_pin">Data pin</h3><p class="dim" data-i18n="lights.wired_first_led_s_data">Wired to the first LED's data input (DIN, or DI on APA102).</p></div><select id="rgbPin" aria-label="Data pin" data-i18n-aria-label="lights.data_pin"></select></div>
+            <div class="opt" id="ledClkRow"><div><h3 data-i18n="lights.clock_pin">Clock pin</h3><p class="dim" id="ledClkHint" data-i18n="lights.wired_first_led_s_clock">Wired to the first LED's clock input (CI / CKI).</p></div><select id="ledClk" aria-label="Clock pin" data-i18n-aria-label="lights.clock_pin"></select></div>
+            <div class="opt adv" id="ledOrderRow"><div><h3 data-i18n="lights.colour_order">Colour order</h3><p class="dim" id="ledOrderHint" data-i18n="lights.if_red_shows_up_green">If red shows up green, try RGB.</p></div><select id="ledOrder" aria-label="Colour order" data-i18n-aria-label="lights.colour_order"></select></div>
+            <div class="slider-row"><label for="rgbBri" data-i18n="common.brightness">Brightness</label><output class="val" id="rgbBriVal"></output>
               <input type="range" id="rgbBri" min="0" max="255" step="1"></div>
             <div id="rgbBriNote"></div>
             <p class="adv-hint" id="ledAdvHint" hidden></p>
           </div>
           <div class="led-sub" id="strumCard">
-            <h3>LED layout</h3>
+            <h3 data-i18n="lights.led_layout">LED layout</h3>
             <div id="layoutOpts"></div>
             <div id="strumOpts"></div>
           </div>
           <div class="led-sub" id="mapCard">
-            <h3>LED order</h3>
-            <p class="dim">Which LED in the chain sits under which fret or on the strum bar.</p>
+            <h3 data-i18n="common.led_order">LED order</h3>
+            <p class="dim" data-i18n="lights.which_led_chain_sits_under">Which LED in the chain sits under which fret or on the strum bar.</p>
             <div id="mapView" class="ledmap"></div>
-            <button class="btn" id="mapWizard">Remap with the wizard</button>
+            <button class="btn" id="mapWizard" data-i18n="lights.map_wizard">Remap with the wizard</button>
           </div>
           <div id="ledHelp"></div>
         </div>
       </section>
 
-      <div class="look-head"><h2 id="lookH">Look</h2></div>
+      <div class="look-head"><h2 id="lookH" data-i18n="lights.look_h">Look</h2></div>
       <div class="look-grid" id="studio" aria-labelledby="lookH">
         <div class="panel look-prev" id="studioPrev"></div>
         <div class="look-ctl">
           <div class="panel" id="legacyCard" hidden>
-            <h3>Effect</h3>
-            <p class="dim">This guitar has firmware older than 0.34, which has one effect for all LEDs. <button type="button" class="btn small" data-led-update>Update firmware</button> for the full set of options.</p>
-            <div class="lfx-field"><label for="fxSel">Effect</label><select id="fxSel"></select><p class="dim small lfx-desc" id="fxDesc"></p></div>
-            <div class="slider-row"><label for="fxSpeed">Speed</label><output class="val" id="fxSpeedVal"></output>
+            <h3 data-i18n="lights.effect">Effect</h3>
+            <p class="dim"><span data-i18n="lights.this_guitar_has_firmware_older">This guitar has firmware older than 0.34, which has one effect for all LEDs.</span> <button type="button" class="btn small" data-led-update data-i18n="common.update_firmware">Update firmware</button> <span data-i18n="lights.full_set_options">for the full set of options.</span></p>
+            <div class="lfx-field"><label for="fxSel" data-i18n="lights.effect">Effect</label><select id="fxSel"></select><p class="dim small lfx-desc" id="fxDesc"></p></div>
+            <div class="slider-row"><label for="fxSpeed" data-i18n="lights.studio.speed">Speed</label><output class="val" id="fxSpeedVal"></output>
               <input type="range" id="fxSpeed" min="1" max="10" step="1"></div>
             <div id="colRows"></div>
             <div class="presets" id="presets"></div>
@@ -281,75 +282,75 @@
 
   <!-- ================= MODES ================= -->
   <section class="view" id="view-modes">
-    <div class="page-head"><h1 class="display">Modes</h1><p class="dim">Pick what the guitar pretends to be: Xbox, PlayStation, Switch, PC&hellip; Hold a fret while plugging in to switch.</p></div>
-    <div id="modesGate" class="gate small-gate"><p class="dim">Connect a controller to change its modes.</p><button class="btn primary" data-connect>Connect controller</button></div>
+    <div class="page-head"><h1 class="display" data-i18n="common.modes">Modes</h1><p class="dim" data-i18n="modes.pick_what_guitar_pretends_be">Pick what the guitar pretends to be: Xbox, PlayStation, Switch, PC&hellip; Hold a fret while plugging in to switch.</p></div>
+    <div id="modesGate" class="gate small-gate"><p class="dim" data-i18n="modes.connect_controller_change_its_modes">Connect a controller to change its modes.</p><button class="btn primary" data-connect data-i18n="common.connect_controller">Connect controller</button></div>
     <div id="modesMain" style="display:none">
       <div class="cols modes-cols">
         <div class="panel">
-          <h2>Hold a fret at plug-in</h2>
-          <p class="dim">The mode you pick this way is remembered.</p>
+          <h2 data-i18n="modes.hold_fret_at_plug">Hold a fret at plug-in</h2>
+          <p class="dim" data-i18n="modes.mode_pick_this_way_remembered">The mode you pick this way is remembered.</p>
           <div class="fret-map" id="bootTable"></div>
           <dl class="always">
-            <dt>Plus</dt><dd>Setup mode for one session, nothing saved</dd>
-            <dt>Star power + Plus</dt><dd>Bootloader, for firmware updates</dd>
-            <dt>Star power</dt><dd>Bluetooth pairing for a new device (Pico W / Pico 2 W)</dd>
+            <dt data-i18n="common.plus">Plus</dt><dd data-i18n="modes.setup_mode_one_session_nothing">Setup mode for one session, nothing saved</dd>
+            <dt data-i18n="modes.star_power_plus">Star power + Plus</dt><dd data-i18n="modes.bootloader_firmware_updates">Bootloader, for firmware updates</dd>
+            <dt data-i18n="common.star_power">Star power</dt><dd data-i18n="modes.bluetooth_pairing_new_device_pico">Bluetooth pairing for a new device (Pico W / Pico 2 W)</dd>
           </dl>
         </div>
         <div class="panel">
-          <h2>Default mode</h2>
-          <p class="dim">Used when no fret is held.</p>
+          <h2 data-i18n="modes.default_mode">Default mode</h2>
+          <p class="dim" data-i18n="modes.used_when_no_fret_held">Used when no fret is held.</p>
           <p class="notice small" id="setupNote" hidden></p>
           <p class="notice warn small" id="macNote" hidden></p>
-          <div class="mode-list" id="modeCards" role="radiogroup" aria-label="Default mode"></div>
+          <div class="mode-list" id="modeCards" role="radiogroup" aria-label="Default mode" data-i18n-aria-label="modes.default_mode"></div>
         </div>
       </div>
       <div class="cols">
         <div class="panel">
-          <h2>XInput guitar type</h2>
+          <h2 data-i18n="backup.xinput_guitar_type">XInput guitar type</h2>
           <div class="choice-list" id="xiType"></div>
-          <div class="opt"><div><h3>Star power also presses D-pad left</h3><p class="dim">Fortnite Festival on PC reads star power from there. Leave off for Clone Hero and YARG.</p></div>
+          <div class="opt"><div><h3 data-i18n="modes.star_power_also_presses_d">Star power also presses D-pad left</h3><p class="dim" data-i18n="modes.fortnite_festival_pc_reads_star">Fortnite Festival on PC reads star power from there. Leave off for Clone Hero and YARG.</p></div>
             <label class="switch"><input type="checkbox" id="starLeft"><i></i></label></div>
-          <div class="opt adv" id="rxRow"><div><h3>Steam receiver mode on Windows (experimental)</h3><p class="dim">Off by default: on Windows the guitar is a normal wired Xbox 360 pad. Turn on to present it as one controller of an Xbox 360 wireless receiver instead, which Steam handles better (a wired pad sharing its USB device with the configurator can trip Steam up). If the guitar stops being recognised on Windows with this on, turn it off.</p></div>
+          <div class="opt adv" id="rxRow"><div><h3 data-i18n="modes.steam_receiver_mode_windows_experimental">Steam receiver mode on Windows (experimental)</h3><p class="dim" data-i18n="modes.off_by_default_windows_guitar">Off by default: on Windows the guitar is a normal wired Xbox 360 pad. Turn on to present it as one controller of an Xbox 360 wireless receiver instead, which Steam handles better (a wired pad sharing its USB device with the configurator can trip Steam up). If the guitar stops being recognised on Windows with this on, turn it off.</p></div>
             <label class="switch"><input type="checkbox" id="xiRx"><i></i></label></div>
         </div>
         <div class="panel">
-          <h2>Keyboard bindings</h2>
-          <p class="dim">For keyboard mode. They have to match the keys set in Fortnite.</p>
-          <div class="seg" id="keyPresets" role="group" aria-label="Key presets"></div>
+          <h2 data-i18n="modes.keyboard_bindings">Keyboard bindings</h2>
+          <p class="dim" data-i18n="modes.keyboard_mode_they_have_match">For keyboard mode. They have to match the keys set in Fortnite.</p>
+          <div class="seg" id="keyPresets" role="group" aria-label="Key presets" data-i18n-aria-label="test.aria_label.key_presets"></div>
           <div class="keymap" id="keyMap"></div>
         </div>
       </div>
       <p class="adv-hint" id="modesAdvHint" hidden></p>
       <div class="panel host-panel adv" id="hostPanel">
-        <h2>Console authentication <span class="tag exp">Experimental</span></h2>
-        <p class="dim">PS4 / PS5 and Xbox One / Series modes need a licensed controller plugged into a USB host port on the guitar. The console's security check is passed through to it, the same way GP2040-CE does it. Not yet tested on a console.</p>
+        <h2 data-i18n-html="modes.console_authentication_experimental">Console authentication <span class="tag exp">Experimental</span></h2>
+        <p class="dim" data-i18n="modes.ps4_ps5_xbox_one_series">PS4 / PS5 and Xbox One / Series modes need a licensed controller plugged into a USB host port on the guitar. The console's security check is passed through to it, the same way GP2040-CE does it. Not yet tested on a console.</p>
         <div class="host-grid">
           <div>
-            <label class="field-label" for="hostPin">USB host port pins</label>
+            <label class="field-label" for="hostPin" data-i18n="modes.usb_host_port_pins">USB host port pins</label>
             <select id="hostPin"></select>
             <p class="dim small" id="hostPinNote"></p>
             <p class="warn small" id="hostWarn" hidden></p>
           </div>
           <div>
-            <h3>Wiring a USB-A socket</h3>
+            <h3 data-i18n="modes.wiring_usb_socket">Wiring a USB-A socket</h3>
             <dl class="wiring">
-              <dt>D+ (green)</dt><dd id="wDp">the pin you pick</dd>
-              <dt>D− (white)</dt><dd id="wDm">the next pin</dd>
-              <dt>VBUS (red)</dt><dd>VBUS / 5 V on the board</dd>
-              <dt>GND (black)</dt><dd>any GND</dd>
+              <dt data-i18n="modes.d_green">D+ (green)</dt><dd id="wDp" data-i18n="modes.host.pin_pick">the pin you pick</dd>
+              <dt data-i18n="modes.d_white">D− (white)</dt><dd id="wDm" data-i18n="modes.host.next_pin">the next pin</dd>
+              <dt data-i18n="modes.vbus_red">VBUS (red)</dt><dd data-i18n="modes.vbus_5_v_board">VBUS / 5 V on the board</dd>
+              <dt data-i18n="modes.gnd_black">GND (black)</dt><dd data-i18n="modes.any_gnd">any GND</dd>
             </dl>
-            <h3>What to plug in</h3>
+            <h3 data-i18n="modes.what_plug">What to plug in</h3>
             <ul class="dim small">
-              <li><b>PS4:</b> a DualShock 4 (wired), or a USB PS4 authentication dongle.</li>
-              <li><b>PS5:</b> a Besavior P5General dongle (PS5 mode; it also signs every report).</li>
-              <li><b>Xbox One / Series:</b> a wired Xbox One / Series controller (Microsoft, PowerA), or a Mayflash / MagicBoots Xbox One adapter.</li>
+              <li data-i18n-html="modes.ps4_dualshock_4_wired_or"><b>PS4:</b> a DualShock 4 (wired), or a USB PS4 authentication dongle.</li>
+              <li data-i18n-html="modes.ps5_besavior_p5general_dongle_ps5"><b>PS5:</b> a Besavior P5General dongle (PS5 mode; it also signs every report).</li>
+              <li data-i18n-html="modes.xbox_one_series_wired_xbox"><b>Xbox One / Series:</b> a wired Xbox One / Series controller (Microsoft, PowerA), or a Mayflash / MagicBoots Xbox One adapter.</li>
             </ul>
           </div>
         </div>
       </div>
       <div class="panel host-panel adv" id="portsPanel">
-        <h2>Console ports and Wii Remote <span class="tag exp">Experimental</span></h2>
-        <p class="dim">Wire the guitar straight into a console's controller port, or let a Pico W be a Wii Remote. These work alongside the USB modes: each one stays quiet until a console talks to it. Ported from Santroller; not yet tested on a console with YAGCC.</p>
+        <h2 data-i18n-html="modes.console_ports_wii_remote_experimental">Console ports and Wii Remote <span class="tag exp">Experimental</span></h2>
+        <p class="dim" data-i18n="modes.wire_guitar_straight_into_console">Wire the guitar straight into a console's controller port, or let a Pico W be a Wii Remote. These work alongside the USB modes: each one stays quiet until a console talks to it. Ported from Santroller; not yet tested on a console with YAGCC.</p>
         <div id="portsBody"></div>
       </div>
     </div>
@@ -357,39 +358,39 @@
 
   <!-- ================= TEST ================= -->
   <section class="view" id="view-test">
-    <div class="page-head"><h1 class="display">Test</h1><p class="dim">Press things on the guitar and see what a console would receive. Pick a mode, and change what any input does in it.</p></div>
-    <div id="testGate" class="gate small-gate"><p class="dim">Connect a controller to test it.</p><button class="btn primary" data-connect>Connect controller</button></div>
+    <div class="page-head"><h1 class="display" data-i18n="common.test">Test</h1><p class="dim" data-i18n="test.press_things_guitar_see_what">Press things on the guitar and see what a console would receive. Pick a mode, and change what any input does in it.</p></div>
+    <div id="testGate" class="gate small-gate"><p class="dim" data-i18n="test.connect_controller_test">Connect a controller to test it.</p><button class="btn primary" data-connect data-i18n="common.connect_controller">Connect controller</button></div>
     <div id="testMain" style="display:none"><div id="testBody"></div></div>
   </section>
 
   <!-- ================= HARDWARE ================= -->
   <section class="view" id="view-hardware">
-    <div class="page-head"><h1 class="display">Wiring &amp; hardware</h1><p class="dim">Boards, switches, sensors and LEDs you can build a YAGCC guitar with. Buttons go on any free GPIO; setup works out which is which.</p></div>
-    <div class="notice"><b>Fake "Pico W" boards.</b> Many cheap boards replace the Raspberry Pi radio with an ESP8285, which only does Wi-Fi. They work fine over USB with the clone firmware but can never do Bluetooth. A genuine Pico W has a metal shield marked "Raspberry Pi".</div>
+    <div class="page-head"><h1 class="display" data-i18n="nav.wiring_hardware">Wiring &amp; hardware</h1><p class="dim" data-i18n="hardware.page.boards_switches_sensors_leds_can">Boards, switches, sensors and LEDs you can build a YAGCC guitar with. Buttons go on any free GPIO; setup works out which is which.</p></div>
+    <div class="notice" data-i18n-html="hardware.page.fake_pico_w_boards_many"><b>Fake "Pico W" boards.</b> Many cheap boards replace the Raspberry Pi radio with an ESP8285, which only does Wi-Fi. They work fine over USB with the clone firmware but can never do Bluetooth. A genuine Pico W has a metal shield marked "Raspberry Pi".</div>
     <div id="hwList"></div>
   </section>
 
   <!-- ================= COMPATIBILITY ================= -->
   <section class="view" id="view-compat">
-    <div class="page-head"><h1 class="display">Compatibility</h1><p class="dim">Which mode to use for each console and game, and how well it's tested.</p></div>
+    <div class="page-head"><h1 class="display" data-i18n="nav.compatibility">Compatibility</h1><p class="dim" data-i18n="compat.page.which_mode_use_each_console">Which mode to use for each console and game, and how well it's tested.</p></div>
     <div id="compatList"></div>
     <div class="panel note-panel">
-      <h2>Consoles that require authentication</h2>
-      <p class="dim">PS4, PS5 and Xbox One / Series only accept licensed controllers. Two setups work without extra hardware:</p>
+      <h2 data-i18n="compat.page.consoles_that_require_authentication">Consoles that require authentication</h2>
+      <p class="dim" data-i18n="compat.page.ps4_ps5_xbox_one_series">PS4, PS5 and Xbox One / Series only accept licensed controllers. Two setups work without extra hardware:</p>
       <ul class="dim">
-        <li><b>Fortnite Festival</b> in keyboard mode, since keyboards are never asked to authenticate. On Switch, use Switch mode (orange fret).</li>
-        <li><b>Rock Band 4 on PS4 / PS5</b> in PS3 Rock Band mode (red fret). The game accepts PS3 guitars as legacy instruments.</li>
+        <li data-i18n-html="compat.page.fortnite_festival_keyboard_mode_since"><b>Fortnite Festival</b> in keyboard mode, since keyboards are never asked to authenticate. On Switch, use Switch mode (orange fret).</li>
+        <li data-i18n-html="compat.page.rock_band_4_ps4_ps5"><b>Rock Band 4 on PS4 / PS5</b> in PS3 Rock Band mode (red fret). The game accepts PS3 guitars as legacy instruments.</li>
       </ul>
-      <p class="dim">For anything else on those consoles, PS4 / PS5 and Xbox One / Series modes pass the check through to a licensed controller plugged into a USB host port on the guitar (set up on the Modes page with Advanced on). That is <b>experimental</b> and not yet tested on a console.</p>
+      <p class="dim" data-i18n-html="compat.page.anything_else_those_consoles_ps4">For anything else on those consoles, PS4 / PS5 and Xbox One / Series modes pass the check through to a licensed controller plugged into a USB host port on the guitar (set up on the Modes page with Advanced on). That is <b>experimental</b> and not yet tested on a console.</p>
     </div>
   </section>
 </main>
 
-<footer><span>YAGCC is open source under GPL-3.0.</span> <a href="https://github.com/Cr4zySh4rk/YAGCC">Source on GitHub</a> <span>Built on ideas from Santroller and GP2040-CE.</span> <span>3D guitar based on <a href="https://sketchfab.com/3d-models/guitar-hero-controller-bcac8f9f95a44008ad90f470326e5fca">"Guitar Hero Controller"</a> by <a href="https://sketchfab.com/CamSear16">CamSear16</a>, <a href="http://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, modified.</span></footer>
-<div class="unsaved-bar" id="saveBar" role="region" aria-label="Unsaved changes" hidden>
+<footer data-i18n-html="footer.yagcc_open_source_under_gpl"><span>YAGCC is open source under GPL-3.0.</span> <a href="https://github.com/Cr4zySh4rk/YAGCC">Source on GitHub</a> <span>Built on ideas from Santroller and GP2040-CE.</span> <span>3D guitar based on <a href="https://sketchfab.com/3d-models/guitar-hero-controller-bcac8f9f95a44008ad90f470326e5fca">"Guitar Hero Controller"</a> by <a href="https://sketchfab.com/CamSear16">CamSear16</a>, <a href="http://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, modified.</span></footer>
+<div class="unsaved-bar" id="saveBar" role="region" aria-label="Unsaved changes" hidden data-i18n-aria-label="save.save_bar_aria_label">
   <div class="ub-inner">
-    <span class="ub-text" aria-live="polite"><i class="ub-dot" aria-hidden="true"></i><span id="sbText">You have unsaved changes on the guitar</span></span>
-    <div class="row"><button class="btn quiet" id="sbUndo" type="button">Undo changes</button><button class="btn primary" id="sbSave" type="button">Save to guitar</button></div>
+    <span class="ub-text" aria-live="polite"><i class="ub-dot" aria-hidden="true"></i><span id="sbText" data-i18n="save.have_unsaved_changes_guitar">You have unsaved changes on the guitar</span></span>
+    <div class="row"><button class="btn quiet" id="sbUndo" type="button" data-i18n="save.sb_undo">Undo changes</button><button class="btn primary" id="sbSave" type="button" data-i18n="save.save_guitar">Save to guitar</button></div>
   </div>
 </div>
 <div id="toasts" aria-live="polite"></div>

@@ -1,6 +1,7 @@
 // The cards next to the controller on the Test page: analog sticks (position, circularity), triggers, raw data and a rumble test.
 import { outName } from './mapping.js?v=dev';
 import { PIN_NONE } from './protocol.js?v=dev';
+import { t, localized } from './i18n.js?v=dev';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sgn = (v) => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(2);
@@ -15,44 +16,44 @@ const ICON = {
 };
 
 // rumble patterns: [on ms, off ms, on ms, ...]; each "on" is one rumbleTest(ms) call
-const PATTERNS = {
-  heavy: { name: 'HEAVY', seq: [900], bars: [[0, 100, 'a']] },
-  light: { name: 'LIGHT', seq: [150], bars: [[0, 45, 'b']] },
-  burst: { name: 'BURST', seq: [90, 90, 90, 90, 90, 90, 90], bars: [[0, 100, 'c']] },
-  pulse: { name: 'PULSE', seq: [70, 180, 70, 60, 70, 180, 250], bars: [[0, 12, 'd'], [18, 12, 'd'], [36, 20, 'd'], [64, 10, 'd']] },
-};
+const PATTERNS = localized(() => ({
+  heavy: { name: t('test.viz.heavy.name'), seq: [900], bars: [[0, 100, 'a']] },
+  light: { name: t('test.viz.light.name'), seq: [150], bars: [[0, 45, 'b']] },
+  burst: { name: t('test.viz.burst.name'), seq: [90, 90, 90, 90, 90, 90, 90], bars: [[0, 100, 'c']] },
+  pulse: { name: t('test.viz.pulse.name'), seq: [70, 180, 70, 60, 70, 180, 250], bars: [[0, 12, 'd'], [18, 12, 'd'], [36, 20, 'd'], [64, 10, 'd']] },
+}));
 
 export function createViz(ctx) {
   const root = document.createElement('div');
   root.className = 'vz-cards';
   root.innerHTML = `
-    <section class="vz-card vz-green" aria-label="Analog sticks">
-      <header><span class="vz-ico">${ICON.sticks}</span><div class="vz-t"><h3>Analog sticks</h3><p>Position, drift &amp; circularity</p></div>
-        <button type="button" class="vz-reset" data-vz="reset" title="Reset the circularity trace" aria-label="Reset circularity">${ICON.reset}</button></header>
+    <section class="vz-card vz-green" aria-label="${t('test.viz.aria_label.analog_sticks')}">
+      <header><span class="vz-ico">${ICON.sticks}</span><div class="vz-t"><h3>${t('test.viz.analog_sticks')}</h3><p>${t('test.viz.position_drift_circularity')}</p></div>
+        <button type="button" class="vz-reset" data-vz="reset" title="${t('test.viz.title.reset_circularity_trace')}" aria-label="${t('test.viz.aria_label.reset_circularity')}">${ICON.reset}</button></header>
       <div class="vz-sticks">${['L', 'R'].map((k) => `
         <div class="vz-stick" data-side="${k}">
-          <svg viewBox="-54 -54 108 108" class="vz-plot" aria-label="${k === 'L' ? 'Left' : 'Right'} stick position">
+          <svg viewBox="-54 -54 108 108" class="vz-plot" aria-label="${t('test.viz.aria_label.stick_position', { v: k === 'L' ? t('test.out.left') : t('test.out.right') })}">
             <circle r="50" class="vz-circ"/><path class="vz-trace" d=""/><path class="vz-cross" d="M-50 0H50M0 -50V50"/><circle class="vz-pdot" r="5.5" cx="0" cy="0"/></svg>
-          <div class="vz-lbl">${k === 'L' ? 'Left stick' : 'Right stick'}</div>
+          <div class="vz-lbl">${k === 'L' ? t('test.viz.left_stick') : t('test.viz.right_stick')}</div>
           <div class="vz-val mono" data-v>+0.00, +0.00</div>
-          <div class="vz-err mono" data-err>Err:—</div>
+          <div class="vz-err mono" data-err>${t('test.viz.err')}</div>
         </div>`).join('')}</div>
     </section>
-    <section class="vz-card vz-purple" aria-label="Triggers">
-      <header><span class="vz-ico">${ICON.trig}</span><div class="vz-t"><h3>Triggers</h3><p>Analog pressure (0-1)</p></div></header>
+    <section class="vz-card vz-purple" aria-label="${t('test.out.triggers.name')}">
+      <header><span class="vz-ico">${ICON.trig}</span><div class="vz-t"><h3>${t('test.viz.triggers')}</h3><p>${t('test.viz.analog_pressure_0_1')}</p></div></header>
       <div class="vz-trigs">${['L', 'R'].map((k) => `
         <div class="vz-trig" data-side="${k}"><div class="vz-bar"><i data-fill></i><b class="mono" data-v>0.00</b></div><span data-name>${k === 'L' ? 'LT' : 'RT'}</span></div>`).join('')}</div>
     </section>
-    <section class="vz-card vz-blue" aria-label="Raw data">
-      <header><span class="vz-ico">${ICON.raw}</span><div class="vz-t"><h3>Raw data</h3><p data-src>—</p></div><span class="vz-count mono" data-count></span></header>
-      <div class="vz-sec">Axes</div>
+    <section class="vz-card vz-blue" aria-label="${t('test.viz.aria_label.raw_data')}">
+      <header><span class="vz-ico">${ICON.raw}</span><div class="vz-t"><h3>${t('test.viz.raw_data')}</h3><p data-src>—</p></div><span class="vz-count mono" data-count></span></header>
+      <div class="vz-sec">${t('test.viz.axes')}</div>
       <div class="vz-axes">${['LX', 'LY', 'RX', 'RY', 'LT', 'RT'].map((n, i) => `
         <div class="vz-ax" data-ax="${i}" title="${n}"><span class="vz-n">${i}</span><span class="vz-ab"><i></i></span><span class="vz-av mono">+0.00</span></div>`).join('')}</div>
-      <div class="vz-sec">Buttons</div>
+      <div class="vz-sec">${t('common.buttons')}</div>
       <div class="vz-btns">${Array.from({ length: 17 }, (_, i) => `<span class="vz-b" data-b="${i + 1}">${i + 1}</span>`).join('')}</div>
     </section>
-    <section class="vz-card vz-orange" aria-label="Vibration test">
-      <header><span class="vz-ico">${ICON.vib}</span><div class="vz-t"><h3>Vibration test</h3><p>Rumble motor</p></div></header>
+    <section class="vz-card vz-orange" aria-label="${t('test.viz.aria_label.vibration_test')}">
+      <header><span class="vz-ico">${ICON.vib}</span><div class="vz-t"><h3>${t('test.viz.vibration_test')}</h3><p>${t('test.viz.rumble_motor')}</p></div></header>
       <div class="vz-vib" data-vib></div>
     </section>`;
   const $$ = (sel) => root.querySelectorAll(sel);
@@ -61,7 +62,7 @@ export function createViz(ctx) {
     const n = root.querySelector(`.vz-stick[data-side="${k}"]`);
     sticks[k] = { n, dot: n.querySelector('.vz-pdot'), val: n.querySelector('[data-v]'), err: n.querySelector('[data-err]'), trace: n.querySelector('.vz-trace'), bins: new Float32Array(NB), peak: 0 };
   }
-  const resetTrace = () => { for (const s of Object.values(sticks)) { s.bins.fill(0); s.trace.setAttribute('d', ''); s.err.textContent = 'Err:—'; s.err.className = 'vz-err mono'; } };
+  const resetTrace = () => { for (const s of Object.values(sticks)) { s.bins.fill(0); s.trace.setAttribute('d', ''); s.err.textContent = t('test.viz.err'); s.err.className = 'vz-err mono'; } };
   root.querySelector('[data-vz="reset"]').onclick = resetTrace;
 
   function stick(k, x, y) {
@@ -87,8 +88,8 @@ export function createViz(ctx) {
           const mean = sum / filled; let dev = 0;
           for (let i = 0; i < NB; i++) if (s.bins[i] > 0) dev += Math.abs(s.bins[i] - mean);
           const e = (dev / filled / mean) * 100;
-          s.err.textContent = `Err:${e.toFixed(1)}%`; s.err.className = 'vz-err mono ' + (e < 8 ? 'good' : e < 15 ? 'warn' : 'bad');
-        } else s.err.textContent = `Err:— (${Math.round((filled / NB) * 100)}%)`;
+          s.err.textContent = t('test.viz.err_2', { err: e.toFixed(1) }); s.err.className = 'vz-err mono ' + (e < 8 ? 'good' : e < 15 ? 'warn' : 'bad');
+        } else s.err.textContent = t('test.viz.err_3', { percent: Math.round((filled / NB) * 100) });
       }
     }
   }
@@ -97,11 +98,11 @@ export function createViz(ctx) {
   function vibSetup() {
     const c = ctx.state.cfg, box = root.querySelector('[data-vib]');
     const has = !!c && c.rumblePin != null && c.rumblePin !== PIN_NONE;
-    const sig = has ? 'on' : 'off';
+    const sig = has ? t('common.on') : t('common.off');
     if (sig === lastSig) return;
     lastSig = sig;
     if (!has) {
-      box.innerHTML = `<div class="vz-motor off" aria-hidden="true"></div><p class="vz-note" data-note>No rumble motor wired. Pick a pin for it on the <button type="button" class="linklike" data-view-go="tune">Tune page</button> (Rumble, in the advanced options).</p>`;
+      box.innerHTML = `<div class="vz-motor off" aria-hidden="true"></div><p class="vz-note" data-note>${t('test.viz.no_rumble_motor_wired')}</p>`;
       return;
     }
     box.innerHTML = `<div class="vz-motor" data-motor aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="4"/><path d="M14 14a14 14 0 0 0 0 20M34 14a14 14 0 0 1 0 20M8 8a22 22 0 0 0 0 32M40 8a22 22 0 0 1 0 32"/></svg></div>
@@ -118,7 +119,7 @@ export function createViz(ctx) {
         if (i % 2 === 0) { await dev.rumbleTest(seq[i]); await new Promise((r) => setTimeout(r, seq[i])); }
         else await new Promise((r) => setTimeout(r, seq[i]));
       }
-    } catch (e) { ctx.toast('Rumble test failed: ' + e.message, 'bad'); }
+    } catch (e) { ctx.toast(t('tune.rumble.rumble_test_failed', { message: e.message }), 'bad'); }
     if (my === rumbling) motor?.classList.remove('on');
   }
 
@@ -129,7 +130,7 @@ export function createViz(ctx) {
     reset: resetTrace,
     setMode(m) {
       for (const [k, o] of [['L', 7], ['R', 8]]) {
-        const n = outName(o, m), alt = k === 'L' ? (n === 'LT' || n === 'ZL' ? 'L2' : 'LT') : (n === 'RT' || n === 'ZR' ? 'R2' : 'RT');
+        const n = outName(o, m), alt = k === 'L' ? (n === 'LT' || n === 'ZL' ? 'L2' : 'LT') : (n === 'RT' || n === 'ZR' ? t('test.viz.r2') : 'RT');
         root.querySelector(`.vz-trig[data-side="${k}"] [data-name]`).textContent = `${n} / ${alt}`;
       }
       btnSel.forEach((b, i) => (b.title = outName(i + 1, m)));
@@ -151,7 +152,7 @@ export function createViz(ctx) {
       });
       let nb = 0; btnSel.forEach((b, i) => { const on = !!(pad.buttons & (1 << i)); b.classList.toggle('on', on); nb += on; });
       root.querySelector('[data-count]').textContent = `B:17 A:6`;
-      root.querySelector('[data-src]').textContent = `${info.mode} · ${info.live ? 'live' : 'preview'}`;
+      root.querySelector('[data-src]').textContent = `${info.mode} · ${info.live ? t('test.live') : t('test.viz.preview')}`;
       root.dataset.pressed = nb;
       vibSetup();
     },

@@ -1,8 +1,9 @@
 // On-screen US keyboard for the Test page's Keyboard mode: keys bound to a guitar input carry that input's name and light up
 // while the input is pressed. Bindings are cfg.keys (HID usage codes, one per KEY_SLOTS entry).
 import { KEYS } from './protocol.js?v=dev';
+import { t, localized } from './i18n.js?v=dev';
 
-const SLOT_SHORT = ['Green', 'Red', 'Yellow', 'Blue', 'Orange', 'Strum ↑', 'Strum ↓', 'Star', 'Plus', 'Tilt', 'Whammy'];
+const SLOT_SHORT = localized(() => ([t('common.green'), t('common.red'), t('common.yellow'), t('common.blue'), t('common.orange'), t('test.kb.strum'), t('test.kb.strum_2'), t('test.kb.star'), t('common.plus'), t('common.tilt'), t('common.whammy')]));
 const SLOT_COLOR = ['#22c55e', '#ef4444', '#facc15', '#3b82f6', '#fb923c', '#a78bfa', '#a78bfa', '#1cc6ff', '#94a3b8', '#1cc6ff', '#f472b6'];
 export const slotShort = (i) => SLOT_SHORT[i];
 export const slotColor = (i) => SLOT_COLOR[i];

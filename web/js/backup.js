@@ -1,36 +1,37 @@
 // Backup and restore of the controller's settings as a JSON file (in the spirit of GP2040-CE's
 // "Data Backup and Restoration"): pick which sections to save or restore.
 import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, NUM_ATILT_SRC, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX, NUM_MODE_ROWS, MAP_ROW, NUM_SRC, EXT_PIN_NAMES, devNameValid } from './protocol.js?v=dev';
+import { t, localized } from './i18n.js?v=dev';
 
 export const BACKUP_FORMAT = 1;
 
-export const SECTIONS = [
-  { id: 'wiring', name: 'Wiring', desc: 'Button pins, whammy calibration, tilt switch, Bluetooth, USB host port',
+export const SECTIONS = localized(() => ([
+  { id: 'wiring', name: t('backup.section.wiring.name'), desc: t('backup.section.wiring.desc'),
     keys: ['pins', 'whammyCh', 'whammyInvert', 'whammyMin', 'whammyMax', 'tiltPin', 'tiltEnabled', 'tiltInvert', 'tiltFunc', 'btEnabled', 'hostPin'] },
-  { id: 'tilt', name: 'Tilt sensors', desc: 'Analog tilt sensors, accelerometer pins, calibration and filters',
+  { id: 'tilt', name: t('common.tilt_sensors'), desc: t('backup.section.tilt.desc'),
     keys: ['atilt', 'tiltFunc', 'accelSda', 'accelScl', 'accelGate', 'accelMedian', 'accelLowpass'] },
-  { id: 'ports', name: 'Console ports', desc: 'PS2 controller port and Wii extension pins',
+  { id: 'ports', name: t('backup.section.ports.name'), desc: t('backup.section.ports.desc'),
     keys: ['ps2Pins', 'wiiSda', 'wiiScl'] },
-  { id: 'rumble', name: 'Rumble', desc: 'Rumble motor pin, strength and what makes it buzz',
+  { id: 'rumble', name: t('backup.section.rumble.name'), desc: t('backup.section.rumble.desc'),
     keys: ['rumblePin', 'rumbleFlags', 'rumbleStrength'] },
-  { id: 'tuning', name: 'Tuning', desc: 'Debounce, shared strum lockout, whammy smoothing and dead zone',
+  { id: 'tuning', name: t('backup.section.tuning.name'), desc: t('backup.section.tuning.desc'),
     keys: ['debounceMode', 'debounce100us', 'combinedStrum', 'whammySmooth', 'whammyDeadzone'] },
-  { id: 'lights', name: 'Lights', desc: 'LED type and pins, colours, animations, strum bar, star power and whammy effects, brightness, LED order',
+  { id: 'lights', name: t('common.lights'), desc: t('backup.section.lights.desc'),
     keys: ['rgbEnabled', 'rgbBootFlash', 'rgbPin', 'rgbBrightness', 'rgbEffect', 'rgbSpeed', 'ledMap', 'colors', 'ledType', 'ledOrder', 'ledClkPin', 'rgbStarPower',
       'noFretLeds', 'strumLeds', 'strumMap', 'strumColor', 'strumRoles', 'fretLeds', 'ledMap2',
       'zoneFrets', 'zoneStrum', 'fretPress', 'fret2Colors', 'fret2Own', 'strumLedColors', 'strumUpColor', 'strumDownColor',
       'starColor', 'starAnim', 'starZones', 'starSpeed', 'whammyFx', 'whammyZones', 'starFlash', 'sleepMin'] },
-  { id: 'modes', name: 'Modes', desc: 'Default mode, hold-a-fret modes, XInput type, keyboard bindings',
+  { id: 'modes', name: t('common.modes'), desc: t('backup.section.modes.desc'),
     keys: ['usbMode', 'bootModes', 'xinputType', 'starDpadLeft', 'xinputOpts', 'keys'] },
   // firmware 0.42+: these live in the extension page (cfg.ext)
-  { id: 'controls', ext: true, name: 'Extra controls', desc: 'D-pad, Select, Home and analog stick pins, stick direction, dead zone and calibration',
+  { id: 'controls', ext: true, name: t('backup.section.controls.name'), desc: t('backup.section.controls.desc'),
     keys: ['extPins', 'stickCh', 'stickFlags', 'deadzone', 'cal'] },
-  { id: 'mapping', ext: true, name: 'Input mapping', desc: 'What every input does in each console mode',
+  { id: 'mapping', ext: true, name: t('backup.section.mapping.name'), desc: t('backup.section.mapping.desc'),
     keys: ['map', 'curve', 'range'] },
-  { id: 'btsleep', ext: true, name: 'Bluetooth sleep', desc: 'How long the guitar waits before it switches itself off over Bluetooth',
+  { id: 'btsleep', ext: true, name: t('backup.section.btsleep.name'), desc: t('backup.section.btsleep.desc'),
     keys: ['btSleep'] },
-  { id: 'devname', ext: true, name: 'Controller name', desc: 'The name prefix the controller shows up with', keys: ['devName'] },
-];
+  { id: 'devname', ext: true, name: t('backup.section.devname.name'), desc: t('backup.section.devname.desc'), keys: ['devName'] },
+]));
 
 const isPin = (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < NUM_DIGITAL_PINS);
 const isByte = (v) => Number.isInteger(v) && v >= 0 && v <= 255;
@@ -38,7 +39,7 @@ const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const isHex = (v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const isZone = (z) => !!z && typeof z === 'object' && isInt(z.idle, 0, NUM_IDLE - 1) && isInt(z.idleLevel, 0, 100) && isInt(z.press, 0, NUM_PRESS - 1) &&
   isInt(z.speed, 1, 10) && isInt(z.fade, 1, 10) && typeof z.same === 'boolean' && typeof z.perLed === 'boolean';
-const CHECK = {
+const CHECK = localized(() => ({
   pins: (v) => Array.isArray(v) && v.length === FUNCS.length && v.every(isPin),
   whammyCh: (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < 3),
   whammyMin: (v) => Number.isInteger(v) && v >= 0 && v <= 4095,
@@ -76,19 +77,19 @@ const CHECK = {
   accelGate: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
   accelMedian: (v) => Number.isInteger(v) && v >= 0 && v <= 9,
   accelLowpass: (v) => Number.isInteger(v) && v >= 0 && v <= 100,
-};
-export const LABELS = {
+}));
+export const LABELS = localized(() => ({
   pins: 'button pins', whammyCh: 'whammy pin', whammyMin: 'whammy range', whammyMax: 'whammy range', whammyInvert: 'whammy direction',
-  tiltPin: 'tilt pin', tiltEnabled: 'tilt switch', tiltInvert: 'tilt switch type', tiltFunc: 'tilt inputs as buttons', btEnabled: 'Bluetooth', hostPin: 'USB host pins',
-  debounceMode: 'debounce type', debounce100us: 'debounce time', combinedStrum: 'shared strum lockout', whammySmooth: 'whammy smoothing', whammyDeadzone: 'whammy dead zone',
-  rgbEnabled: 'LEDs on/off', rgbBootFlash: 'mode flash', rgbPin: 'LED data pin', rgbBrightness: 'brightness', rgbEffect: 'effect', rgbSpeed: 'effect speed',
-  zoneFrets: 'fret animation', zoneStrum: 'strum bar animation', fretPress: 'fret pressed colours', fret2Colors: 'second fret LED colours', fret2Own: 'second LED own colour',
-  strumLedColors: 'strum LED colours', strumUpColor: 'strum up colour', strumDownColor: 'strum down colour', starColor: 'star power colour', starAnim: 'star power animation',
-  starZones: 'star power zones', starSpeed: 'star power speed', whammyFx: 'whammy effect', whammyZones: 'whammy zones', starFlash: 'star power flash', sleepMin: 'LED sleep timer',
-  ledMap: 'LED order', ledMap2: 'second fret LEDs', fretLeds: 'LEDs per fret', noFretLeds: 'fret LEDs on/off', strumLeds: 'strum LED count', strumMap: 'strum LED order', strumColor: 'strum LED colour', strumRoles: 'strum LED roles', colors: 'fret colours', ledType: 'LED type', ledOrder: 'colour order', ledClkPin: 'LED clock pin', rgbStarPower: 'star power glow',
-  atilt: 'tilt sensors', rumblePin: 'rumble motor pin', ps2Pins: 'PS2 port pins', wiiSda: 'Wii extension SDA', wiiScl: 'Wii extension SCL', rumbleFlags: 'rumble triggers', rumbleStrength: 'rumble strength', accelSda: 'accelerometer SDA pin', accelScl: 'accelerometer SCL pin', accelGate: 'gravity gate', accelMedian: 'median filter', accelLowpass: 'low pass filter',
-  usbMode: 'default mode', bootModes: 'hold-a-fret modes', xinputType: 'XInput guitar type', starDpadLeft: 'star power on D-pad left', xinputOpts: 'Steam receiver option', keys: 'keyboard bindings',
-};
+  tiltPin: 'tilt pin', tiltEnabled: 'tilt switch', tiltInvert: t('backup.tilt_switch_type'), tiltFunc: t('backup.tilt_inputs_as_buttons'), btEnabled: 'Bluetooth', hostPin: t('backup.usb_host_pins'),
+  debounceMode: 'debounce type', debounce100us: 'debounce time', combinedStrum: t('backup.shared_strum_lockout'), whammySmooth: 'whammy smoothing', whammyDeadzone: t('backup.whammy_dead_zone'),
+  rgbEnabled: t('backup.leds_off'), rgbBootFlash: 'mode flash', rgbPin: t('backup.led_data_pin'), rgbBrightness: 'brightness', rgbEffect: 'effect', rgbSpeed: 'effect speed',
+  zoneFrets: 'fret animation', zoneStrum: t('backup.strum_bar_animation'), fretPress: t('backup.fret_pressed_colours'), fret2Colors: t('backup.second_fret_led_colours'), fret2Own: t('backup.second_led_own_colour'),
+  strumLedColors: t('lights.studio.strum_led_colours'), strumUpColor: t('backup.strum_up_colour'), strumDownColor: t('backup.strum_down_colour'), starColor: t('backup.star_power_colour'), starAnim: t('backup.star_power_animation'),
+  starZones: t('lights.studio.star_power_zones_2'), starSpeed: t('lights.studio.star_power_speed'), whammyFx: 'whammy effect', whammyZones: 'whammy zones', starFlash: t('backup.star_power_flash'), sleepMin: t('backup.led_sleep_timer'),
+  ledMap: t('common.led_order'), ledMap2: t('backup.second_fret_leds'), fretLeds: t('backup.leds_per_fret'), noFretLeds: t('backup.fret_leds_off'), strumLeds: t('backup.strum_led_count'), strumMap: t('backup.strum_led_order'), strumColor: t('backup.strum_led_colour'), strumRoles: t('backup.strum_led_roles'), colors: 'fret colours', ledType: t('common.led_type'), ledOrder: 'colour order', ledClkPin: t('backup.led_clock_pin'), rgbStarPower: t('backup.star_power_glow'),
+  atilt: 'tilt sensors', rumblePin: t('backup.rumble_motor_pin'), ps2Pins: t('backup.ps2_port_pins'), wiiSda: t('backup.wii_extension_sda'), wiiScl: t('backup.wii_extension_scl'), rumbleFlags: 'rumble triggers', rumbleStrength: 'rumble strength', accelSda: t('backup.accelerometer_sda_pin'), accelScl: t('backup.accelerometer_scl_pin'), accelGate: 'gravity gate', accelMedian: 'median filter', accelLowpass: t('backup.low_pass_filter'),
+  usbMode: 'default mode', bootModes: t('backup.hold_fret_modes'), xinputType: t('backup.xinput_guitar_type'), starDpadLeft: t('backup.star_power_d_pad_left'), xinputOpts: t('adv.steam_receiver_option'), keys: 'keyboard bindings',
+}));
 Object.assign(CHECK, {
   extPins: (v) => Array.isArray(v) && v.length === EXT_PIN_NAMES.length && v.every(isPin),
   stickCh: (v) => Array.isArray(v) && v.length === 2 && v.every((c) => c === PIN_NONE || isInt(c, 0, 2)),
@@ -100,7 +101,7 @@ Object.assign(CHECK, {
   cal: (v) => Array.isArray(v) && v.length === 6 && v.every((x) => isInt(x, 0, 4095)) && v[0] < v[1] && v[1] < v[2] && v[3] < v[4] && v[4] < v[5],
   map: (v) => Array.isArray(v) && v.length === NUM_MODE_ROWS && v.every((r) => Array.isArray(r) && r.length === MAP_ROW && r.every((x, i) => (i >= NUM_SRC ? x === 255 : x === 0 || x === 255 || isInt(x, 1, 31)))),
 });
-Object.assign(LABELS, { extPins: 'D-pad / Select / Home pins', stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: 'stick dead zone', cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: 'Bluetooth sleep timer', devName: 'controller name' });
+Object.assign(LABELS, { extPins: t('backup.d_pad_select_home_pins'), stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: t('backup.stick_dead_zone'), cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: t('backup.bluetooth_sleep_timer'), devName: 'controller name' });
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));
 
 export function makeBackup(cfg, info) {
@@ -128,9 +129,9 @@ export function backupFileName(info) {
 // Parse and validate a backup file. Returns { meta, sections: {id: {key: value}}, skipped: [keys] }.
 export function readBackup(text) {
   let data;
-  try { data = JSON.parse(text); } catch { throw new Error('That file is not valid JSON.'); }
-  if (!data || data.app !== 'YAGCC' || typeof data.settings !== 'object') throw new Error('That file is not a YAGCC backup.');
-  if (data.format > BACKUP_FORMAT) throw new Error('This backup was made by a newer version of YAGCC. Update the page and try again.');
+  try { data = JSON.parse(text); } catch { throw new Error(t('backup.that_file_not_valid_json')); }
+  if (!data || data.app !== 'YAGCC' || typeof data.settings !== 'object') throw new Error(t('backup.that_file_not_yagcc_backup'));
+  if (data.format > BACKUP_FORMAT) throw new Error(t('backup.this_backup_was_made_by'));
   const sections = {}, skipped = [];
   for (const s of SECTIONS) {
     const src = data.settings[s.id];
@@ -142,7 +143,7 @@ export function readBackup(text) {
     }
     if (Object.keys(out).length) sections[s.id] = out;
   }
-  if (!Object.keys(sections).length) throw new Error('The backup does not contain any settings this version understands.');
+  if (!Object.keys(sections).length) throw new Error(t('backup.backup_does_not_contain_any'));
   return { meta: { created: data.created, firmware: data.firmware, board: data.board }, sections, skipped };
 }
 
@@ -163,7 +164,7 @@ export function applyBackup(cfg, parsed, chosen) {
   if (next.hostPin !== undefined && next.hostPin !== PIN_NONE && (!claim(next.hostPin, 'host') || !claim(next.hostPin + 1, 'host'))) next.hostPin = PIN_NONE;
   if (next.ext) {   // the optional pins must not clash with anything the main config uses
     next.ext.extPins = next.ext.extPins.map((p) => (claim(p, 'e') ? p : PIN_NONE));
-    const bad = next.ext.stickCh.some((c, i) => c !== PIN_NONE && (c === next.whammyCh || next.ext.stickCh.indexOf(c) !== i || (next.atilt || []).some((t) => t.src === c)));
+    const bad = next.ext.stickCh.some((c, i) => c !== PIN_NONE && (c === next.whammyCh || next.ext.stickCh.indexOf(c) !== i || (next.atilt || []).some((tv) => tv.src === c)));
     if (bad) next.ext.stickCh = [PIN_NONE, PIN_NONE];
   }
   return next;

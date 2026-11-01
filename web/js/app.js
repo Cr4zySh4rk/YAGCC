@@ -1,5 +1,5 @@
 import { BT_SLEEP_CHOICES, btSleepByte, DEV_NAME_MAX, DEV_NAME_DEFAULT, devNameBadChars, checkDevName,
-  FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
+  FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName, modeBaseName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
   MAP_DEFAULT, MAP_NONE, ATILT_SOURCES, ACCEL2_MIN_MINOR, TILT_FUNC_MIN_MINOR, FUNC_STAR, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
@@ -14,19 +14,20 @@ import { createTestPage } from './testpage.js?v=dev';
 import { TEST_MODES, testMode, modeFamily, outName, outputSupported, OUT_GROUPS, RANGE_SRC, stickDir } from './mapping.js?v=dev';
 import { createExtras } from './extras.js?v=dev';
 import { SECTIONS, makeBackup, backupFileName, readBackup, applyBackup, download } from './backup.js?v=dev';
+import { t, localized, LANGS, getLang, setLang, isPseudo, applyI18n } from './i18n.js?v=dev';
 
 const $ = (s, r = document) => r.querySelector(s);
 const diff8 = (x, y) => (x - y + 256) & 0xff;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FRET_COLORS = ['#22c55e', '#ef4444', '#facc15', '#3b82f6', '#fb923c'];
-const MODE_USE = {   // one line per mode: where you'd use it
-  10: 'Any console or computer: finds out which and switches itself',
-  11: 'PS5 games (needs a P5General dongle on the host port)',
-  0: 'Windows, Xbox 360, Clone Hero, YARG (not macOS)', 3: 'Rock Band on PS3, RPCS3, Rock Band 4 on PS4 / PS5', 1: 'Guitar Hero on PS3, PS2, RPCS3',
-  2: 'macOS, Linux, Android, emulators', 4: 'Fortnite Festival on PlayStation, Xbox, PC', 5: 'Nintendo Switch, Fortnite Festival',
-  6: 'Rock Band on Wii and Wii U', 7: 'Original Xbox (needs an adapter cable)',
-  8: 'Rock Band 4 on PS4 / PS5 (needs a controller on the host port)', 9: 'Rock Band 4 on Xbox One / Series (needs a controller on the host port)',
-};
+const MODE_USE = localized(() => ({   // one line per mode: where you'd use it
+  10: t('modes.use.any_console_or_computer_finds'),
+  11: t('modes.use.ps5_games_needs_p5general_dongle'),
+  0: t('modes.use.windows_xbox_360_clone_hero'), 3: t('modes.use.rock_band_ps3_rpcs3_rock'), 1: t('modes.use.guitar_hero_ps3_ps2_rpcs3'),
+  2: t('modes.use.macos_linux_android_emulators'), 4: t('modes.use.fortnite_festival_playstation_xbox_pc'), 5: 'Nintendo Switch, Fortnite Festival',
+  6: t('modes.use.rock_band_wii_wii_u'), 7: t('modes.use.original_xbox_needs_adapter_cable'),
+  8: t('modes.use.rock_band_4_ps4_ps5'), 9: t('modes.use.rock_band_4_xbox_one'),
+}));
 
 // macOS has no driver for Xbox 360 (XInput) controllers, so nothing on a Mac sees XInput mode
 const IS_MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || '') && !/iphone|ipad/i.test(navigator.userAgent);
@@ -42,23 +43,23 @@ const tiltFuncOf = (i, c = state.cfg) => (tiltFuncOk() ? c?.tiltFunc?.[i] ?? FUN
 function tiltFuncOptions(sel, whammy) {
   const o = (v, name) => `<option value="${v}" ${String(sel) === String(v) ? 'selected' : ''}>${name}</option>`;
   const grp = (label, ids) => `<optgroup label="${label}">${ids.map((f) => o(f, funcName(f))).join('')}</optgroup>`;
-  const star = o(FUNC_STAR, 'Star power');
-  const more = tiltFuncOk() ? grp('Frets', [0, 1, 2, 3, 4]) + grp('Strum', [5, 6]) + grp('Buttons', [FUNCS.indexOf('plus')]) : '';
-  return (whammy ? o('w', 'Whammy') : '') + star + more;
+  const star = o(FUNC_STAR, t('common.star_power'));
+  const more = tiltFuncOk() ? grp(t('common.frets'), [0, 1, 2, 3, 4]) + grp(t('assign.strum'), [5, 6]) + grp(t('common.buttons'), [FUNCS.indexOf('plus')]) : '';
+  return (whammy ? o('w', t('common.whammy')) : '') + star + more;
 }
 // ---- firmware 0.42+: a tilt input can be assigned to any gamepad output (per-mode input mapping, cfg.ext.map)
 const tiltMapUi = () => fwAtLeast(42) && !!state.cfg?.ext?.map;
-const MAP_MODES = TEST_MODES.filter((m) => !m.keyboard).map((m) => m.id);   // the modes that have a map row
+const MAP_MODES = localized(() => (TEST_MODES.filter((m) => !m.keyboard).map((m) => m.id)));   // the modes that have a map row
 const runMode = () => { const m = state.status?.modeRow >= 0 ? state.status.modeRow : state.info?.mode; return testMode(m) && !testMode(m).keyboard ? m : TEST_MODES[0].id; };
 // the explicit output a tilt source (10 switch, 11 / 12 sensors) has in the running mode, or null = the Tune behaviour
 const tiltMapOut = (src, c = state.cfg) => { if (!tiltMapUi()) return null; const v = c.ext.map[runMode()]?.[src]; return v == null || v === MAP_DEFAULT ? null : v; };
 const PS_SHAPE = ['×', '○', '□', '△'];
-const AXIS_NAME = { 18: 'Left stick left/right axis', 19: 'Left stick up/down axis', 20: 'Right stick left/right axis', 21: 'Right stick up/down axis' };
+const AXIS_NAME = localized(() => ({ 18: t('assign.left_stick_left_right_axis'), 19: t('assign.left_stick_up_down_axis'), 20: t('assign.right_stick_left_right_axis'), 21: t('assign.right_stick_up_down_axis') }));
 function outPickLabel(o, mode) {
   if (AXIS_NAME[o]) return AXIS_NAME[o];
   const nm = outName(o, mode);
   if (o >= 1 && o <= 4 && modeFamily(mode) === 'ps') return PS_SHAPE[o - 1] + ' ' + nm;
-  return o === 7 || o === 8 ? nm + ' (full press)' : nm;
+  return o === 7 || o === 8 ? t('assign.full_press', { nm }) : nm;
 }
 const outIsAnalog = (o) => o >= 18;
 // what a tilt source is assigned to: 'f:<func>' / 'f:w' (Tune behaviour), 'o:<output>', 'none' or 'mixed'
@@ -74,29 +75,29 @@ function assignTilt(src, val, c = state.cfg) {
   MAP_MODES.forEach((m) => { c.ext.map[m][src] = guitar ? MAP_DEFAULT : outputSupported(m, o) ? o : MAP_NONE; });
   c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR];
   if (src === 10) { if (guitar) c.tiltFunc[0] = +val.slice(2); return; }
-  const t = c.atilt[src - 11];
-  if (!guitar) { if (t.target === 0) t.target = 1; }
-  else if (val === 'f:w') t.target = 0;
-  else { t.target = 1; c.tiltFunc[src - 10] = +val.slice(2); }
+  const tv = c.atilt[src - 11];
+  if (!guitar) { if (tv.target === 0) tv.target = 1; }
+  else if (val === 'f:w') tv.target = 0;
+  else { tv.target = 1; c.tiltFunc[src - 10] = +val.slice(2); }
 }
 const assignKind = (v) => (v === 'f:w' ? 'w' : v.startsWith('f:') ? 'func' : v.startsWith('o:') ? (outIsAnalog(+v.slice(2)) ? 'analog' : 'digital') : v);
 function assignSelect(src, label) {
   const v = assignValue(src), mode = runMode();
   const o = (val, name) => `<option value="${val}" ${v === val ? 'selected' : ''}>${name}</option>`;
   const grp = (name, items) => `<optgroup label="${name}">${items.join('')}</optgroup>`;
-  const guitar = [o('f:' + FUNC_STAR, 'Star power (default)'), ...(src > 10 ? [o('f:w', 'Whammy')] : []),
+  const guitar = [o('f:' + FUNC_STAR, t('assign.star_power_default')), ...(src > 10 ? [o('f:w', t('common.whammy'))] : []),
     ...[0, 1, 2, 3, 4, 5, 6].map((f) => o('f:' + f, funcName(f))), o('f:' + FUNCS.indexOf('plus'), funcName(FUNCS.indexOf('plus')))];
   const any = (out) => MAP_MODES.some((m) => outputSupported(m, out));
   const pads = OUT_GROUPS.map((g) => grp(g.name, g.outs.filter(any).map((out) => o('o:' + out, outPickLabel(out, mode)))));
-  const extra = v === 'mixed' ? '<option value="mixed" selected disabled>Different per mode (see Test page)</option>' : v === 'none' ? '<option value="none" selected disabled>Nothing (set on the Test page)</option>' : '';
-  return `<select data-assign="${src}" aria-label="${label} assign to">${extra}${grp('Guitar', guitar)}${pads.join('')}</select>`;
+  const extra = v === 'mixed' ? `<option value="mixed" selected disabled>${t('assign.different_per_mode_see_test')}</option>` : v === 'none' ? `<option value="none" selected disabled>${t('assign.nothing_set_test_page')}</option>` : '';
+  return `<select data-assign="${src}" aria-label="${t('assign.aria_label.assign', { label })}">${extra}${grp(t('assign.guitar'), guitar)}${pads.join('')}</select>`;
 }
 // firmware 0.44+: a 0..1 source (tilt switch, sensors) on a stick axis can rest at the centre or at the opposite end
 const btSleepOk = () => fwAtLeast(45) && !!state.cfg?.ext;
-const btSleepLabel = (v) => (v === 255 ? 'Never' : (v || 2) + (v === 1 ? ' minute' : ' minutes'));
+const btSleepLabel = (v) => (v === 255 ? t('bt.never') : t('app.bt_sleep.minutes', { n: v || 2 }));
 const rangeOk = () => fwAtLeast(44) && !!state.cfg?.ext?.range;
 const rangeFor = (src, v) => { const d = v.startsWith('o:') ? stickDir(+v.slice(2)) : null; return rangeOk() && d ? rangeHtml(RANGE_SRC[src], state.cfg.ext.range[RANGE_SRC[src]], d) : ''; };
-const assignNote = (v) => (v.startsWith('o:') || v === 'mixed') ? `<p class="dim small assign-note">Applied to all modes; fine-tune per mode on the <a href="#" data-goto-test>Test page</a>.</p>` : '';
+const assignNote = (v) => (v.startsWith('o:') || v === 'mixed') ? `<p class="dim small assign-note">${t('assign.applied_all_modes_fine_tune')}</p>` : '';
 function wireAssign(root) {
   root.querySelectorAll('select[data-assign]').forEach((s) => (s.onchange = () => {
     assignTilt(+s.dataset.assign, s.value); pushCfg();
@@ -111,13 +112,12 @@ function tiltFuncSet(s, c = state.cfg) {
   if (!c || !s || !tiltFuncOk()) return out;
   const sw = tiltFuncOf(0, c);
   if (sw !== FUNC_STAR && tiltSwitchActive(s, c) && tiltMapOut(10, c) == null) out.add(sw);
-  tiltStates(s).forEach((t) => { if (t.press && t.func !== FUNC_STAR) out.add(t.func); });
+  tiltStates(s).forEach((tv) => { if (tv.press && tv.func !== FUNC_STAR) out.add(tv.func); });
   return out;
 }
 const availableModes = () => MODES.filter((m) => !m.min || (state.info && (state.info.major > 0 || state.info.minor >= m.min)));
 // HOST_* in firmware auto_detect.h
 const AUTO_HOSTS = ['', 'Windows', 'Xbox 360', 'Xbox One', 'PS3', 'PS4 / PS5', 'Switch', 'Wii', 'PS2', 'OG Xbox'];
-const MAC_XINPUT_TIP = 'macOS has no driver for Xbox 360 controllers. In <b>XInput</b> mode the guitar notices this and switches itself to the <b>HID gamepad</b> a few seconds after plugging in, so Clone Hero and YARG still see it (firmware 0.28 or newer).';
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -128,18 +128,18 @@ const state = { dev: null, info: null, cfg: null, status: null, step: 0, view: '
 
 // ------------------------------------------------------------------ helpers
 function toast(msg, kind = '') {
-  const t = document.createElement('div');
-  t.className = 'toast ' + kind;
-  t.textContent = msg;
-  $('#toasts').appendChild(t);
-  setTimeout(() => t.remove(), 4200);
+  const tv = document.createElement('div');
+  tv.className = 'toast ' + kind;
+  tv.textContent = msg;
+  $('#toasts').appendChild(tv);
+  setTimeout(() => tv.remove(), 4200);
 }
 
 function showView(v) {
   state.view = v;
   scrollTo(0, 0);
   document.querySelectorAll('.view').forEach((e) => e.classList.toggle('active', e.id === 'view-' + v));
-  document.querySelectorAll('#nav [data-view]').forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  document.querySelectorAll('#nav [data-view]').forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); if (on) { b.setAttribute('aria-current', 'page'); try { const n = b.parentElement; if (n.scrollWidth > n.clientWidth) n.scrollLeft = Math.max(0, b.offsetLeft - (n.clientWidth - b.offsetWidth) / 2); } catch { /* ignore */ } } else b.removeAttribute('aria-current'); });
   $('#helpBtn').classList.toggle('active', v === 'hardware' || v === 'compat');
   closeHelp();
   updateBar();
@@ -180,6 +180,8 @@ $('#helpMenu').addEventListener('keydown', (e) => {
 document.addEventListener('click', (e) => { if (!e.target.closest('.nav-help')) closeHelp(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#helpMenu').hidden) { e.stopPropagation(); closeHelp(true); } }, true);
 
+// "a, b and c" in the language's own list style (falls back to commas where Intl.ListFormat is missing)
+const sectionList = (names) => { try { return new Intl.ListFormat(isPseudo() ? 'en' : getLang(), { style: 'long', type: 'conjunction' }).format(names); } catch { return names.join(', '); } };
 const funcName = (i) => FUNC_LABEL[FUNCS[i]];
 const hostPins = (c = state.cfg) => (c.hostPin !== undefined && c.hostPin !== PIN_NONE ? [c.hostPin, c.hostPin + 1] : []);
 const portPins = (c = state.cfg) => [...(c.ps2Pins || []), c.wiiSda ?? PIN_NONE, c.wiiScl ?? PIN_NONE].filter((p) => p !== PIN_NONE);
@@ -192,16 +194,16 @@ const isConfigured = (cfg) => cfg.pins.some((p) => p !== PIN_NONE);
 let pushTimer = 0;
 // ---- custom controller name (firmware 0.46+, ext bytes 328..343): one field in the last Setup step, one on Tune
 const nameOk = () => fwAtLeast(46) && !!state.cfg?.ext;
-const escAttr = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const escAttr = (tv) => String(tv).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 function nameFieldHtml(id) {
   const n = state.cfg.ext.devName || '';
   return `<div class="namefield" data-namefield>
-    <label class="field-label" for="${id}">Controller name <span class="dim">(optional)</span></label>
+    <label class="field-label" for="${id}">${t('name.controller_name_optional')}</label>
     <div class="namerow"><input type="text" id="${id}" class="nameinp" maxlength="${DEV_NAME_MAX}" placeholder="${DEV_NAME_DEFAULT}" value="${escAttr(n)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="${id}Msg">
       <span class="namecnt dim" data-namecnt aria-live="off">${n.length} / ${DEV_NAME_MAX}</span></div>
     <p class="namemsg" id="${id}Msg" data-namemsg role="status" aria-live="polite" hidden></p>
-    <p class="dim">Shows up as: <b data-nameprev>${escAttr((n.trim() || DEV_NAME_DEFAULT) + ' Guitar Controller')}</b></p>
-    <p class="dim small">Your name or gamer tag instead of \u201c${DEV_NAME_DEFAULT}\u201d, up to ${DEV_NAME_MAX} characters: letters, digits, spaces and basic punctuation. Applies after you unplug and replug the guitar (or restart it), and on Bluetooth after its next restart. Windows can keep showing the old name in some places, and may need the guitar unplugged and plugged in again.</p>
+    <p class="dim">${t('name.shows_up_as')}<b data-nameprev>${escAttr(t('name.guitar_controller', { name: n.trim() || DEV_NAME_DEFAULT }))}</b></p>
+    <p class="dim small">${t('name.name_or_gamer_tag_instead', { name: DEV_NAME_DEFAULT, DEV_NAME_MAX })}</p>
   </div>`;
 }
 function wireNameField(id) {
@@ -210,9 +212,9 @@ function wireNameField(id) {
   inp.addEventListener('input', () => {
     const bad = devNameBadChars(inp.value);
     if (bad.length) inp.value = [...inp.value].filter((ch) => ch >= ' ' && ch <= '~').join('');
-    const t = checkDevName(inp.value);
-    if (t.ok && state.cfg.ext.devName !== t.name) { state.cfg.ext.devName = t.name; pushCfg(); }
-    refreshNameFields(bad.length ? 'Only plain keyboard characters work here (letters, digits, spaces, basic punctuation). Others were removed.' : '', inp);
+    const tv = checkDevName(inp.value);
+    if (tv.ok && state.cfg.ext.devName !== tv.name) { state.cfg.ext.devName = tv.name; pushCfg(); }
+    refreshNameFields(bad.length ? t('name.only_plain_keyboard_characters_work') : '', inp);
   });
 }
 function refreshNameFields(msg = '', active = null) {
@@ -221,7 +223,7 @@ function refreshNameFields(msg = '', active = null) {
     const inp = f.querySelector('input');
     if (inp !== active && inp.value.trim() !== n) inp.value = n;
     f.querySelector('[data-namecnt]').textContent = inp.value.length + ' / ' + DEV_NAME_MAX;
-    f.querySelector('[data-nameprev]').textContent = (n || DEV_NAME_DEFAULT) + ' Guitar Controller';
+    f.querySelector('[data-nameprev]').textContent = t('name.guitar_controller', { name: n || DEV_NAME_DEFAULT });
     const m = f.querySelector('[data-namemsg]');
     if (msg && inp === active) { m.textContent = msg; m.hidden = false; clearTimeout(m._t); m._t = setTimeout(() => { m.hidden = true; }, 6000); }
   });
@@ -231,7 +233,7 @@ function pushCfg() {
   checkDirty();
   clearTimeout(pushTimer);
   pushTimer = setTimeout(async () => {
-    try { await state.dev?.setConfig(state.cfg); } catch (e) { toast('Could not send settings: ' + e.message, 'bad'); }
+    try { await state.dev?.setConfig(state.cfg); } catch (e) { toast(t('save.could_not_send_settings', { message: e.message }), 'bad'); }
   }, 80);
 }
 
@@ -257,8 +259,8 @@ function updateBar() {
   document.body.classList.toggle('has-savebar', show);
   if (!show) return;
   const restart = state.view === 'modes' && modesChanged();
-  $('#sbText').textContent = saving ? 'Saving…' : restart ? 'You have unsaved changes on the guitar. Saving restarts it to apply the new modes.' : 'You have unsaved changes on the guitar';
-  $('#sbSave').textContent = restart ? 'Save and restart' : 'Save to guitar';
+  $('#sbText').textContent = saving ? t('save.saving') : restart ? t('save.have_unsaved_changes_guitar_saving') : t('save.have_unsaved_changes_guitar');
+  $('#sbSave').textContent = restart ? t('save.save_restart') : t('save.save_guitar');
   $('#sbSave').disabled = $('#sbUndo').disabled = saving;
 }
 async function saveToController() {
@@ -271,14 +273,14 @@ async function saveToController() {
     await state.dev.save();
     await sleep(400);
     const s = await state.dev.getStatus();
-    if (!s.saveOk) throw new Error('flash write failed');
+    if (!s.saveOk) throw new Error(t('save.flash_write_failed'));
     takeSnapshot();
     if (restart && state.view === 'modes') {
-      toast('Saved. Restarting the controller.', 'ok');
+      toast(t('save.saved_restarting_controller'), 'ok');
       await state.dev.reboot(false);
-    } else toast(restart ? 'Saved. Mode changes apply when you unplug and replug the guitar.' : 'Saved to the guitar', 'ok');
+    } else toast(restart ? t('save.saved_mode_changes_apply_when') : t('save.saved_guitar'), 'ok');
   } catch (e) {
-    toast('Save failed: ' + e.message, 'bad');
+    toast(t('save.save_failed', { message: e.message }), 'bad');
   } finally { saving = false; updateBar(); const b2 = $('#bSave'); if (b2) b2.disabled = false; }
 }
 async function undoChanges() {
@@ -286,10 +288,10 @@ async function undoChanges() {
   clearTimeout(pushTimer);
   bpClose(false); stopLedTest();
   state.cfg = structuredClone(saved);
-  try { await state.dev.setConfig(state.cfg); } catch (e) { toast('Could not send settings: ' + e.message, 'bad'); }
+  try { await state.dev.setConfig(state.cfg); } catch (e) { toast(t('save.could_not_send_settings', { message: e.message }), 'bad'); }
   buildUi();
   checkDirty();
-  toast('Changes undone', 'ok');
+  toast(t('save.changes_undone'), 'ok');
 }
 $('#sbSave').onclick = saveToController;
 $('#sbUndo').onclick = undoChanges;
@@ -315,19 +317,19 @@ function advRefresh() {
   const hint = (sel, hidden, names) => {
     const el = $(sel); if (!el) return;
     el.hidden = hidden || !names.length;
-    el.innerHTML = `More options (${names.join(', ')}). <button type="button" class="linklike" data-adv-on>Turn on Advanced</button>`;
+    el.innerHTML = `${t('adv.more_options', { list: names.join(', ') })}<button type="button" class="linklike" data-adv-on>${t('common.turn_advanced')}</button>`;
   };
   const set = (v) => v !== undefined && v !== PIN_NONE;
-  const tilt = keep('#tiltPanel', set(c.accelSda) || (c.atilt || []).some((t) => t.src !== PIN_NONE));
+  const tilt = keep('#tiltPanel', set(c.accelSda) || (c.atilt || []).some((tv) => tv.src !== PIN_NONE));
   const rumble = keep('#rumblePanel', set(c.rumblePin));
-  hint('#tuneAdvHint', advOn(), [!tilt && 'tilt sensors', !rumble && 'rumble'].filter(Boolean));
+  hint('#tuneAdvHint', advOn(), [!tilt && t('adv.name_tilt_sensors'), !rumble && t('adv.name_rumble')].filter(Boolean));
   const rx = keep('#rxRow', c.xinputOpts & 4);
   const ports = keep('#portsPanel', (c.ps2Pins || []).some((p) => p !== PIN_NONE) || set(c.wiiSda) || (c.xinputOpts & 2));
   const needsHost = MODES.find((m) => m.id === c.usbMode)?.host || (c.bootModes || []).some((id) => MODES.find((m) => m.id === id)?.host);
   const host = keep('#hostPanel', set(c.hostPin) || needsHost);
-  hint('#modesAdvHint', advOn(), [!rx && 'Steam receiver option', !ports && 'PS2 / Wii ports', !host && 'USB host port'].filter(Boolean));
+  hint('#modesAdvHint', advOn(), [!rx && t('adv.steam_receiver_option'), !ports && t('adv.ps2_wii_ports'), !host && t('adv.usb_host_port')].filter(Boolean));
   const order = keep('#ledOrderRow', c.ledType === 2 || c.ledOrder !== 0);
-  hint('#ledAdvHint', advOn() || order || c.ledType === 1 || !c.rgbEnabled, ['colour order']);
+  hint('#ledAdvHint', advOn() || order || c.ledType === 1 || !c.rgbEnabled, [t('adv.name_colour_order')]);
 }
 $('#advSw').addEventListener('change', (e) => {
   setAdv(e.target.checked);
@@ -340,7 +342,7 @@ document.addEventListener('click', (e) => {
   setAdv(true);
   if (state.dev && state.cfg && state.view === 'lights') buildLights();
   if (state.dev && state.cfg && state.view === 'setup' && STEPS[state.step].kind === 'extras') renderStep();
-  toast('Advanced settings are on', 'ok');
+  toast(t('app.misc.advanced_settings_are'), 'ok');
 });
 setAdv(store.get('yacc.adv') === '1', false);
 
@@ -382,8 +384,8 @@ function updateViewer(v, s) {
   });
   // tilt sensors add to the whammy (the larger wins) or press tilt, as in the firmware
   const ts = tiltStates(s);
-  v.g.setWhammy(Math.max(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0, ...ts.map((t) => (t.whammy ? t.value : 0))));
-  v.g.setTilt((tiltSwitchActive(s, cfg) && tiltFuncOf(0, cfg) === FUNC_STAR && tiltMapOut(10, cfg) == null) || ts.some((t) => t.star));   // a tilt acting as another input lights that input instead
+  v.g.setWhammy(Math.max(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0, ...ts.map((tv) => (tv.whammy ? tv.value : 0))));
+  v.g.setTilt((tiltSwitchActive(s, cfg) && tiltFuncOf(0, cfg) === FUNC_STAR && tiltMapOut(10, cfg) == null) || ts.some((tv) => tv.star));   // a tilt acting as another input lights that input instead
   if (v.pinsEl) {
     const used = new Set(assignedPins());
     [...v.pinsEl.children].forEach((d, p) => {
@@ -409,13 +411,13 @@ function liveSources(s, row, mode) {
   const press = (f) => { if (f === FUNC_STAR) { v[7] = 1; tiltStar = true; } else v[f] = 1; };
   const sw = tiltSwitchActive(s, c);
   if (row[10] === 0xff) { if (sw) press(tiltFuncOf(0, c)); } else v[10] = sw ? 1 : 0;
-  (c.atilt || []).forEach((t, i) => {
-    const val = tiltValue(tiltSourceRaw(s, t.src), t);
+  (c.atilt || []).forEach((tv, i) => {
+    const val = tiltValue(tiltSourceRaw(s, tv.src), tv);
     if (val == null) { sensorOn[i] = false; return; }
-    const on = t.threshold / 100;
+    const on = tv.threshold / 100;
     sensorOn[i] = sensorOn[i] ? val > on - 0.04 : val >= on;
     if (row[11 + i] === 0xff) {
-      if (t.target === 0) v[9] = Math.max(v[9], val < c.whammyDeadzone / 100 ? 0 : val);
+      if (tv.target === 0) v[9] = Math.max(v[9], val < c.whammyDeadzone / 100 ? 0 : val);
       else if (sensorOn[i]) press(tiltFuncOf(1 + i, c));
     } else { v[11 + i] = val; tp[i] = sensorOn[i]; }
   });
@@ -424,7 +426,7 @@ function liveSources(s, row, mode) {
 // keyboard mode: which of the 11 key slots (frets, strum, star power, plus, tilt, whammy past half) are held right now
 function keyLive(s) {
   const c = state.cfg, out = c.pins.slice(0, 9).map((p) => isPressed(s, p));
-  out[9] = tiltSwitchActive(s, c) || tiltStates(s).some((t) => t.press);
+  out[9] = tiltSwitchActive(s, c) || tiltStates(s).some((tv) => tv.press);
   out[10] = liveWhammy(s, c) > 0.5;
   return out;
 }
@@ -433,12 +435,12 @@ const testPage = createTestPage({ state, $, toast, pushCfg: () => pushCfg(), mak
 const whammyChannels = () => {
   const c = state.cfg, b = new Set();
   if (c.whammyCh !== PIN_NONE) b.add(c.whammyCh);
-  (c.atilt || []).forEach((t) => { if (t.src < 3) b.add(t.src); });
+  (c.atilt || []).forEach((tv) => { if (tv.src < 3) b.add(tv.src); });
   return b;
 };
 const extras = createExtras({ state, $, toast, pushCfg: () => pushCfg(), assignedPins: () => assignedPins(), whammyChannels, advOn: () => advOn(), rerender: () => renderStep() });
-const EXTRAS_STEP = { kind: 'extras', title: 'More controls', prompt: 'Optional: a D-pad, Select and Home buttons, or an analog stick. Skip this if your guitar has none.', focus: [] };
-const TILTSENS_STEP = { kind: 'tiltsens', title: 'Tilt sensors', prompt: 'Optional: an accelerometer or an analog tilt sensor for star power, whammy or any input. Skip this if you have neither.', focus: ['tilt'] };
+const EXTRAS_STEP = localized(() => ({ kind: 'extras', title: t('setup.extras.extras.title'), prompt: t('setup.extras.extras.prompt'), focus: [] }));
+const TILTSENS_STEP = localized(() => ({ kind: 'tiltsens', title: t('common.tilt_sensors'), prompt: t('setup.steps.tiltsens.prompt'), focus: ['tilt'] }));
 const tiltSensOk = () => fwAtLeast(29) && (state.cfg?.cfgVersion ?? 0) >= 5 && !!state.cfg?.atilt;
 function syncSteps() {
   const has = STEPS.some((st) => st.kind === 'extras'), want = fwAtLeast(42);
@@ -449,7 +451,7 @@ function syncSteps() {
   else if (!wantT && hasT) STEPS.splice(STEPS.findIndex((st) => st.kind === 'tiltsens'), 1);
 }
 // "accelerometer Y -> star power" for each configured tilt sensor; '' when none is set
-const tiltSrcName = (src) => (src < 3 ? `analog GP${26 + src}` : src < 6 ? `accelerometer ${'XYZ'[src - 3]}` : src < 9 ? `LIS3DH ADC ${src - 5}` : `accelerometer 2 ${'XYZ'[src - 9]}`);
+const tiltSrcName = (src) => (src < 3 ? t('tune.tilt.analog_gp', { pin: 26 + src }) : src < 6 ? t('tune.tilt.accelerometer', { axis: 'XYZ'[src - 3] }) : src < 9 ? `LIS3DH ADC ${src - 5}` : t('tune.tilt.accelerometer_2', { axis: 'XYZ'[src - 9] }));
 function tiltDestName(c, i) {
   const v = tiltMapUi() ? assignValue(11 + i, c) : c.atilt[i].target === 0 ? 'f:w' : 'f:' + tiltFuncOf(1 + i, c);
   if (v === 'f:w') return 'whammy';
@@ -457,11 +459,11 @@ function tiltDestName(c, i) {
   if (v.startsWith('o:')) return outPickLabel(+v.slice(2), runMode());
   return v === 'mixed' ? 'per mode' : 'nothing';
 }
-const tiltSensorsSummary = (c) => (c?.atilt || []).map((t, i) => (t.src === PIN_NONE ? '' : `${tiltSrcName(t.src)} \u2192 ${tiltDestName(c, i)}`)).filter(Boolean).join(' \u00b7 ');
+const tiltSensorsSummary = (c) => (c?.atilt || []).map((tv, i) => (tv.src === PIN_NONE ? '' : `${tiltSrcName(tv.src)} \u2192 ${tiltDestName(c, i)}`)).filter(Boolean).join(' \u00b7 ');
 const extrasSummary = (c) => {
   if (!c.ext) return '';
   const n = c.ext.extPins.filter((p) => p !== PIN_NONE).length, st = c.ext.stickCh.some((ch) => ch !== PIN_NONE);
-  return [n ? `${n} pin${n > 1 ? 's' : ''}` : '', st ? 'stick' : ''].filter(Boolean).join(' · ');
+  return [n ? t('app.extras_summary.pin_count', { n }) : '', st ? 'stick' : ''].filter(Boolean).join(' · ');
 };
 
 // ------------------------------------------------------------------ firmware updates
@@ -479,8 +481,8 @@ async function checkFirmware() {
   state.fwOutdated = !!(info && latest && fwOlder(info, latest));
   updatePill();
   if (!state.fwOutdated || store.get('yacc.fwSkip') === `${latest.major}.${latest.minor}`) { banner.hidden = true; return; }
-  banner.innerHTML = `<div class="fw-inner"><span><b>Firmware update available.</b> Your guitar runs v${info.major}.${info.minor}; v${latest.major}.${latest.minor} is out with fixes and new features.</span>
-    <span class="row"><button class="btn primary small" id="fwGo">Update</button><button class="btn small" id="fwLater">Not now</button></span></div>`;
+  banner.innerHTML = `<div class="fw-inner"><span>${t('update.firmware_update_available_guitar_runs', { major: info.major, minor: info.minor, major2: latest.major, minor2: latest.minor })}</span>
+    <span class="row"><button class="btn primary small" id="fwGo">${t('update.update')}</button><button class="btn small" id="fwLater">${t('update.not_now')}</button></span></div>`;
   banner.hidden = false;
   $('#fwGo').onclick = () => goUpdate();
   $('#fwLater').onclick = () => { store.set('yacc.fwSkip', `${latest.major}.${latest.minor}`); banner.hidden = true; };
@@ -497,8 +499,8 @@ async function checkSite() {
     const v = r.ok ? await r.json() : null;
     if (!v?.build || v.build === SITE_BUILD) return;
     const b = $('#siteBanner');
-    b.innerHTML = `<div class="fw-inner"><span><b>The configurator was updated.</b> Reload the page to get the newest version.</span>
-      <span class="row"><button class="btn primary small" id="siteReload">Reload</button></span></div>`;
+    b.innerHTML = `<div class="fw-inner"><span>${t('update.configurator_was_updated_reload_page')}</span>
+      <span class="row"><button class="btn primary small" id="siteReload">${t('update.reload')}</button></span></div>`;
     b.hidden = false;
     $('#siteReload').onclick = () => location.reload();
   } catch { /* offline */ }
@@ -521,23 +523,23 @@ function updatePill() {
   if (state.dev && state.info) {
     pill.classList.add('on');
     const m = MODES.find((x) => x.id === state.info.mode);
-    $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? 'Board'}</span><span class="seg-item">${state.info.setupSession ? 'Setup' : state.info.xinputFallback ? 'XInput → HID' : state.info.autoHost ? `Auto: ${AUTO_HOSTS[state.info.autoHost] || '?'} → ${m ? m.short : '?'}` : m ? m.short : '?'}</span><span class="seg-item mono${state.fwOutdated ? ' old' : ''}" title="${state.fwOutdated ? 'A newer firmware is available' : 'Firmware version'}">v${state.info.major}.${state.info.minor}</span>`;
+    $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? t('conn.board')}</span><span class="seg-item">${state.info.setupSession ? t('common.setup') : state.info.xinputFallback ? 'XInput → HID' : state.info.autoHost ? t('conn.auto', { v: AUTO_HOSTS[state.info.autoHost] || '?', v2: m ? m.short : '?' }) : m ? m.short : '?'}</span><span class="seg-item mono${state.fwOutdated ? ' old' : ''}" title="${state.fwOutdated ? t('conn.fw_newer_title') : t('conn.fw_version_title')}">v${state.info.major}.${state.info.minor}</span>`;
   } else {
     pill.classList.remove('on');
-    $('#connText').textContent = state.connecting ? 'Connecting…' : 'Not connected';
+    $('#connText').textContent = state.connecting ? t('conn.connecting') : t('conn.not_connected');
   }
   const on = !!state.dev;
   document.querySelectorAll('#nav [data-needs-dev]').forEach((b) => {
     b.classList.toggle('nav-off', !on);
-    if (on) b.removeAttribute('title'); else b.title = 'Connect a controller first';
+    if (on) b.removeAttribute('title'); else b.title = t('conn.connect_controller_first');
   });
   $('#heroConnect').hidden = on;
   $('#heroNext').hidden = !on;
   if (on && state.cfg) {
     const done = isConfigured(state.cfg);
-    $('#heroNextTitle').textContent = 'Your guitar is connected';
-    $('#heroNextText').textContent = done ? 'Already set up. Next: review it, or press buttons to try them.' : 'Next: set up the buttons. It takes about a minute.';
-    $('#heroNextBtn').textContent = done ? 'Review the setup \u2192' : 'Set up the buttons \u2192';
+    $('#heroNextTitle').textContent = t('conn.guitar_connected');
+    $('#heroNextText').textContent = done ? t('conn.already_set_up_next_review') : t('conn.next_set_up_buttons_takes');
+    $('#heroNextBtn').textContent = done ? t('conn.review_setup') : t('conn.set_up_buttons');
   }
   $('#setupGate').style.display = on ? 'none' : '';
   $('#setupMain').style.display = on ? '' : 'none';
@@ -574,14 +576,14 @@ async function connect(device, { navigate = false } = {}) {
     buildUi();
     takeSnapshot();
     updatePill();
-    toast('Controller connected', 'ok');
+    toast(t('conn.controller_connected'), 'ok');
     if (state.info.xinputFallback)
-      toast('This computer has no XInput driver, so the guitar is running as a HID gamepad. Games see it as usual.', 'ok');
+      toast(t('conn.this_computer_has_no_xinput'), 'ok');
     checkFirmware();
     if (navigate) showView('setup');
   } catch (e) {
     state.dev = null;
-    toast('Could not open the controller: ' + e.message + (navigator.userAgent.includes('Windows') ? '. On Windows the WinUSB driver may still be installing: unplug, plug back in and try again.' : ''), 'bad');
+    toast(t('conn.could_not_open_controller', { message: e.message, v: navigator.userAgent.includes('Windows') ? t('conn.windows_winusb_driver_may_still') : '' }), 'bad');
   } finally {
     state.connecting = false; updatePill();
   }
@@ -593,7 +595,7 @@ function onLost() {
   $('#fwBanner').hidden = true;
   setTimeout(scanHid, 1500);
   updatePill();
-  toast('Controller disconnected');
+  toast(t('conn.controller_disconnected'));
 }
 
 async function pickAndConnect() {
@@ -601,7 +603,7 @@ async function pickAndConnect() {
     const d = await YaccDevice.pick();
     await connect(d, { navigate: true });
   } catch (e) {
-    if (e.name !== 'NotFoundError') toast('Connection failed: ' + e.message, 'bad');
+    if (e.name !== 'NotFoundError') toast(t('conn.connection_failed', { message: e.message }), 'bad');
   }
 }
 
@@ -623,15 +625,15 @@ function onStatus(s) {
 }
 
 // ------------------------------------------------------------------ guided setup
-const STEPS = [
-  { kind: 'buttons', group: 'Controls', title: 'Buttons', prompt: 'Click Set next to a button (or click it on the guitar), then press that button on your guitar. Or map them all in order.', focus: [] },
-  { kind: 'whammy', title: 'Whammy bar', prompt: 'Move the whammy bar all the way down and back up, twice.', focus: ['whammy'] },
-  { kind: 'rgb', group: 'Lights', title: 'RGB lighting', prompt: 'A few quick questions about your LEDs, then a test.', focus: [] },
-  { kind: 'ledmap', title: 'LED order', prompt: 'Teach YAGCC which LED sits under which fret or on the strum bar.', focus: [] },
-  { kind: 'bluetooth', group: 'Extras', title: 'Bluetooth', prompt: 'Go wireless?', focus: [] },
-  { kind: 'tilt', title: 'Tilt switch', prompt: 'Use a tilt switch as a star power shortcut?', focus: ['tilt'] },
-  { kind: 'review', group: 'Finish', title: 'All done', prompt: 'Check everything, then save it to the controller.', focus: [] },
-];
+const STEPS = localized(() => ([
+  { kind: 'buttons', group: t('setup.steps.buttons.group'), title: t('common.buttons'), prompt: t('setup.steps.buttons.prompt'), focus: [] },
+  { kind: 'whammy', title: t('setup.steps.whammy.title'), prompt: t('setup.steps.whammy.prompt'), focus: ['whammy'] },
+  { kind: 'rgb', group: t('common.lights'), title: t('setup.steps.rgb.title'), prompt: t('setup.steps.rgb.prompt'), focus: [] },
+  { kind: 'ledmap', title: t('common.led_order'), prompt: t('setup.steps.ledmap.prompt'), focus: [] },
+  { kind: 'bluetooth', group: t('setup.steps.bluetooth.group'), title: 'Bluetooth', prompt: t('setup.steps.bluetooth.prompt'), focus: [] },
+  { kind: 'tilt', title: t('common.tilt_switch'), prompt: t('setup.steps.tilt.prompt'), focus: ['tilt'] },
+  { kind: 'review', group: t('setup.steps.review.group'), title: t('setup.steps.review.title'), prompt: t('setup.steps.review.prompt'), focus: [] },
+]));
 
 let stageViewer = null;
 let stepCtx = {};    // per-step transient state
@@ -661,12 +663,12 @@ function stepValue(st) {
   const c = state.cfg;
   if (st.kind === 'buttons') return c.pins.filter((p) => p !== PIN_NONE).length + ' / ' + FUNCS.length;
   if (st.kind === 'whammy') return c.whammyCh === PIN_NONE ? '' : 'GP' + (26 + c.whammyCh);
-  if (st.kind === 'rgb') return c.rgbEnabled ? [['WS2812B', 'SK6812', 'APA102'][c.ledType] || 'WS2812B', c.rgbPin === PIN_NONE ? '' : 'GP' + c.rgbPin].filter(Boolean).join(' \u00b7 ') : 'off';
+  if (st.kind === 'rgb') return c.rgbEnabled ? [['WS2812B', 'SK6812', 'APA102'][c.ledType] || 'WS2812B', c.rgbPin === PIN_NONE ? '' : 'GP' + c.rgbPin].filter(Boolean).join(' \u00b7 ') : t('common.off');
   if (st.kind === 'ledmap') return c.rgbEnabled ? '' : 'n/a';
-  if (st.kind === 'bluetooth') return c.btEnabled ? 'on' : 'off';
+  if (st.kind === 'bluetooth') return c.btEnabled ? t('common.on') : t('common.off');
   if (st.kind === 'extras') return extrasSummary(c);
-  if (st.kind === 'tiltsens') return c.atilt.some((t) => t.src !== PIN_NONE) ? c.atilt.filter((t) => t.src !== PIN_NONE).map((t) => (t.src < 3 ? 'GP' + (26 + t.src) : 'accel')).join(' + ') : 'skipped';
-  if (st.kind === 'tilt') return c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin + (c.tiltInvert && fwAtLeast(33) ? ' NC' : '') : 'off';
+  if (st.kind === 'tiltsens') return c.atilt.some((tv) => tv.src !== PIN_NONE) ? c.atilt.filter((tv) => tv.src !== PIN_NONE).map((tv) => (tv.src < 3 ? 'GP' + (26 + tv.src) : 'accel')).join(' + ') : t('setup.steps.skipped');
+  if (st.kind === 'tilt') return c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin + (c.tiltInvert && fwAtLeast(33) ? ' NC' : '') : t('common.off');
   return '';
 }
 function isStepDone(st, i) {
@@ -709,7 +711,7 @@ function renderStep() {
     <h2 class="step-title">${step.title}</h2><p class="step-prompt">${step.prompt}</p>`;
 
   const nav = (extra = '') => `<div class="step-nav">
-      <button class="btn quiet" id="bBack" ${state.step === 0 ? 'disabled' : ''}>Back</button>
+      <button class="btn quiet" id="bBack" ${state.step === 0 ? 'disabled' : ''}>${t('setup.common.back')}</button>
       <div class="row">${extra}</div></div>`;
   const wireNav = () => { $('#bBack')?.addEventListener('click', () => goStep(state.step - 1)); $('#bSkip')?.addEventListener('click', () => goStep(state.step + 1)); };
 
@@ -722,31 +724,30 @@ function renderStep() {
         const pin = c.pins[i], nm = btnName(i);
         return `<div class="bt ${pin !== PIN_NONE ? 'set' : ''} ${i < NUM_FRETS ? 'fret' : ''}" data-f="${i}" style="--c:${btnColor(i)}">
           <div class="bt-ic">${btnIcon(i)}</div><div class="bt-name">${nm}</div>
-          <div class="bt-pin">${pin !== PIN_NONE ? `<span class="chip">GP${pin}</span>` : '<span class="dim">Not set</span>'}</div>
-          <div class="bt-act"><button class="btn small" data-set aria-label="${pin !== PIN_NONE ? 'Change' : 'Set'} ${nm}">${pin !== PIN_NONE ? 'Change' : 'Set'}</button>${pin !== PIN_NONE ? `<button class="btn small quiet" data-clear aria-label="Clear ${nm}">Clear</button>` : ''}</div></div>`;
+          <div class="bt-pin">${pin !== PIN_NONE ? `<span class="chip">GP${pin}</span>` : `<span class="dim">${t('setup.buttons.not_set')}</span>`}</div>
+          <div class="bt-act"><button class="btn small" data-set aria-label="${pin !== PIN_NONE ? t('setup.buttons.aria_label.change', { nm }) : t('setup.buttons.aria_label.set', { nm })}">${pin !== PIN_NONE ? t('setup.buttons.change') : t('setup.buttons.set')}</button>${pin !== PIN_NONE ? `<button class="btn small quiet" data-clear aria-label="${t('setup.buttons.aria_label.clear', { nm })}">${t('common.clear')}</button>` : ''}</div></div>`;
       }).join('');
       const clearAll = !n ? '' : stepCtx.confirmAll
-        ? `<span class="bt-confirm" role="alertdialog" aria-label="Clear all buttons?">Clear all ${FUNCS.length}? <button class="btn small danger" id="btYes">Yes</button><button class="btn small quiet" id="btNo">No</button></span>`
-        : '<button class="btn small quiet" id="btClearAll">Clear all buttons</button>';
-      card.innerHTML = head + `
-        <div class="bt-top row"><span class="dim small bt-count">${n} of ${FUNCS.length} mapped</span>
-          ${n < FUNCS.length && n > 0 ? '<button class="btn primary" id="btMissing">Map the missing ones</button>' : ''}
-          <button class="btn ${n === 0 ? 'primary' : ''}" id="btAll">Map all buttons</button>
+        ? `<span class="bt-confirm" role="alertdialog" aria-label="Clear all buttons?">${t('setup.buttons.clear_all', { length: FUNCS.length })}<button class="btn small danger" id="btYes">${t('setup.buttons.yes')}</button><button class="btn small quiet" id="btNo">${t('setup.buttons.no')}</button></span>`
+        : `<button class="btn small quiet" id="btClearAll">${t('setup.buttons.clear_all_buttons')}</button>`;
+      card.innerHTML = `${head}
+        <div class="bt-top row">${t('setup.buttons.mapped', { n, length: FUNCS.length, v: n < FUNCS.length && n > 0 ? `<button class="btn primary" id="btMissing">${t('setup.buttons.map_missing_ones')}</button>` : '' })}
+          <button class="btn ${n === 0 ? 'primary' : ''}" id="btAll">${t('setup.buttons.map_all_buttons')}</button>
           <span class="bt-spacer"></span>${clearAll}</div>
-        <div class="bt-note" id="btNote" role="status" aria-live="polite">${btnUndo ? `${btnUndo.label} <button class="btn small" id="btUndo">Undo</button>` : ''}</div>
+        <div class="bt-note" id="btNote" role="status" aria-live="polite">${btnUndo ? `${btnUndo.label} <button class="btn small" id="btUndo">${t('setup.buttons.undo')}</button>` : ''}</div>
         <div class="bt-grid">${tiles}</div>
-        ${nav(`<button class="btn ${n ? 'primary' : ''}" id="bSkip">${n ? 'Continue' : 'Skip'}</button>`)}`;
+        ${nav(`<button class="btn ${n ? 'primary' : ''}" id="bSkip">${n ? t('common.continue') : t('common.skip')}</button>`)}`;
       wireNav();
-      card.querySelectorAll('.bt').forEach((t) => {
+      card.querySelectorAll('.bt').forEach((tv) => {
         // hovering or focusing a tile points at that control on the guitar above
-        const aim = (on) => { t.classList.toggle('aim', on); if (!bp.open) stageViewer?.g.setFocus(on ? [FUNCS[+t.dataset.f]] : []); };
-        t.addEventListener('mouseenter', () => aim(true)); t.addEventListener('mouseleave', () => aim(false));
-        t.addEventListener('focusin', () => aim(true)); t.addEventListener('focusout', () => aim(false));
-        t.querySelector('[data-set]').onclick = (e) => bpOpen(+t.dataset.f, null, e.currentTarget);
-        const cl = t.querySelector('[data-clear]');
+        const aim = (on) => { tv.classList.toggle('aim', on); if (!bp.open) stageViewer?.g.setFocus(on ? [FUNCS[+tv.dataset.f]] : []); };
+        tv.addEventListener('mouseenter', () => aim(true)); tv.addEventListener('mouseleave', () => aim(false));
+        tv.addEventListener('focusin', () => aim(true)); tv.addEventListener('focusout', () => aim(false));
+        tv.querySelector('[data-set]').onclick = (e) => bpOpen(+tv.dataset.f, null, e.currentTarget);
+        const cl = tv.querySelector('[data-clear]');
         if (cl) cl.onclick = () => {
-          const f = +t.dataset.f;
-          btnUndo = { label: `Cleared ${btnName(f)}.`, pins: { [f]: c.pins[f] } };
+          const f = +tv.dataset.f;
+          btnUndo = { label: t('setup.buttons.cleared', { button: btnName(f) }), pins: { [f]: c.pins[f] } };
           c.pins[f] = PIN_NONE; pushCfg(); renderStepList(); draw();
           $(`.bt[data-f="${f}"] [data-set]`)?.focus();
         };
@@ -756,7 +757,7 @@ function renderStep() {
       $('#btClearAll')?.addEventListener('click', () => { stepCtx.confirmAll = true; draw(); $('#btNo').focus(); });
       $('#btNo')?.addEventListener('click', () => { stepCtx.confirmAll = false; draw(); $('#btClearAll')?.focus(); });
       $('#btYes')?.addEventListener('click', () => {
-        btnUndo = { label: `Cleared all ${n} buttons.`, pins: Object.fromEntries(c.pins.map((p, i) => [i, p]).filter(([, p]) => p !== PIN_NONE)) };
+        btnUndo = { label: t('setup.buttons.cleared_all_buttons', { n }), pins: Object.fromEntries(c.pins.map((p, i) => [i, p]).filter(([, p]) => p !== PIN_NONE)) };
         c.pins.fill(PIN_NONE); stepCtx.confirmAll = false; pushCfg(); renderStepList(); draw(); $('#btAll').focus();
       });
       $('#btUndo')?.addEventListener('click', btnUndoNow);
@@ -766,18 +767,18 @@ function renderStep() {
   } else if (step.kind === 'whammy') {
     stepCtx.cal = new WhammyCalibrator();
     const have = state.cfg.whammyCh !== PIN_NONE;
-    card.innerHTML = head + `
+    card.innerHTML = `${head}
       <div class="result ${have ? 'ok' : ''}" id="result">${have
-        ? `Calibrated on <span class="chip">GP${26 + state.cfg.whammyCh}</span> (${state.cfg.whammyMin}–${state.cfg.whammyMax}${state.cfg.whammyInvert ? ', inverted' : ''})`
-        : '<span class="pulse"></span><span>Waiting for the bar to move…</span>'}</div>
-      <div class="dim small" style="margin-bottom:8px" id="wLabel">${have ? 'Live input' : 'Sweeps detected: 0 / 2'}</div>
+        ? t('setup.whammy.calibrated_gp', { pin: 26 + state.cfg.whammyCh, whammyMin: state.cfg.whammyMin, whammyMax: state.cfg.whammyMax, v: state.cfg.whammyInvert ? t('setup.whammy.inverted') : '' })
+        : `<span class="pulse"></span><span>${t('setup.whammy.waiting_bar_move')}</span>`}</div>
+      <div class="dim small" style="margin-bottom:8px" id="wLabel">${have ? t('setup.whammy.live_input') : t('setup.whammy.sweeps_detected_0_2')}</div>
       <div class="bar"><i id="wBar" style="width:0"></i></div>
-      <div class="adcs"><p class="adcs-note">Raw analog inputs. The one your bar is wired to should swing. If the wrong one gets picked, press <b>Use</b> next to the right pin.</p>
-        ${[0, 1, 2].map((c) => `<div class="adc-row" data-ch="${c}"><span class="chip">GP${26 + c}</span><div class="bar"><i></i></div><span class="val">0</span><button class="btn small quiet" data-use="${c}">Use</button></div>`).join('')}
+      <div class="adcs"><p class="adcs-note">${t('setup.whammy.raw_analog_inputs_one_bar')}</p>
+        ${[0, 1, 2].map((c) => `<div class="adc-row" data-ch="${c}"><span class="chip">GP${26 + c}</span><div class="bar"><i></i></div><span class="val">0</span><button class="btn small quiet" data-use="${c}">${t('setup.whammy.use')}</button></div>`).join('')}
         <div class="row" id="wManual" style="margin-top:10px;display:none;flex-wrap:wrap">
-          <span class="dim small" style="flex-basis:100%">Manual calibration: leave the bar at rest and press <b>Capture rest</b>, then hold it all the way down and press <b>Capture full</b>.</span>
-          <button class="btn small" id="wCapRest">Capture rest</button><button class="btn small" id="wCapFull">Capture full</button><span class="muted" id="wCapInfo" style="font-size:12px"></span></div></div>
-      ${nav(`<button class="btn quiet" id="wRedo">Recalibrate</button><button class="btn ${have ? 'primary' : ''}" id="bSkip">${have ? 'Continue' : 'Skip'}</button>`)}`;
+          <span class="dim small" style="flex-basis:100%">${t('setup.whammy.manual_calibration_leave_bar_at')}</span>
+          <button class="btn small" id="wCapRest">${t('setup.whammy.capture_rest')}</button><button class="btn small" id="wCapFull">${t('setup.whammy.capture_full')}</button><span class="muted" id="wCapInfo" style="font-size:12px"></span></div></div>
+      ${nav(`<button class="btn quiet" id="wRedo">${t('setup.whammy.recalibrate')}</button><button class="btn ${have ? 'primary' : ''}" id="bSkip">${have ? t('common.continue') : t('common.skip')}</button>`)}`;
     wireNav();
     stepCtx.done = have;
     document.querySelectorAll('[data-use]').forEach((b) => b.addEventListener('click', () => {
@@ -786,20 +787,20 @@ function renderStep() {
       stepCtx.manual = { ch: +b.dataset.use };
       $('#wManual').style.display = '';
       $('#wCapInfo').textContent = '';
-      setResult('', `<span class="pulse"></span><span>Using <span class="chip">GP${26 + +b.dataset.use}</span>. Move the bar through two full sweeps.</span>`);
+      setResult('', `<span class="pulse"></span><span>${t('setup.whammy.using_gp_move_bar_through', { pin: 26 + +b.dataset.use })}</span>`);
     }));
     const capture = (which) => {
       const m = stepCtx.manual, s = state.status;
       if (!m || !s) return;
       m[which] = s.adc[m.ch];
-      $('#wCapInfo').textContent = `rest ${m.rest ?? '–'} · full ${m.full ?? '–'}`;
+      $('#wCapInfo').textContent = t('setup.whammy.rest_full', { rest: m.rest ?? '–', full: m.full ?? '–' });
       if (m.rest != null && m.full != null) {
-        if (Math.abs(m.full - m.rest) < 8) { setResult('bad', 'The reading barely changed between rest and full. Check the whammy wiring.'); return; }
+        if (Math.abs(m.full - m.rest) < 8) { setResult('bad', t('setup.whammy.reading_barely_changed_between_rest')); return; }
         Object.assign(state.cfg, { whammyCh: m.ch, whammyMin: Math.min(m.rest, m.full), whammyMax: Math.max(m.rest, m.full), whammyInvert: m.rest > m.full });
         pushCfg();
         stepCtx.done = true;
-        setResult('ok', `Calibrated on <span class="chip">GP${26 + m.ch}</span> (${state.cfg.whammyMin}–${state.cfg.whammyMax}${state.cfg.whammyInvert ? ', inverted' : ''})`);
-        const bs = $('#bSkip'); if (bs) { bs.textContent = 'Continue'; bs.classList.add('primary'); }
+        setResult('ok', t('setup.whammy.calibrated_gp', { pin: 26 + m.ch, whammyMin: state.cfg.whammyMin, whammyMax: state.cfg.whammyMax, v: state.cfg.whammyInvert ? t('setup.whammy.inverted') : '' }));
+        const bs = $('#bSkip'); if (bs) { bs.textContent = t('common.continue'); bs.classList.add('primary'); }
       }
     };
     $('#wCapRest').addEventListener('click', () => capture('rest'));
@@ -817,47 +818,47 @@ function renderStep() {
       renderStepList();   // the list shows the LED type and pin
       const used = new Set(assignedPins());
       const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p));
-      const pinOpts = (own, other) => `<option value="255">Choose pin…</option>${free.concat(own !== PIN_NONE ? [own] : []).sort((a, b) => a - b).map((p) => `<option value="${p}" ${p === own ? 'selected' : ''} ${p === other ? 'disabled' : ''}>GP${p}</option>`).join('')}`;
+      const pinOpts = (own, other) => `<option value="255">${t('common.choose_pin')}</option>${free.concat(own !== PIN_NONE ? [own] : []).sort((a, b) => a - b).map((p) => `<option value="${p}" ${p === own ? 'selected' : ''} ${p === other ? 'disabled' : ''}>GP${p}</option>`).join('')}`;
       const chain = ledLayout(c).chain;
       let q = '', body = '', next = '';
       if (f.sub === 'ask') {
-        q = 'Did you wire LEDs?';
-        body = `<p class="dim">Addressable LEDs under the frets or on the strum bar.</p>
-          <div class="led-ask"><button class="btn lg ${c.rgbEnabled ? 'primary' : ''}" id="askYes">Yes, I wired LEDs</button><button class="btn lg" id="askNo">No, I don't have LEDs</button></div>`;
+        q = t('setup.rgb.did_wire_leds');
+        body = `<p class="dim">${t('setup.rgb.addressable_leds_under_frets_or')}</p>
+          <div class="led-ask"><button class="btn lg ${c.rgbEnabled ? 'primary' : ''}" id="askYes">${t('setup.rgb.yes_i_wired_leds')}</button><button class="btn lg" id="askNo">${t('setup.rgb.no_i_don_t_have')}</button></div>`;
       } else if (f.sub === 'type') {
-        q = 'Which LEDs do you have?';
-        body = `${ledTypeCards(c)}<p class="dim small led-hint">Not sure? Count the wires going into the first LED: <b>3</b> means WS2812B, <b>4</b> means APA102.</p>
-          ${apa && !fwApaOk() ? `<div class="notice warn">APA102 LEDs need firmware 0.32 or newer. Yours is v${state.info.major}.${state.info.minor}. <button type="button" class="btn small" data-led-update>Update firmware</button></div>` : ''}`;
-        next = '<button class="btn primary" id="lNext">Continue</button>';
+        q = t('setup.rgb.which_leds_do_have');
+        body = `${ledTypeCards(c)}<p class="dim small led-hint">${t('setup.rgb.not_sure_count_wires_going')}</p>
+          ${apa && !fwApaOk() ? `<div class="notice warn">${t('setup.rgb.apa102_leds_need_firmware_0', { major: state.info.major, minor: state.info.minor })}<button type="button" class="btn small" data-led-update>${t('common.update_firmware')}</button></div>` : ''}`;
+        next = `<button class="btn primary" id="lNext">${t('common.continue')}</button>`;
       } else if (f.sub === 'layout') {
-        q = 'Where are the LEDs?';
+        q = t('setup.rgb.where_are_leds');
         body = ledLayoutControls(c);
-        next = `<button class="btn primary" id="lNext" ${chain ? '' : 'disabled'}>Continue</button>`;
+        next = `<button class="btn primary" id="lNext" ${chain ? '' : 'disabled'}>${t('common.continue')}</button>`;
       } else if (f.sub === 'pins') {
-        q = 'Which pins are they wired to?';
+        q = t('setup.rgb.which_pins_are_they_wired');
         const d = c.rgbPin === PIN_NONE ? 'a pin' : 'GP' + c.rgbPin;
-        const wire = apa ? `Pico ${d} → first LED's DI (SDI), Pico ${c.ledClkPin === PIN_NONE ? 'a pin' : 'GP' + c.ledClkPin} → its CI (CKI). LED 5V → VBUS, GND → GND.`
-          : `Pico ${d} → first LED's DIN (the arrow on the strip points away from the Pico). LED 5V → VBUS, GND → GND.`;
-        body = `<div class="opt first"><div><h3>Data pin</h3><p class="dim">${apa ? 'DI / SDI' : 'DIN'} of the first LED.</p></div><select id="rgbPinSel">${pinOpts(c.rgbPin, apa ? c.ledClkPin : PIN_NONE)}</select></div>
-          ${apa ? `<div class="opt"><div><h3>Clock pin</h3><p class="dim">CI / CKI of the first LED. Not the same pin as data.</p></div><select id="rgbClkSel">${pinOpts(c.ledClkPin, c.rgbPin)}</select></div>` : ''}
+        const wire = apa ? t('setup.rgb.pico_first_led_s_di', { d, v: c.ledClkPin === PIN_NONE ? 'a pin' : 'GP' + c.ledClkPin })
+          : t('setup.rgb.pico_first_led_s_din', { d });
+        body = `<div class="opt first"><div><h3>${t('setup.rgb.data_pin')}</h3><p class="dim">${t('setup.rgb.first_led', { v: apa ? 'DI / SDI' : 'DIN' })}</p></div><select id="rgbPinSel">${pinOpts(c.rgbPin, apa ? c.ledClkPin : PIN_NONE)}</select></div>
+          ${apa ? `<div class="opt"><div><h3>${t('setup.rgb.clock_pin')}</h3><p class="dim">${t('setup.rgb.ci_cki_first_led_not')}</p></div><select id="rgbClkSel">${pinOpts(c.ledClkPin, c.rgbPin)}</select></div>` : ''}
           <p class="led-wire">${wire}</p>
-          <div class="slider-row"><label for="rgbBriS">Brightness</label><span class="val" id="rgbBriSVal">${c.rgbBrightness}</span>
+          <div class="slider-row"><label for="rgbBriS">${t('common.brightness')}</label><span class="val" id="rgbBriSVal">${c.rgbBrightness}</span>
             <input type="range" id="rgbBriS" min="0" max="${maxBrightness(c)}" step="1" value="${c.rgbBrightness}"></div>
           ${brightNote(c)}`;
-        next = `<button class="btn primary" id="lNext" ${c.rgbPin === PIN_NONE || (apa && (c.ledClkPin === PIN_NONE || c.ledClkPin === c.rgbPin)) ? 'disabled' : ''}>Continue</button>`;
+        next = `<button class="btn primary" id="lNext" ${c.rgbPin === PIN_NONE || (apa && (c.ledClkPin === PIN_NONE || c.ledClkPin === c.rgbPin)) ? 'disabled' : ''}>${t('common.continue')}</button>`;
       } else {
         const why = ledWhyDark(c);
-        q = 'Test the LEDs';
-        body = `<p class="dim">${LED_SHORT[c.ledType]} on GP${c.rgbPin}${apa ? ' + GP' + c.ledClkPin : ''}. Each LED lights white in turn.</p>
-          ${why ? `<div class="notice warn">They would stay dark: ${why}.</div>` : ''}
-          <div class="row"><button class="btn primary lg" id="ledRun">${f.ran ? 'Test again' : 'Light them up'}</button></div>
-          ${f.ran ? `<h3 class="led-q2">Did the LEDs light up?</h3>
-            <div class="led-ask"><button class="btn lg primary" id="litYes">Yes, they lit up</button><button class="btn lg" id="litNo">No</button></div>` : ''}
-          ${f.failed ? `<div class="notice warn">No problem. If it is the wrong type, <a href="#" id="chgType">pick the LED type again</a>. Otherwise work through this list.</div>${ledHelpHtml(c, true)}` : ''}`;
+        q = t('setup.rgb.test_leds');
+        body = `<p class="dim">${t('setup.rgb.gp_each_led_lights_white', { ledType: LED_SHORT[c.ledType], rgbPin: c.rgbPin, v: apa ? ' + GP' + c.ledClkPin : '' })}</p>
+          ${why ? `<div class="notice warn">${why}</div>` : ''}
+          <div class="row"><button class="btn primary lg" id="ledRun">${f.ran ? t('setup.rgb.test_again') : t('setup.rgb.light_them_up')}</button></div>
+          ${f.ran ? `<h3 class="led-q2">${t('setup.rgb.did_leds_light_up')}</h3>
+            <div class="led-ask"><button class="btn lg primary" id="litYes">${t('setup.rgb.yes_they_lit_up')}</button><button class="btn lg" id="litNo">${t('setup.buttons.no')}</button></div>` : ''}
+          ${f.failed ? `<div class="notice warn">${t('setup.rgb.no_problem_if_wrong_type')}</div>${ledHelpHtml(c, true)}` : ''}`;
       }
-      card.innerHTML = head + `<div class="led-steps" aria-label="Question ${k + 1} of ${SUBS.length}">${SUBS.map((s, i) => `<i class="${i <= k ? 'on' : ''}"></i>`).join('')}</div>
+      card.innerHTML = `${head}<div class="led-steps" aria-label="${t('setup.rgb.aria_label.question', { n: k + 1, length: SUBS.length })}">${SUBS.map((s, i) => `<i class="${i <= k ? 'on' : ''}"></i>`).join('')}</div>
         <h3 class="led-q">${q}</h3>${body}
-        <div class="step-nav"><button class="btn quiet" id="lBack">Back</button><div class="row">${next}</div></div>`;
+        <div class="step-nav"><button class="btn quiet" id="lBack">${t('setup.common.back')}</button><div class="row">${next}</div></div>`;
       const go = (sub) => { stopLedTest(); ledFlow = { ...ledFlow, sub, failed: false }; renderRgb(); };
       $('#lBack').onclick = () => (k === 0 ? (state.step === 0 ? null : goStep(state.step - 1)) : go(SUBS[k - 1]));
       if (k === 0 && state.step === 0) $('#lBack').disabled = true;
@@ -873,7 +874,7 @@ function renderStep() {
       }
       if (f.sub === 'test') {
         $('#ledRun').onclick = async () => {
-          const ok = await ledTestButton($('#ledRun'), 'Test again');
+          const ok = await ledTestButton($('#ledRun'), t('setup.rgb.test_again'));
           if (ok && ledFlow === f && state.step === STEPS.indexOf(step)) { f.ran = true; renderRgb(); }
         };
         $('#litYes')?.addEventListener('click', leave);
@@ -887,8 +888,8 @@ function renderStep() {
     const lay = ledLayout(c);
     const why = ledWhyDark(c);
     if (why) {    // nothing would light, so don't start the wizard (and keep stepCtx empty so tickStep stays idle)
-      card.innerHTML = head + `<div class="result bad"><span>The LEDs can't light up yet: ${why}.</span></div>
-        <div class="row led-gap"><button class="btn primary" id="mBackSetup">Go back to LED setup</button></div>
+      card.innerHTML = `${head}<div class="result bad"><span>${why}</span></div>
+        <div class="row led-gap"><button class="btn primary" id="mBackSetup">${t('setup.ledmap.go_back_led_setup')}</button></div>
         ${ledHelpHtml(c)}${nav('')}`;
       wireNav();
       $('#mBackSetup').addEventListener('click', () => {
@@ -918,15 +919,15 @@ function renderStep() {
       if (f < 0 && lay.frets && lay.per === 2) f = (c.ledMap2 || []).indexOf(pos);
       if (f >= 0) return `<b style="color:${c.colors[f]}">${funcName(f)}</b>`;
       const k = c.strumMap.slice(0, lay.strum).indexOf(pos);
-      return k >= 0 ? `<b>Strum ${k + 1}</b>` : '<b>?</b>';
+      return k >= 0 ? `<b>${t('setup.ledmap.strum', { n: k + 1 })}</b>` : '<b>?</b>';
     };
     const draw = () => {
       if (stepCtx.idx >= lay.chain) {
         finish();
         clearInterval(stepCtx.timer); stepCtx.timer = 0;
         state.dev?.ledTest(-1).catch(() => {});
-        card.innerHTML = head + `<div class="result ok">LED order: ${[...Array(lay.chain).keys()].map(label).join(' → ')}</div>
-          ${nav('<button class="btn quiet" id="mRedo">Redo</button><button class="btn primary" id="bSkip">Continue</button>')}`;
+        card.innerHTML = `${head}<div class="result ok">${t('setup.ledmap.led_order', { list: [...Array(lay.chain).keys()].map(label).join(' → ') })}</div>
+          ${nav(`<button class="btn quiet" id="mRedo">${t('setup.ledmap.redo')}</button><button class="btn primary" id="bSkip">${t('common.continue')}</button>`)}`;
         wireNav();
         $('#mRedo').addEventListener('click', () => renderStep());
         return;
@@ -935,13 +936,13 @@ function renderStep() {
         const f = stepCtx.assign.indexOf(i) >= 0 ? stepCtx.assign.indexOf(i) : stepCtx.assign2.indexOf(i), sk = stepCtx.strumAssign.indexOf(i);
         return `<i class="${i === stepCtx.idx ? 'lit' : f >= 0 || sk >= 0 ? 'done' : ''}" style="--c:${f >= 0 ? c.colors[f] : '#fff'}"></i>`;
       }).join('');
-      const what = (lay.frets && lay.strum ? 'Press the fret above it, or strum if it is on the strum bar.'
-        : lay.frets ? 'Press the fret above it.' : 'Strum once.') + (lay.frets && lay.per === 2 ? ' Each fret has two LEDs, so you press every fret twice in all.' : '');
+      const what = (lay.frets && lay.strum ? t('setup.ledmap.press_fret_above_or_strum')
+        : lay.frets ? t('setup.ledmap.press_fret_above') : t('setup.ledmap.strum_once')) + (lay.frets && lay.per === 2 ? t('setup.ledmap.each_fret_has_two_leds') : '');
       const noPins = lay.frets ? c.pins.slice(0, NUM_FRETS).every((p) => p === PIN_NONE) : (c.pins[5] === PIN_NONE && c.pins[6] === PIN_NONE);
-      card.innerHTML = head + `<div class="led-test">${dots}</div>
-        <div class="result"><span class="pulse"></span><span>${!lay.chain ? 'No LEDs are set up. Go back and choose fret and / or strum LEDs.' : noPins ? 'The frets / strum bar are not assigned yet. Go back and map them first.' : `LED ${stepCtx.idx + 1} of ${lay.chain} is lit white. ${what}`}</span></div>
-        <p class="led-gap"><a href="#" id="mHelp">Not lighting up?</a></p>${stepCtx.showHelp ? ledHelpHtml(c, true) : ''}
-        ${nav('<button class="btn" id="mSkipLed">Skip this LED</button>')}`;
+      card.innerHTML = `${head}<div class="led-test">${dots}</div>
+        <div class="result"><span class="pulse"></span><span>${!lay.chain ? t('setup.ledmap.no_leds_are_set_up') : noPins ? t('setup.ledmap.frets_strum_bar_are_not') : t('setup.ledmap.led_lit_white', { n: stepCtx.idx + 1, chain: lay.chain, what })}</span></div>
+        <p class="led-gap"><a href="#" id="mHelp">${t('setup.ledmap.not_lighting_up')}</a></p>${stepCtx.showHelp ? ledHelpHtml(c, true) : ''}
+        ${nav(`<button class="btn" id="mSkipLed">${t('setup.ledmap.skip_this_led')}</button>`)}`;
       wireNav();
       $('#mHelp').addEventListener('click', (e) => { e.preventDefault(); stepCtx.showHelp = !stepCtx.showHelp; draw(); });
       $('#mSkipLed').addEventListener('click', () => { stepCtx.idx++; stepCtx.base = null; draw(); sendTest(); });
@@ -953,19 +954,19 @@ function renderStep() {
   } else if (step.kind === 'bluetooth') {
     const sup = state.info.btSupported;
     const why = state.info.board === 4
-      ? 'This is a Pico-compatible clone. Its ESP8285 chip only does Wi-Fi, so there is no Bluetooth radio to use.'
-      : 'This board has no Bluetooth radio. Only the Pico W and Pico 2 W can go wireless.';
+      ? t('setup.bluetooth.this_pico_compatible_clone_its')
+      : t('setup.bluetooth.this_board_has_no_bluetooth');
     card.innerHTML = head + `
-      <div class="opt first"><div><h3>Bluetooth</h3><p class="dim">${sup ? 'To pair, hold <b>Star power</b> while plugging in or switching on (or hold <b>Star power + Plus</b> for 5 s). The frets double-blink blue until it connects, then the guitar reconnects by itself every time it is switched on. Each mode is its own Bluetooth device (\u201cYAGCC PS3 GH\u201d, \u201cYAGCC XInput\u201d, \u2026), paired once; Star power at power-on forgets only the mode it starts in.' : why}</p></div>
+      <div class="opt first"><div><h3>Bluetooth</h3><p class="dim">${sup ? t('setup.bluetooth.pair_hold_star_power_while') : why}</p></div>
         <label class="switch"><input type="checkbox" id="btSw" ${state.cfg.btEnabled ? 'checked' : ''} ${sup ? '' : 'disabled'}><i></i></label></div>
-      ${sup ? '<div class="notice">Over Bluetooth the guitar shows up as the same controller as over USB in its current mode (XInput and Xbox modes use the standard gamepad). Hold <b>Star power + a fret</b> for 3 s to switch modes wirelessly. Plugging it into a PC or console switches Bluetooth off until it is unplugged; a charger doesn\u2019t.</div>' : ''}
-      ${sup && btSleepOk() ? `<div class="opt"><div><h3>Sleep after</h3><p class="dim">On Bluetooth with no USB host: no button press for this long turns the guitar off; press any button to wake it. Moving the whammy bar or stick counts as a press; tilting does not.</p></div>
-        <select id="btSleepSel" aria-label="Sleep after">${BT_SLEEP_CHOICES.map((v) => `<option value="${v}" ${v === state.cfg.ext.btSleep ? 'selected' : ''}>${btSleepLabel(v)}${v === 0 ? ' (default)' : ''}</option>`).join('')}</select></div>` : sup ? '<p class="dim">Update the firmware to 0.45 or newer to make the guitar switch itself off when idle on Bluetooth.</p>' : ''}
-      ${sup ? `<div class="opt adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}"><div><h3>Debug logging</h3><p class="dim">Records Bluetooth connections in the guitar's memory, kept across power cycles until cleared, to track down connection problems. Off by default; leave it off for normal use.</p></div>
+      ${sup ? `<div class="notice">${t('setup.bluetooth.over_bluetooth_guitar_shows_up')}</div>` : ''}
+      ${sup && btSleepOk() ? `<div class="opt"><div><h3>${t('setup.bluetooth.sleep_after')}</h3><p class="dim">${t('setup.bluetooth.bluetooth_with_no_usb_host')}</p></div>
+        <select id="btSleepSel" aria-label="${t('setup.bluetooth.aria_label.sleep_after')}">${BT_SLEEP_CHOICES.map((v) => `<option value="${v}" ${v === state.cfg.ext.btSleep ? 'selected' : ''}>${btSleepLabel(v)}${v === 0 ? t('setup.bluetooth.default') : ''}</option>`).join('')}</select></div>` : sup ? `<p class="dim">${t('setup.bluetooth.update_firmware_0_45_or')}</p>` : ''}
+      ${sup ? `<div class="opt adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}"><div><h3>${t('setup.bluetooth.debug_logging')}</h3><p class="dim">${t('setup.bluetooth.records_bluetooth_connections_guitar_s')}</p></div>
         <label class="switch"><input type="checkbox" id="btLogSw" ${state.cfg.btDebugLog ? 'checked' : ''}><i></i></label></div>
-      <div class="opt adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}"><div><h3>Bluetooth log</h3><p class="dim">What was recorded while debug logging was on.</p></div><span class="row"><button class="btn small" id="btLogBtn">Show</button><button class="btn small" id="btLogClear" hidden>Clear</button></span></div><pre class="btlog adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}" id="btLog" hidden></pre>
-      <p class="adv-hint" ${state.cfg.btDebugLog ? 'hidden' : ''}>More options (debug logging, Bluetooth log). <button type="button" class="linklike" data-adv-on>Turn on Advanced</button></p>` : ''}
-      ${nav('<button class="btn primary" id="bSkip">Continue</button>')}`;
+      <div class="opt adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}"><div><h3>${t('setup.bluetooth.bluetooth_log')}</h3><p class="dim">${t('setup.bluetooth.what_was_recorded_while_debug')}</p></div><span class="row"><button class="btn small" id="btLogBtn">${t('setup.bluetooth.show')}</button><button class="btn small" id="btLogClear" hidden>${t('common.clear')}</button></span></div><pre class="btlog adv ${state.cfg.btDebugLog ? 'adv-keep' : ''}" id="btLog" hidden></pre>
+      <p class="adv-hint" ${state.cfg.btDebugLog ? 'hidden' : ''}>${t('setup.bluetooth.more_options_debug_logging_bluetooth')}<button type="button" class="linklike" data-adv-on>${t('common.turn_advanced')}</button></p>` : ''}
+      ${nav(`<button class="btn primary" id="bSkip">${t('common.continue')}</button>`)}`;
     wireNav();
     $('#btLogBtn')?.addEventListener('click', async () => {
       const pre = $('#btLog');
@@ -974,23 +975,23 @@ function renderStep() {
         let lines;
         try { lines = await state.dev.getBtLogFlash(); persistent = true; } catch { lines = await state.dev.getBtLog(); }
         pre.textContent = lines.length ? lines.join('\n')
-          : (state.cfg.btDebugLog ? 'Nothing recorded yet.' : 'Nothing recorded. Switch on debug logging, then reproduce the problem.');
-      } catch { pre.textContent = 'This firmware has no Bluetooth log. Update to the latest firmware.'; }
+          : (state.cfg.btDebugLog ? t('setup.bluetooth.nothing_recorded_yet') : t('setup.bluetooth.nothing_recorded_switch_debug_logging'));
+      } catch { pre.textContent = t('setup.bluetooth.this_firmware_has_no_bluetooth'); }
       $('#btLogClear').hidden = !persistent;
       pre.hidden = false;
-      if (pre.textContent.includes('power-on')) { try { await navigator.clipboard.writeText(pre.textContent); toast('Bluetooth log copied', 'ok'); } catch { /* clipboard blocked */ } }
+      if (pre.textContent.includes('power-on')) { try { await navigator.clipboard.writeText(pre.textContent); toast(t('setup.bluetooth.bluetooth_log_copied'), 'ok'); } catch { /* clipboard blocked */ } }
     });
     $('#btLogClear')?.addEventListener('click', async () => {
-      try { await state.dev.clearBtLogFlash(); $('#btLog').textContent = 'Log cleared.'; toast('Bluetooth log cleared', 'ok'); }
-      catch (e) { toast('Could not clear the log: ' + e.message, 'bad'); }
+      try { await state.dev.clearBtLogFlash(); $('#btLog').textContent = t('setup.bluetooth.log_cleared'); toast(t('setup.bluetooth.bluetooth_log_cleared'), 'ok'); }
+      catch (e) { toast(t('setup.bluetooth.could_not_clear_log', { message: e.message }), 'bad'); }
     });
     $('#btSw').addEventListener('change', (e) => { state.cfg.btEnabled = e.target.checked; pushCfg(); });
     $('#btSleepSel')?.addEventListener('change', (e) => { state.cfg.ext.btSleep = btSleepByte(+e.target.value); pushCfg(); });
     // saved straight away: the log is for power cycles, which an unsaved setting wouldn't survive
     $('#btLogSw')?.addEventListener('change', async (e) => {
       state.cfg.btDebugLog = e.target.checked;
-      try { await state.dev.setConfig(state.cfg); await state.dev.save(); takeSnapshot(); toast(e.target.checked ? 'Bluetooth debug logging on (saved)' : 'Bluetooth debug logging off (saved)', 'ok'); }
-      catch (err) { toast('Could not save: ' + err.message, 'bad'); }
+      try { await state.dev.setConfig(state.cfg); await state.dev.save(); takeSnapshot(); toast(e.target.checked ? t('setup.bluetooth.bluetooth_debug_logging_saved') : t('setup.bluetooth.bluetooth_debug_logging_off_saved'), 'ok'); }
+      catch (err) { toast(t('setup.bluetooth.could_not_save', { message: err.message }), 'bad'); }
     });
   } else if (step.kind === 'extras') {
     extras.reset();
@@ -1007,17 +1008,17 @@ function renderStep() {
       const have = c.tiltPin !== PIN_NONE;
       stepCtx.activeSince = 0; stepCtx.rerender = renderTilt;
       stepCtx.detector = new PinDetector({ windowMs: 5000, minPresses: 2, exclude: assignedPins().filter((p) => p !== c.tiltPin) });
-      card.innerHTML = head + `
-        <div class="opt first"><div><h3>Tilt for star power</h3><p class="dim">Lifting the neck triggers star power, like on a real controller.</p></div>
+      card.innerHTML = `${head}
+        <div class="opt first"><div><h3>${t('setup.tilt.tilt_star_power')}</h3><p class="dim">${t('setup.tilt.lifting_neck_triggers_star_power')}</p></div>
           <label class="switch"><input type="checkbox" id="tiltSw" ${c.tiltEnabled ? 'checked' : ''}><i></i></label></div>
         ${c.tiltEnabled ? `<div class="result ${have ? 'ok' : ''}" id="result" style="margin-top:12px">${have
-          ? `Tilt switch on <span class="chip">GP${c.tiltPin}</span>`
-          : '<span class="pulse"></span><span>Tilt the guitar up twice within 5 seconds.</span>'}</div>` : ''}
+          ? t('setup.tilt.tilt_switch_gp', { tiltPin: c.tiltPin })
+          : `<span class="pulse"></span><span>${t('setup.tilt.tilt_guitar_up_twice_within')}</span>`}</div>` : ''}
         ${c.tiltEnabled ? `${tiltTypeHtml('tiltType')}
-          <div class="opt"><div><h3>Or choose the pin yourself</h3><p class="dim">Skips the double tilt.</p></div>${tiltPinSelect('tiltPinSel')}</div>` : ''}
-        ${c.tiltEnabled && have ? `<div class="tilt-live" id="tiltLive"><i></i><span id="tiltLiveTxt">Tilt: not active</span><span class="dim small">Hold the guitar level, then tilt it up to check.</span></div>
+          <div class="opt"><div><h3>${t('setup.tilt.or_choose_pin_yourself')}</h3><p class="dim">${t('setup.tilt.skips_double_tilt')}</p></div>${tiltPinSelect('tiltPinSel')}</div>` : ''}
+        ${c.tiltEnabled && have ? `<div class="tilt-live" id="tiltLive"><i></i>${t('setup.tilt.tilt_not_active_hold_guitar')}</div>
           <div class="notice" id="tiltSuggest" hidden><span id="tiltSuggestTxt"></span> <button type="button" class="btn small primary" id="tiltSuggestBtn">Switch</button></div>` : ''}
-        ${nav(`${c.tiltEnabled && have ? '<button class="btn quiet" id="tRedo">Re-detect</button>' : ''}<button class="btn primary" id="bSkip">Continue</button>`)}`;
+        ${nav(`${c.tiltEnabled && have ? `<button class="btn quiet" id="tRedo">${t('setup.tilt.re_detect')}</button>` : ''}<button class="btn primary" id="bSkip">${t('common.continue')}</button>`)}`;
       wireNav();
       stepCtx.active = c.tiltEnabled && !have;
       $('#tiltSw').addEventListener('change', (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); renderTilt(); });
@@ -1029,21 +1030,20 @@ function renderStep() {
     renderTilt();
   } else {
     const c = state.cfg;
-    const act = (go, clear) => `<td class="sum-act"><button class="btn small quiet" data-go="${go}">Change</button>${clear ? `<button class="btn small quiet" data-clr="${clear}">Clear</button>` : ''}</td>`;
-    const pinOr = (txt, none = 'not set') => txt ? txt : `<span class="dim">${none}</span>`;
-    const rows = FUNCS.map((f, i) => `<tr><td>${btnName(i)}</td><td>${pinOr(c.pins[i] === PIN_NONE ? '' : 'GP' + c.pins[i])}</td>${act('b' + i, c.pins[i] !== PIN_NONE ? 'b' + i : '')}</tr>`).join('') +
-      `<tr><td>Whammy</td><td>${pinOr(c.whammyCh === PIN_NONE ? '' : 'GP' + (26 + c.whammyCh))}</td>${act('whammy')}</tr>
-       <tr><td>Tilt switch</td><td>${pinOr(c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin + (c.tiltInvert && fwAtLeast(33) ? ' \u00b7 normally closed' : '') : '', 'off')}</td>${act('tilt', c.tiltEnabled || c.tiltPin !== PIN_NONE ? 'tilt' : '')}</tr>
-       ${tiltSensOk() ? `<tr><td>Tilt sensors</td><td>${tiltSensorsSummary(c) || '<span class="dim">Skipped</span>'}</td>${act('tiltsens')}</tr>` : ''}
-       ${c.ext ? `<tr><td>D-pad, Select, Home, stick</td><td>${pinOr(extrasSummary(c), 'not wired')}</td>${act('extras')}</tr>` : ''}
-       <tr><td>RGB LEDs</td><td>${pinOr(c.rgbEnabled && c.rgbPin !== PIN_NONE ? 'GP' + c.rgbPin : '', 'off')}</td>${act('rgb')}</tr>
-       <tr><td>Bluetooth</td><td>${c.btEnabled ? 'on' : 'off'}</td>${act('bluetooth')}</tr>`;
-    card.innerHTML = head + `<table class="sum">${rows}</table>
+    const act = (go, clear) => `<td class="sum-act"><button class="btn small quiet" data-go="${go}">${t('setup.common.change')}</button>${clear ? `<button class="btn small quiet" data-clr="${clear}">${t('common.clear')}</button>` : ''}</td>`;
+    const pinOr = (txt, none = t('setup.buttons.not_set')) => txt ? txt : `<span class="dim">${none}</span>`;
+    const rows = `${FUNCS.map((f, i) => `<tr><td>${btnName(i)}</td><td>${pinOr(c.pins[i] === PIN_NONE ? '' : 'GP' + c.pins[i])}</td>${act('b' + i, c.pins[i] !== PIN_NONE ? 'b' + i : '')}</tr>`).join('')}<tr><td>${t('common.whammy')}</td><td>${pinOr(c.whammyCh === PIN_NONE ? '' : 'GP' + (26 + c.whammyCh))}</td>${act('whammy')}</tr>
+       <tr><td>${t('common.tilt_switch')}</td><td>${pinOr(c.tiltEnabled && c.tiltPin !== PIN_NONE ? 'GP' + c.tiltPin + (c.tiltInvert && fwAtLeast(33) ? t('setup.common.normally_closed') : '') : '', t('common.off'))}</td>${act('tilt', c.tiltEnabled || c.tiltPin !== PIN_NONE ? 'tilt' : '')}</tr>
+       ${tiltSensOk() ? `<tr><td>${t('common.tilt_sensors')}</td><td>${tiltSensorsSummary(c) || `<span class="dim">${t('setup.common.skipped')}</span>`}</td>${act('tiltsens')}</tr>` : ''}
+       ${c.ext ? `<tr><td>${t('setup.common.d_pad_select_home_stick')}</td><td>${pinOr(extrasSummary(c), t('setup.extras.not_wired'))}</td>${act('extras')}</tr>` : ''}
+       <tr><td>${t('setup.review.rgb_leds')}</td><td>${pinOr(c.rgbEnabled && c.rgbPin !== PIN_NONE ? 'GP' + c.rgbPin : '', t('common.off'))}</td>${act('rgb')}</tr>
+       <tr><td>Bluetooth</td><td>${c.btEnabled ? t('common.on') : t('common.off')}</td>${act('bluetooth')}</tr>`;
+    card.innerHTML = `${head}<table class="sum">${rows}</table>
       ${nameOk() ? `<div class="panel-inset name-setup">${nameFieldHtml('devNameSetup')}</div>` : ''}
-      <p class="dim small" style="margin-top:14px">Try every input: the guitar lights up as you press. Debounce and whammy feel are on the Tune page.</p>
+      <p class="dim small" style="margin-top:14px">${t('setup.common.try_every_input_guitar_lights')}</p>
       <div class="step-nav">
-        <button class="btn quiet" id="bRedo">Start over</button>
-        <button class="btn primary lg" id="bSave">Save to controller</button></div>`;
+        <button class="btn quiet" id="bRedo">${t('setup.common.start_over')}</button>
+        <button class="btn primary lg" id="bSave">${t('setup.common.save_controller')}</button></div>`;
     btnRedraw = () => renderStep();
     card.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => {
       const g = b.dataset.go;
@@ -1071,7 +1071,7 @@ function setResult(kind, html) {
 // Nothing listens until the user opens a prompt, so a stray press can never change a mapping.
 let btnUndo = null;        // {label, pins:{func:pin}} - what "Undo" restores after a Clear
 let btnRedraw = () => {};  // re-renders whatever shows the mapping (Buttons tiles or the review table)
-const btnName = (i) => (i < NUM_FRETS ? funcName(i) + ' fret' : funcName(i));
+const btnName = (i) => (i < NUM_FRETS ? t('setup.buttons.fret_name.' + FUNCS[i]) : funcName(i));
 // frets use the colours the guitar picture shows: the configured LED colours when the LEDs are on, else the standard ones
 const btnColor = (i) => (i < NUM_FRETS ? (state.cfg?.rgbEnabled && state.cfg.colors?.[i]) || FRET_COLORS[i] : i === 7 ? '#facc15' : i === 8 ? '#38e1c6' : '#7c8cff');
 
@@ -1150,7 +1150,7 @@ function bpClose(restoreFocus = true) {
 function bpNext() {
   clearTimeout(bp.timer);
   if (bp.queue && bp.qi + 1 < bp.queue.length) { bp.qi++; bp.func = bp.queue[bp.qi]; bpListen(); }
-  else { bpClose(); if (bp.queue) toast('Buttons done', 'ok'); }
+  else { bpClose(); if (bp.queue) toast(t('setup.buttons.prompt.buttons_done'), 'ok'); }
 }
 
 // the control was detected (or chosen by hand) on `pin`
@@ -1187,38 +1187,35 @@ function bpRender() {
   const f = bp.func, c = state.cfg, col = btnColor(f), root = bp.root;
   if (!root) return;
   stageViewer?.g.setFocus([FUNCS[f]]);   // dashed ring on the guitar picture behind the dialog
-  const verb = f === 5 || f === 6 ? 'Push' : 'Press';
-  const what = f < NUM_FRETS ? `the <span class="bp-c" style="color:${col}">${funcName(f).toUpperCase()} FRET</span>`
-    : f === 5 ? 'the strum bar <span class="bp-c">UP</span>' : f === 6 ? 'the strum bar <span class="bp-c">DOWN</span>'
-    : f === 7 ? '<span class="bp-c">STAR POWER</span>' : '<span class="bp-c">PLUS</span>';
+  const head = t('setup.buttons.prompt.head.' + FUNCS[f], { col });      // one whole sentence per control ("Press the GREEN FRET", "Push the strum bar UP")
   const m = bp.msg;
   const last = !bp.queue || bp.qi + 1 >= bp.queue.length;
   const nextName = !last ? btnName(bp.queue[bp.qi + 1]) : '';
   let body = '', acts = '';
   if (bp.phase === 'listen') {
-    body = `<p class="bp-sub">${f === 5 || f === 6 ? 'Push' : 'Press'} it twice</p>
-      <div class="bp-listen"><span class="bp-dots" aria-hidden="true"><i></i><i></i></span><span class="dim">Listening…</span></div>
+    body = `<p class="bp-sub">${t(f === 5 || f === 6 ? 'setup.buttons.prompt.push_twice' : 'setup.buttons.prompt.press_twice')}</p>
+      <div class="bp-listen"><span class="bp-dots" aria-hidden="true"><i></i><i></i></span><span class="dim">${t('setup.buttons.prompt.listening')}</span></div>
       <p class="bp-msg ${m?.bad ? 'bad' : ''}" role="status" aria-live="polite">${m?.text || ''}</p>`;
   } else if (bp.phase === 'conflict') {
-    body = `<p class="bp-msg bad" role="alert"><span class="chip">GP${m.pin}</span> is already <b>${btnName(m.who)}</b>.</p>`;
-    acts = `<button class="btn primary" id="bpSteal">Use it for ${funcName(f)} instead</button><button class="btn" id="bpAgain">Press another</button>`;
+    body = `<p class="bp-msg bad" role="alert">${t('setup.buttons.prompt.gp_already', { pin: m.pin, button: btnName(m.who) })}</p>`;
+    acts = `<button class="btn primary" id="bpSteal">${t('setup.buttons.prompt.use_instead', { button: btnName(f) })}</button><button class="btn" id="bpAgain">${t('setup.buttons.prompt.press_another')}</button>`;
   } else {
     body = `<p class="bp-done" role="status" style="color:${col}">${btnName(f)} <span aria-hidden="true">→</span> GP${m.pin}</p>
-      ${bp.prev.stole >= 0 ? `<p class="dim small">${btnName(bp.prev.stole)} is now not set.</p>` : ''}`;
-    acts = `<button class="btn quiet" id="bpUndo">Undo</button>` + (bp.queue ? `<button class="btn primary" id="bpNext">${last ? 'Finish' : 'Next: ' + nextName + ' →'}</button>` : '<button class="btn" id="bpDone">Done</button>');
+      ${bp.prev.stole >= 0 ? `<p class="dim small">${t('setup.buttons.prompt.now_not_set', { button: btnName(bp.prev.stole) })}</p>` : ''}`;
+    acts = `<button class="btn quiet" id="bpUndo">${t('setup.buttons.undo')}</button>${bp.queue ? `<button class="btn primary" id="bpNext">${last ? t('setup.steps.review.group') : t('setup.buttons.prompt.next', { nextName })}</button>` : `<button class="btn" id="bpDone">${t('setup.buttons.prompt.done')}</button>`}`;
   }
-  if (bp.phase === 'listen' && bp.queue) acts = `<button class="btn" id="bpSkip">Skip</button>`;
+  if (bp.phase === 'listen' && bp.queue) acts = `<button class="btn" id="bpSkip">${t('common.skip')}</button>`;
   const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !assignedPins().includes(p) || p === c.pins[f]);
   const keepOpen = root.querySelector('.bp-manual')?.open ?? bp.manualOpen;
   root.innerHTML = `<div class="bp-card ph-${bp.phase} ${f < NUM_FRETS ? 'fret' : ''}" role="dialog" aria-modal="true" aria-labelledby="bpTitle" tabindex="-1" style="--c:${col}">
-      ${bp.queue ? `<div class="bp-count">Button ${bp.qi + 1} of ${bp.queue.length}</div>` : ''}
+      ${bp.queue ? `<div class="bp-count">${t('setup.buttons.prompt.button', { n: bp.qi + 1, length: bp.queue.length })}</div>` : ''}
       <div class="bp-gslot"></div>
-      <h2 class="bp-title" id="bpTitle">${verb} ${what}</h2>
+      <h2 class="bp-title" id="bpTitle">${head}</h2>
       ${body}
-      <div class="bp-acts">${acts}<span class="bp-grow"></span>${bp.queue ? '<button class="btn quiet" id="bpStop">Stop</button>' : ''}<button class="btn quiet" id="bpCancel">${bp.phase === 'result' ? 'Close' : 'Cancel'}</button></div>
-      ${bp.phase === 'listen' ? `<details class="bp-manual" ${keepOpen ? 'open' : ''}><summary>Choose the pin yourself</summary>
-        <select id="bpPin" aria-label="Pin for ${btnName(f)}"><option value="">Choose pin…</option>${free.map((p) => `<option value="${p}" ${p === c.pins[f] ? 'selected' : ''}>GP${p}</option>`).join('')}</select></details>` : ''}
-      ${bp.queue ? `<label class="bp-auto"><input type="checkbox" id="bpAuto" ${bpAuto() ? 'checked' : ''}> Go to the next button by itself</label>` : ''}
+      <div class="bp-acts">${acts}<span class="bp-grow"></span>${bp.queue ? `<button class="btn quiet" id="bpStop">${t('setup.buttons.prompt.stop')}</button>` : ''}<button class="btn quiet" id="bpCancel">${bp.phase === 'result' ? t('setup.buttons.prompt.close') : t('common.cancel')}</button></div>
+      ${bp.phase === 'listen' ? `<details class="bp-manual" ${keepOpen ? 'open' : ''}><summary>${t('setup.buttons.prompt.choose_pin_yourself')}</summary>
+        <select id="bpPin" aria-label="${t('setup.buttons.prompt.aria_label.pin', { button: btnName(f) })}"><option value="">${t('common.choose_pin')}</option>${free.map((p) => `<option value="${p}" ${p === c.pins[f] ? 'selected' : ''}>GP${p}</option>`).join('')}</select></details>` : ''}
+      ${bp.queue ? `<label class="bp-auto"><input type="checkbox" id="bpAuto" ${bpAuto() ? 'checked' : ''}>${t('setup.buttons.prompt.go_next_button_by_itself')}</label>` : ''}
     </div>`;
   const q = (id) => root.querySelector(id);
   // the guitar picture lives in the dialog: one lazily built viewer, moved into each fresh render
@@ -1269,8 +1266,8 @@ function bpTick(s) {
   if (r.pin !== undefined) bpPin(r.pin);
   else {
     bp.msg = r.ambiguous
-      ? { bad: 1, text: `Several inputs moved at once (${r.ambiguous.map((p) => 'GP' + p).join(', ')}). Press only the ${btnName(bp.func).toLowerCase()}.` }
-      : { bad: 1, text: `<span class="chip">GP${r.used[0]}</span> is used for something else (tilt, LEDs, ports...). Press a different control.` };
+      ? { bad: 1, text: t('setup.buttons.prompt.several_inputs_moved_at_once', { list: r.ambiguous.map((p) => 'GP' + p).join(', ') }) }
+      : { bad: 1, text: t('setup.buttons.prompt.gp_used_something_else_tilt', { pin: r.used[0] }) };
     const el = bp.root.querySelector('.bp-msg');
     if (el) { el.className = 'bp-msg bad'; el.innerHTML = bp.msg.text; }
   }
@@ -1279,28 +1276,28 @@ function bpTick(s) {
 // shared by the Setup tilt step and the Tune "Tilt switch" panel
 function tiltTypeHtml(id) {
   const c = state.cfg, ok = fwAtLeast(33), dis = ok ? '' : 'disabled';
-  return `<div class="opt tilt-type" id="${id}"><div><h3>Which position counts as tilted?</h3>
-    <p class="dim" id="${id}Hint">${ok ? 'If the indicator shows active while the guitar is level, pick the other one.' : 'Normally closed switches need firmware 0.33 or newer.'}</p></div>
-    <div class="seg" role="radiogroup" aria-label="Which position counts as tilted?">
-      <button type="button" role="radio" data-inv="0" aria-checked="${!tiltInverted()}" class="${tiltInverted() ? '' : 'on'}" ${dis}>Switch closed = tilted<small> normally open</small></button>
-      <button type="button" role="radio" data-inv="1" aria-checked="${tiltInverted()}" class="${tiltInverted() ? 'on' : ''}" ${dis}>Switch open = tilted<small> normally closed</small></button></div></div>`;
+  return `<div class="opt tilt-type" id="${id}"><div><h3>${t('tune.tilt_switch.which_position_counts_as_tilted')}</h3>
+    <p class="dim" id="${id}Hint">${ok ? t('tune.tilt_switch.if_indicator_shows_active_while') : t('tune.tilt_switch.normally_closed_switches_need_firmware')}</p></div>
+    <div class="seg" role="radiogroup" aria-label="${t('tune.tilt_switch.aria_label.which_position_counts_as_tilted')}">
+      <button type="button" role="radio" data-inv="0" aria-checked="${!tiltInverted()}" class="${tiltInverted() ? '' : 'on'}" ${dis}>${t('tune.tilt_switch.switch_closed_tilted_normally_open')}</button>
+      <button type="button" role="radio" data-inv="1" aria-checked="${tiltInverted()}" class="${tiltInverted() ? 'on' : ''}" ${dis}>${t('tune.tilt_switch.switch_open_tilted_normally_closed')}</button></div></div>`;
 }
 function tiltPinSelect(id) {
   const c = state.cfg, used = new Set(assignedPins().filter((p) => p !== c.tiltPin));
   const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p));
-  return `<select id="${id}" aria-label="Tilt switch pin"><option value="255" ${c.tiltPin === PIN_NONE ? 'selected' : ''}>Not set</option>${free.map((p) => `<option value="${p}" ${p === c.tiltPin ? 'selected' : ''}>GP${p}</option>`).join('')}</select>`;
+  return `<select id="${id}" aria-label="${t('tune.tilt_switch.aria_label.tilt_switch_pin')}"><option value="255" ${c.tiltPin === PIN_NONE ? 'selected' : ''}>${t('setup.buttons.not_set')}</option>${free.map((p) => `<option value="${p}" ${p === c.tiltPin ? 'selected' : ''}>GP${p}</option>`).join('')}</select>`;
 }
 function buildTiltSwitch() {
   const c = state.cfg, body = $('#tiltSwBody');
   if (!body) return;
   body.innerHTML = `
-    <div class="opt first"><div><h3>${tiltFuncOk() ? 'Tilt switch' : 'Tilt for star power'}</h3><p class="dim">A tilt switch wired to a free pin ${tiltFuncOk() ? 'presses an input when the neck is lifted.' : 'triggers star power when the neck is lifted.'}</p></div>
+    <div class="opt first"><div><h3>${tiltFuncOk() ? t('common.tilt_switch') : t('tune.tilt_switch.tilt_star_power')}</h3><p class="dim">${t('tune.tilt_switch.tilt_switch_wired_free_pin', { v: tiltFuncOk() ? t('tune.tilt_switch.presses_input_when_neck_lifted') : t('tune.tilt_switch.triggers_star_power_when_neck') })}</p></div>
       <label class="switch"><input type="checkbox" id="tsOn" ${c.tiltEnabled ? 'checked' : ''}><i></i></label></div>
-    ${c.tiltEnabled ? `<div class="opt"><div><h3>Switch pin</h3><p class="dim">Or use Setup to find it by tilting twice.</p></div>${tiltPinSelect('tsPin')}</div>
-      ${tiltMapUi() ? `<div class="opt"><div><h3>Assign to</h3><p class="dim">Any guitar or gamepad input, including stick directions. A stick axis goes to full deflection while tilted.</p></div>${assignSelect(10, 'Tilt switch')}</div>${assignNote(assignValue(10))}${rangeFor(10, assignValue(10))}`
-      : tiltFuncOk() ? `<div class="opt"><div><h3>Acts as</h3><p class="dim">The input a tilt presses.</p></div><select id="tsFunc" aria-label="Tilt switch acts as">${tiltFuncOptions(tiltFuncOf(0), false)}</select></div>` : ''}
+    ${c.tiltEnabled ? `<div class="opt"><div><h3>${t('tune.tilt_switch.switch_pin')}</h3><p class="dim">${t('tune.tilt_switch.or_use_setup_find_by')}</p></div>${tiltPinSelect('tsPin')}</div>
+      ${tiltMapUi() ? `<div class="opt"><div><h3>${t('tune.tilt_switch.assign')}</h3><p class="dim">${t('tune.tilt_switch.any_guitar_or_gamepad_input')}</p></div>${assignSelect(10, t('common.tilt_switch'))}</div>${assignNote(assignValue(10))}${rangeFor(10, assignValue(10))}`
+      : tiltFuncOk() ? `<div class="opt"><div><h3>${t('tune.tilt_switch.acts_as')}</h3><p class="dim">${t('tune.tilt_switch.input_tilt_presses')}</p></div><select id="tsFunc" aria-label="${t('tune.tilt_switch.aria_label.tilt_switch_acts_as')}">${tiltFuncOptions(tiltFuncOf(0), false)}</select></div>` : ''}
       ${tiltTypeHtml('tsType')}
-      <div class="tilt-live" id="tsLive"><i></i><span id="tsLiveTxt">Tilt: not active</span><span class="dim small">Hold the guitar level, then tilt it up to check.</span></div>` : ''}`;
+      <div class="tilt-live" id="tsLive"><i></i>${t('tune.tilt_switch.tilt_not_active_hold_guitar')}</div>` : ''}`;
   $('#tsOn').onchange = (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); buildTiltSwitch(); };
   $('#tsPin')?.addEventListener('change', (e) => { c.tiltPin = +e.target.value; pushCfg(); buildTiltSwitch(); });
   wireAssign(body);
@@ -1314,7 +1311,7 @@ function updateTiltSwitch(s) {
   if (!live) return;
   const on = tiltSwitchActive(s);
   live.classList.toggle('on', on);
-  $('#tsLiveTxt').textContent = on ? 'Tilt: active' : 'Tilt: not active';
+  $('#tsLiveTxt').textContent = on ? t('tune.tilt_switch.tilt_active') : t('tune.tilt_switch.tilt_not_active');
 }
 
 // live "Tilt: active" indicator on the setup step, plus a suggestion when it stays on while the guitar should be level
@@ -1323,15 +1320,15 @@ function tickTiltLive(s) {
   if (!live) return;
   const on = tiltSwitchActive(s);
   live.classList.toggle('on', on);
-  $('#tiltLiveTxt').textContent = on ? 'Tilt: active' : 'Tilt: not active';
+  $('#tiltLiveTxt').textContent = on ? t('tune.tilt_switch.tilt_active') : t('tune.tilt_switch.tilt_not_active');
   const sug = $('#tiltSuggest');
   if (!sug || !fwAtLeast(33)) return;
   const now = performance.now();
   if (!on) { stepCtx.activeSince = 0; sug.hidden = true; return; }
   stepCtx.activeSince ||= now;
   if (now - stepCtx.activeSince > 1500) {
-    $('#tiltSuggestTxt').textContent = state.cfg.tiltInvert ? 'Still active with the guitar level? This may be a normally open switch.' : 'Still active with the guitar level? This looks like a normally closed switch.';
-    $('#tiltSuggestBtn').textContent = state.cfg.tiltInvert ? 'Switch to normally open' : 'Switch to normally closed';
+    $('#tiltSuggestTxt').textContent = state.cfg.tiltInvert ? t('tune.tilt_switch.still_active_with_guitar_level') : t('tune.tilt_switch.still_active_with_guitar_level_2');
+    $('#tiltSuggestBtn').textContent = state.cfg.tiltInvert ? t('tune.tilt_switch.switch_normally_open') : t('tune.tilt_switch.switch_normally_closed');
     sug.hidden = false;
   }
 }
@@ -1342,21 +1339,21 @@ function tickTiltLive(s) {
 let tsUi = null;
 const ts = { path: null, slot: -1, second: false, ana: null, prev: null };
 const tsKindOf = (src) => (src === PIN_NONE ? null : src < 3 ? 'adc' : 'acc');
-const tsFreeSlot = (c) => c.atilt.findIndex((t) => t.src === PIN_NONE);
+const tsFreeSlot = (c) => c.atilt.findIndex((tv) => tv.src === PIN_NONE);
 // why an analog channel is out: the whammy bar, a stick, or the other sensor
-const tsBlocked = (c, ch, slot = ts.slot) => (ch === c.whammyCh ? 'whammy bar' : (c.ext?.stickCh || []).includes(ch) ? 'stick' : c.atilt.some((t, i) => i !== slot && t.src === ch) ? 'other sensor' : '');
-const tsAccSecondOk = (c) => { const n = c.atilt.filter((t) => tsKindOf(t.src) === 'acc').length; return n === 0 || (n === 1 && tiltMapUi() && fwAtLeast(ACCEL2_MIN_MINOR) && !!state.status?.accel2Type); };
+const tsBlocked = (c, ch, slot = ts.slot) => (ch === c.whammyCh ? 'whammy' : (c.ext?.stickCh || []).includes(ch) ? 'stick' : c.atilt.some((tv, i) => i !== slot && tv.src === ch) ? 'sensor' : '');
+const tsAccSecondOk = (c) => { const n = c.atilt.filter((tv) => tsKindOf(tv.src) === 'acc').length; return n === 0 || (n === 1 && tiltMapUi() && fwAtLeast(ACCEL2_MIN_MINOR) && !!state.status?.accel2Type); };
 const tsAdcOk = (c, slot) => [0, 1, 2].some((ch) => !tsBlocked(c, ch, slot));
 function tsEnter(path) {
   const c = state.cfg;
   ts.path = path;
-  let sl = ts.second ? tsFreeSlot(c) : c.atilt.findIndex((t) => tsKindOf(t.src) === path);
+  let sl = ts.second ? tsFreeSlot(c) : c.atilt.findIndex((tv) => tsKindOf(tv.src) === path);
   if (sl < 0) sl = tsFreeSlot(c);
   if (sl < 0) sl = 0;
   ts.slot = sl;
   qt.level = qt.tilted = null; qt.chosen = false; qt.chip = 0;
   if (path === 'adc') { const cur = c.atilt[sl].src; ts.ana = cur < 3 ? cur : [0, 1, 2].find((ch) => !tsBlocked(c, ch)) ?? null; }
-  if (path === 'acc' && ts.second) { const used = c.atilt.find((t) => tsKindOf(t.src) === 'acc'); if (used) { qt.chip = used.src >= 9 ? 0 : 1; qt.chosen = true; } }
+  if (path === 'acc' && ts.second) { const used = c.atilt.find((tv) => tsKindOf(tv.src) === 'acc'); if (used) { qt.chip = used.src >= 9 ? 0 : 1; qt.chosen = true; } }
 }
 function tsRender() {
   if (!tsUi) return;
@@ -1366,19 +1363,19 @@ function tsRender() {
   tiltKey = tiltKeyOf(state.status);
   qSlotPref = ts.path ? ts.slot : -1;
   renderStepList();
-  const configured = c.atilt.some((t) => t.src !== PIN_NONE);
+  const configured = c.atilt.some((tv) => tv.src !== PIN_NONE);
   if (!ts.path) {
-    const cur = ts.second ? null : tsKindOf(c.atilt.find((t) => t.src !== PIN_NONE)?.src ?? PIN_NONE);
+    const cur = ts.second ? null : tsKindOf(c.atilt.find((tv) => tv.src !== PIN_NONE)?.src ?? PIN_NONE);
     const accDis = ts.second && !tsAccSecondOk(c), adcDis = ts.second && !tsAdcOk(c, tsFreeSlot(c));
     const ch = (k, title, sub, dis) => `<button type="button" class="ts-ch ${cur === k ? 'on' : ''}" data-ts="${k}" aria-pressed="${cur === k}" ${dis ? 'disabled' : ''}><b>${title}</b><span>${sub}</span></button>`;
     card.innerHTML = head + `
-      <p class="ts-q" id="tsQ">${ts.second ? 'What kind is the second tilt sensor?' : 'Do you have an accelerometer or an analog tilt sensor wired?'}</p>
+      <p class="ts-q" id="tsQ">${ts.second ? t('tune.tilt_switch.what_kind_second_tilt_sensor') : t('tune.tilt_switch.do_have_accelerometer_or_analog')}</p>
       <div class="ts-choices" role="group" aria-labelledby="tsQ">
-        ${ch('acc', 'Accelerometer (I²C)', accDis ? 'Needs a second chip (firmware 0.36+)' : 'ADXL345, LIS3DH, MPU-6050 on two pins', accDis)}
-        ${ch('adc', 'Analog tilt sensor (GP26–28)', adcDis ? 'No free analog pin' : 'A sensor with an analog output', adcDis)}
-        <button type="button" class="ts-ch ts-skip" data-ts="${ts.second ? 'cancel' : 'skip'}"><b>${ts.second ? 'No second sensor' : 'No, skip'}</b><span>${ts.second ? 'Keep just the first' : 'Nothing is changed'}</span></button>
+        ${ch('acc', t('tune.tilt_switch.accelerometer_i2c'), accDis ? t('tune.tilt_switch.needs_second_chip_firmware_0') : t('tune.tilt_switch.adxl345_lis3dh_mpu_6050_two'), accDis)}
+        ${ch('adc', t('tune.tilt_switch.analog_tilt_sensor_gp2628'), adcDis ? t('tune.tilt_switch.no_free_analog_pin') : t('tune.tilt_switch.sensor_with_analog_output'), adcDis)}
+        <button type="button" class="ts-ch ts-skip" data-ts="${ts.second ? 'cancel' : 'skip'}"><b>${ts.second ? t('tune.tilt_switch.no_second_sensor') : t('tune.tilt_switch.no_skip')}</b><span>${ts.second ? t('tune.tilt_switch.keep_just_first') : t('tune.tilt_switch.nothing_changed')}</span></button>
       </div>
-      ${nav(`<button class="btn quiet" id="bSkip">${configured ? 'Next' : 'Skip'}</button>`)}`;
+      ${nav(`<button class="btn quiet" id="bSkip">${configured ? t('tune.tilt_switch.next') : t('common.skip')}</button>`)}`;
     wireNav();
     card.querySelectorAll('[data-ts]').forEach((b) => (b.onclick = () => {
       const k = b.dataset.ts;
@@ -1393,16 +1390,16 @@ function tsRender() {
   const free = tsFreeSlot(c) >= 0 && (tsAccSecondOk(c) || tsAdcOk(c, tsFreeSlot(c)));
   let top;
   if (acc) {
-    top = `<div class="opt first"><div><h3>Accelerometer pins</h3>${qm.found ? '' : '<p class="dim">SDA on the even pin, SCL on the next; VCC to 3V3(OUT), GND to GND, CS to 3V3 (ADXL345).</p>'}</div>${accPinsSelect(accelPairs(c))}</div>
+    top = `<div class="opt first"><div><h3>${t('tune.tilt_switch.accelerometer_pins')}</h3>${qm.found ? '' : `<p class="dim">${t('tune.tilt_switch.sda_even_pin_scl_next')}</p>`}</div>${accPinsSelect(accelPairs(c))}</div>
       <p class="acc-status" id="accStatus" role="status"></p>`;
   } else if (ts.ana == null) {
-    top = '<div class="notice">All three analog pins are taken by the whammy bar, a stick or the other sensor.</div>';
+    top = `<div class="notice">${t('tune.tilt_switch.all_three_analog_pins_are')}</div>`;
   } else {
-    top = done ? '' : `<div class="opt first"><div><h3>Sensor pin</h3><p class="dim">Output to one of these, power to 3V3(OUT), GND to GND.</p></div>
-      <div class="seg" id="tsCh" role="group" aria-label="Sensor pin">${[0, 1, 2].map((k) => { const why = tsBlocked(c, k); return `<button type="button" data-ch="${k}" class="${ts.ana === k ? 'on' : ''}" ${why ? 'disabled' : ''} title="${why ? 'Used by the ' + why : ''}">GP${26 + k}${why ? ` <small>${why}</small>` : ''}</button>`; }).join('')}</div></div>`;
+    top = done ? '' : `<div class="opt first"><div><h3>${t('tune.tilt_switch.sensor_pin')}</h3><p class="dim">${t('tune.tilt_switch.output_one_these_power_3v3')}</p></div>
+      <div class="seg" id="tsCh" role="group" aria-label="${t('tune.tilt_switch.aria_label.sensor_pin')}">${[0, 1, 2].map((k) => { const why = tsBlocked(c, k); return `<button type="button" data-ch="${k}" class="${ts.ana === k ? 'on' : ''}" ${why ? 'disabled' : ''} title="${why ? t('tune.tilt_switch.used_by.' + why) : ''}">GP${26 + k}${why ? ` <small>${t('tune.tilt_switch.blocked.' + why)}</small>` : ''}</button>`; }).join('')}</div></div>`;
   }
   card.innerHTML = head + `${top}${qm.found && (acc || ts.ana != null) ? quickHtml(qm, c) : ''}
-    ${nav(`<button class="btn quiet" id="tsType">Change type</button>${done && !ts.second && free ? '<button class="btn" id="tsAdd">Add a second tilt sensor</button>' : ''}<button class="btn primary" id="bSkip">${done ? 'Next' : 'Skip'}</button>`)}`;
+    ${nav(`<button class="btn quiet" id="tsType">${t('tune.tilt_switch.change_type')}</button>${done && !ts.second && free ? `<button class="btn" id="tsAdd">${t('tune.tilt_switch.add_second_tilt_sensor')}</button>` : ''}<button class="btn primary" id="bSkip">${done ? t('tune.tilt_switch.next') : t('common.skip')}</button>`)}`;
   wireNav();
   $('#tsType').onclick = () => { ts.path = null; tsRender(); };
   $('#tsAdd')?.addEventListener('click', () => { ts.prev = ts.path; ts.second = true; ts.path = null; tsRender(); });
@@ -1421,7 +1418,7 @@ function tickStep(s) {
   bpTick(s);
   if (step.kind === 'buttons') {
     // live highlight of whichever tile's button is held right now
-    document.querySelectorAll('.bt').forEach((t) => t.classList.toggle('held', isPressed(s, state.cfg.pins[+t.dataset.f])));
+    document.querySelectorAll('.bt').forEach((tv) => tv.classList.toggle('held', isPressed(s, state.cfg.pins[+tv.dataset.f])));
   } else if (step.kind === 'whammy' && stepCtx.cal) {
     const c = state.cfg;
     document.querySelectorAll('.adc-row').forEach((row) => {
@@ -1437,15 +1434,15 @@ function tickStep(s) {
     }
     const p = stepCtx.cal.feed(s);
     $('#wBar').style.width = (p.fraction * 100).toFixed(0) + '%';
-    $('#wLabel').textContent = p.channel < 0 ? 'Waiting for the bar to move' : `Sweeps: ${Math.min(2, Math.floor(p.switches / 2))} of 2, swing ${p.range} counts`;
+    $('#wLabel').textContent = p.channel < 0 ? t('setup.whammy.waiting_bar_move_2') : t('setup.whammy.sweeps_2_swing_counts', { v: Math.min(2, Math.floor(p.switches / 2)), range: p.range });
     if (p.done) {
       const r = stepCtx.cal.result();
       Object.assign(c, { whammyCh: r.channel, whammyMin: r.min, whammyMax: r.max, whammyInvert: r.invert });
       pushCfg();
       stepCtx.done = true;
-      setResult('ok', `Calibrated on <span class="chip">GP${26 + r.channel}</span> (${r.min}–${r.max}${r.invert ? ', inverted' : ''})`);
-      $('#wLabel').textContent = 'Live input: move the bar to check it';
-      const b = $('#bSkip'); if (b) { b.textContent = 'Continue'; b.classList.add('primary'); }
+      setResult('ok', t('setup.whammy.calibrated_gp_2', { pin: 26 + r.channel, min: r.min, max: r.max, v: r.invert ? t('setup.whammy.inverted') : '' }));
+      $('#wLabel').textContent = t('setup.whammy.live_input_move_bar_check');
+      const b = $('#bSkip'); if (b) { b.textContent = t('common.continue'); b.classList.add('primary'); }
     }
   } else if (step.kind === 'ledmap' && stepCtx.assign && stepCtx.idx < stepCtx.chain) {
     if (!stepCtx.base) { stepCtx.base = s.counts.slice(); return; }
@@ -1479,9 +1476,9 @@ function tickStep(s) {
     if (r.pin !== undefined) {
       state.cfg.tiltPin = r.pin; pushCfg(); stepCtx.active = false; renderStepList();
       stepCtx.rerender?.();
-      toast('Tilt switch registered', 'ok');
-    } else if (r.ambiguous) setResult('bad', 'Several inputs moved at once. Tilt only the guitar.');
-    else if (r.used) setResult('bad', `<span class="chip">GP${r.used[0]}</span> is already used by another control.`);
+      toast(t('setup.tilt.tilt_switch_registered'), 'ok');
+    } else if (r.ambiguous) setResult('bad', t('setup.tilt.several_inputs_moved_at_once'));
+    else if (r.used) setResult('bad', t('setup.tilt.gp_already_used_by_another', { pin: r.used[0] }));
   }
 }
 
@@ -1494,13 +1491,13 @@ function buildTune() {
   const dt = $('#debT'), ws = $('#wSmooth'), wd = $('#wDead');
   const refresh = () => {
     $('#debTVal').textContent = (c.debounce100us / 10).toFixed(1) + ' ms';
-    $('#wSmoothVal').textContent = c.whammySmooth === 0 ? 'off' : String(c.whammySmooth);
+    $('#wSmoothVal').textContent = c.whammySmooth === 0 ? t('common.off') : String(c.whammySmooth);
     $('#wDeadVal').textContent = c.whammyDeadzone + ' %';
     document.querySelectorAll('#debPresets [data-deb]').forEach((b) => b.classList.toggle('on', +b.dataset.deb === c.debounce100us));
   };
   dt.value = c.debounce100us; ws.value = c.whammySmooth; wd.value = c.whammyDeadzone;
   $('#combStrum').checked = c.combinedStrum; $('#wInv').checked = c.whammyInvert;
-  const PRESETS = [['Off', 0], ['Fast', 20], ['Balanced', 50], ['Safe', 100], ['Worn switches', 200]];
+  const PRESETS = [[t('common.off_2'), 0], [t('tune.fast'), 20], [t('tune.balanced'), 50], [t('tune.safe'), 100], [t('tune.worn_switches'), 200]];
   $('#debPresets').innerHTML = PRESETS.map(([n, v]) => `<button data-deb="${v}" title="${v / 10} ms">${n}</button>`).join('');
   const live = () => { refresh(); pushCfg(); };
   dt.oninput = () => { c.debounce100us = +dt.value; live(); };
@@ -1510,9 +1507,9 @@ function buildTune() {
   $('#wInv').onchange = (e) => { c.whammyInvert = e.target.checked; live(); };
   $('#debPresets').onclick = (e) => { const b = e.target.closest('[data-deb]'); if (b) { c.debounce100us = +b.dataset.deb; dt.value = c.debounce100us; live(); } };
   $('#resetCfg').onclick = async () => {
-    if (!confirm('Reset every setting (pins, whammy, tuning, lights and modes) to factory defaults?')) return;
+    if (!confirm(t('tune.reset_every_setting_pins_whammy'))) return;
     await state.dev.defaults(); await state.dev.save(); await sleep(300);
-    state.cfg = await state.dev.getConfig(); state.step = 0; buildUi(); takeSnapshot(); toast('Reset to defaults', 'ok');
+    state.cfg = await state.dev.getConfig(); state.step = 0; buildUi(); takeSnapshot(); toast(t('tune.reset_defaults'), 'ok');
   };
   refresh();
   buildTiltSwitch();
@@ -1526,11 +1523,11 @@ function buildPorts() {
   if (!body) return;
   const fw31 = (c.cfgVersion ?? 0) >= 5 && (state.info.major > 0 || state.info.minor >= 31);
   $('#portsPanel').hidden = false;
-  if (!fw31) { body.innerHTML = '<p class="notice small">Needs firmware 0.31 or newer. Update the firmware on the Install page.</p>'; return; }
+  if (!fw31) { body.innerHTML = `<p class="notice small">${t('modes.ports.needs_firmware_0_31_or')}</p>`; return; }
   const others = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), ...accelPins(), c.rumblePin ?? PIN_NONE, ...extPinList(c)].filter((p) => p !== PIN_NONE));
-  const PS2 = ['ATT', 'CMD', 'DAT', 'CLK', 'ACK'];
+  const PS2 = [t('modes.ports.att'), 'CMD', 'DAT', 'CLK', 'ACK'];
   const ps2 = c.ps2Pins || [255, 255, 255, 255, 255];
-  const pinSel = (id, val, exclude) => `<select id="${id}"><option value="255">Not wired</option>${[...Array(NUM_DIGITAL_PINS).keys()]
+  const pinSel = (id, val, exclude) => `<select id="${id}"><option value="255">${t('modes.ports.not_wired')}</option>${[...Array(NUM_DIGITAL_PINS).keys()]
     .filter((p) => !others.has(p) && (!exclude.has(p) || p === val)).map((p) => `<option value="${p}" ${p === val ? 'selected' : ''}>GP${p}</option>`).join('')}</select>`;
   const ps2Used = new Set([...ps2, c.wiiSda, c.wiiScl].filter((p) => p !== PIN_NONE));
   const accelBlock = c.accelSda !== PIN_NONE && c.accelSda !== undefined ? (c.accelSda >> 1) & 1 : -1;
@@ -1541,20 +1538,20 @@ function buildPorts() {
   body.innerHTML = `
     <div class="cols">
       <div class="tilt-card">
-        <div class="head"><h3>PS2 controller port</h3><span class="tilt-state" id="pPs2">${ps2On ? 'waiting' : 'off'}</span></div>
-        <p class="dim small">A PS2 Guitar Hero guitar for Guitar Hero 1, 2, III and 80s on a stock PS2 (or a PS1). Cut a PS2 extension cable and wire its lines to five free pins; power the board from the cable's 3.6 V (pin 5) through a diode to VSYS. Not with the USB host port (both need PIO1).</p>
+        <div class="head"><h3>${t('modes.ports.ps2_controller_port')}</h3><span class="tilt-state" id="pPs2">${ps2On ? t('modes.ports.waiting') : t('common.off')}</span></div>
+        <p class="dim small">${t('modes.ports.ps2_guitar_hero_guitar_guitar')}</p>
         <div class="ps2-grid">${PS2.map((n, i) => `<label>${n}${pinSel('ps2' + i, ps2[i], ps2Used)}</label>`).join('')}</div>
       </div>
       <div class="tilt-card">
-        <div class="head"><h3>Wii extension</h3><span class="tilt-state" id="pWii">${wiiOn ? 'waiting' : 'off'}</span></div>
-        <p class="dim small">The guitar acts as a Guitar Hero guitar <b>extension</b>: plug a Wii Remote's extension cable in, like the original Wii guitars. SDA and SCL of the extension plug to the pins below, its 3.3 V detect line to 3V3, GND to GND.</p>
+        <div class="head"><h3>${t('modes.ports.wii_extension')}</h3><span class="tilt-state" id="pWii">${wiiOn ? t('modes.ports.waiting') : t('common.off')}</span></div>
+        <p class="dim small">${t('modes.ports.guitar_acts_as_guitar_hero')}</p>
         <label class="field-label">SDA / SCL</label>
-        <select id="wiiPins"><option value="255">Not wired</option>${wiiPairs.map((p) => `<option value="${p}" ${p === c.wiiSda ? 'selected' : ''}>SDA GP${p}, SCL GP${p + 1}</option>`).join('')}</select>
+        <select id="wiiPins"><option value="255">${t('modes.ports.not_wired')}</option>${wiiPairs.map((p) => `<option value="${p}" ${p === c.wiiSda ? 'selected' : ''}>SDA GP${p}, SCL GP${p + 1}</option>`).join('')}</select>
       </div>
     </div>
     ${state.info.btSupported ? `
-    <div class="opt" style="margin-top:12px"><div><h3>Wii Remote over Bluetooth <span class="tilt-state" id="pWm">${wiimote ? 'waiting' : 'off'}</span></h3>
-      <p class="dim">The Pico W becomes a Wii Remote with a Guitar Hero guitar plugged in: Guitar Hero, Band Hero and DJ Hero on a stock Wii or Wii U, no Wii Remote needed. Press SYNC on the console; after that it reconnects by itself. Replaces the Bluetooth LE gamepad while on.</p></div>
+    <div class="opt" style="margin-top:12px"><div><h3>${t('modes.ports.wii_remote_over_bluetooth')}<span class="tilt-state" id="pWm">${wiimote ? t('modes.ports.waiting') : t('common.off')}</span></h3>
+      <p class="dim">${t('modes.ports.pico_w_becomes_wii_remote')}</p></div>
       <label class="switch"><input type="checkbox" id="wmOn" ${wiimote ? 'checked' : ''}><i></i></label></div>` : ''}`;
   PS2.forEach((n, i) => { $('#ps2' + i).onchange = (e) => { c.ps2Pins = [...ps2]; c.ps2Pins[i] = +e.target.value; buildPorts(); }; });
   $('#wiiPins').onchange = (e) => { const p = +e.target.value; c.wiiSda = p; c.wiiScl = p === PIN_NONE ? PIN_NONE : p + 1; buildPorts(); };
@@ -1562,7 +1559,7 @@ function buildPorts() {
   if (wm) wm.onchange = () => { c.xinputOpts = (c.xinputOpts & ~2) | (wm.checked ? 2 : 0); if (wm.checked) c.btEnabled = true; buildPorts(); };
 }
 function updatePorts(s) {
-  const set = (id, on, txt) => { const el = $(id); if (el && el.textContent !== 'off') { el.textContent = on ? txt : 'waiting'; el.classList.toggle('on', on); } };
+  const set = (id, on, txt) => { const el = $(id); if (el && el.textContent !== t('common.off')) { el.textContent = on ? txt : t('modes.ports.waiting'); el.classList.toggle('on', on); } };
   set('#pPs2', !!(s.ports & 1), 'PS2 connected');
   set('#pWii', !!(s.ports & 2), 'Wii Remote connected');
   set('#pWm', !!(s.ports & 4), 'Wii connected');
@@ -1573,7 +1570,7 @@ function buildRumble() {
   const c = state.cfg, body = $('#rumbleBody');
   if (!body) return;
   if ((c.cfgVersion ?? 0) < 5 || !(state.info.major > 0 || state.info.minor >= 30)) {
-    body.innerHTML = '<p class="notice small">Rumble needs firmware 0.30 or newer. Update the firmware on the Install page.</p>';
+    body.innerHTML = `<p class="notice small">${t('tune.rumble.rumble_needs_firmware_0_30')}</p>`;
     return;
   }
   const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), ...accelPins(), ...extPinList(c)].filter((p) => p !== PIN_NONE));
@@ -1582,14 +1579,14 @@ function buildRumble() {
   const sw = (bit, title, desc) => `<div class="opt"><div><h3>${title}</h3><p class="dim">${desc}</p></div>
     <label class="switch"><input type="checkbox" data-bit="${bit}" ${c.rumbleFlags & bit ? 'checked' : ''}><i></i></label></div>`;
   body.innerHTML = `
-    <div class="opt first"><div><h3>Motor pin</h3><p class="dim">Drives the transistor's base (through about 1 kΩ) or the MOSFET's gate.</p></div>
-      <div class="row"><select id="rmPin"><option value="255">None</option>${free.map((p) => `<option value="${p}">GP${p}</option>`).join('')}</select>
-      ${on ? '<button class="btn small" id="rmTest">Test</button>' : ''}</div></div>
+    <div class="opt first"><div><h3>${t('tune.rumble.motor_pin')}</h3><p class="dim">${t('tune.rumble.drives_transistor_s_base_through')}</p></div>
+      <div class="row"><select id="rmPin"><option value="255">${t('common.none')}</option>${free.map((p) => `<option value="${p}">GP${p}</option>`).join('')}</select>
+      ${on ? `<button class="btn small" id="rmTest">${t('common.test_action')}</button>` : ''}</div></div>
     ${on ? `
-    <div class="slider-row"><label for="rmStr">Strength</label><output class="val" id="rmStrV">${c.rumbleStrength} %</output><input type="range" id="rmStr" min="10" max="100" step="5" value="${c.rumbleStrength}"></div>
-    ${sw(1, 'Game rumble', 'Follow the rumble games send. On a guitar, Clone Hero and YARG use the rumble channel for stage kit and star power messages: those are recognised and left out.')}
-    ${sw(2, 'Buzz on star power', 'A short buzz when star power / overdrive starts, in games that report it (YARG, Clone Hero, RB3 Enhanced over XInput).')}
-    ${sw(4, 'Buzz on a missed note', 'A tap when a note is missed, in games that report it.')}` : ''}`;
+    <div class="slider-row"><label for="rmStr">${t('tune.rumble.strength')}</label><output class="val" id="rmStrV">${c.rumbleStrength} %</output><input type="range" id="rmStr" min="10" max="100" step="5" value="${c.rumbleStrength}"></div>
+    ${sw(1, t('tune.rumble.game_rumble'), t('tune.rumble.follow_rumble_games_send_guitar'))}
+    ${sw(2, t('tune.rumble.buzz_star_power'), t('tune.rumble.short_buzz_when_star_power'))}
+    ${sw(4, t('tune.rumble.buzz_missed_note'), t('tune.rumble.tap_when_note_missed_games'))}` : ''}`;
   const live = () => { pushCfg(); };
   const sel = $('#rmPin');
   sel.value = String(c.rumblePin ?? PIN_NONE);
@@ -1597,8 +1594,8 @@ function buildRumble() {
   const st = $('#rmStr');
   if (st) st.oninput = () => { c.rumbleStrength = +st.value; $('#rmStrV').textContent = c.rumbleStrength + ' %'; live(); };
   body.querySelectorAll('[data-bit]').forEach((cb) => (cb.onchange = () => { const b = +cb.dataset.bit; c.rumbleFlags = cb.checked ? c.rumbleFlags | b : c.rumbleFlags & ~b; live(); }));
-  const t = $('#rmTest');
-  if (t) t.onclick = async () => { try { await state.dev.setConfig(c); await state.dev.rumbleTest(500); } catch (e) { toast('Rumble test failed: ' + e.message, 'bad'); } };
+  const tv = $('#rmTest');
+  if (tv) tv.onclick = async () => { try { await state.dev.setConfig(c); await state.dev.rumbleTest(500); } catch (e) { toast(t('tune.rumble.rumble_test_failed', { message: e.message }), 'bad'); } };
 }
 
 // ------------------------------------------------------------------ tilt sensors (firmware 0.29+)
@@ -1607,18 +1604,18 @@ const tiltOn = [false, false];
 function tiltStates(s) {
   const c = state.cfg;
   if (!c?.atilt || (c.cfgVersion ?? 0) < 5) return [];
-  return c.atilt.map((t, i) => {
-    const raw = tiltSourceRaw(s, t.src);
-    const value = tiltValue(raw, t);
+  return c.atilt.map((tv, i) => {
+    const raw = tiltSourceRaw(s, tv.src);
+    const value = tiltValue(raw, tv);
     const mo = tiltMapOut(11 + i, c);   // assigned to a gamepad output in the running mode: the Tune behaviour is off
-    const func = mo != null ? -2 : t.target === 0 ? -1 : tiltFuncOf(1 + i, c);
+    const func = mo != null ? -2 : tv.target === 0 ? -1 : tiltFuncOf(1 + i, c);
     if (value == null) { tiltOn[i] = false; return { raw, value: null, whammy: false, star: false, press: false, func, out: mo }; }
-    if (t.target === 1 || mo != null) {
-      const on = t.threshold / 100, off = on - 0.04;
+    if (tv.target === 1 || mo != null) {
+      const on = tv.threshold / 100, off = on - 0.04;
       tiltOn[i] = tiltOn[i] ? value > off : value >= on;
     } else tiltOn[i] = false;
-    const v = mo == null && t.target === 0 && value < c.whammyDeadzone / 100 ? 0 : value;
-    return { raw, value: v, whammy: mo == null && t.target === 0, star: tiltOn[i] && func === FUNC_STAR, press: tiltOn[i], func, out: mo };
+    const v = mo == null && tv.target === 0 && value < c.whammyDeadzone / 100 ? 0 : value;
+    return { raw, value: v, whammy: mo == null && tv.target === 0, star: tiltOn[i] && func === FUNC_STAR, press: tiltOn[i], func, out: mo };
   });
 }
 
@@ -1630,13 +1627,13 @@ const isAxisSrc = (src) => (src >= 3 && src <= 5) || (src >= 9 && src <= 11);
 const axisIdx = (src) => (src >= 9 ? src - 9 : src - 3);
 // what a sensor slot does, as the guided setup sees it: 0 whammy, 1 star power, 2 another button
 const slotMode = (c, i) => (c.atilt[i].target === 0 ? 0 : tiltFuncOf(1 + i, c) !== FUNC_STAR || i === qtBtnSlot ? 2 : 1);
-const quickSlotChip = (c) => c.atilt.findIndex((t) => isAxisSrc(t.src) && (!qt.chip === (t.src < 9)));
-const quickSlotFor = (c, mode) => c.atilt.findIndex((t, i) => isAxisSrc(t.src) && slotMode(c, i) === mode);
-const accStatusText = (s, on) => !on ? 'Pick the pins your accelerometer is wired to.'
-  : !s?.accelType ? 'Looking for the accelerometer… check the wiring (SDA/SCL, power, CS to 3V3).'
-  : '✓ ' + (ACCEL_TYPES[s.accelType] || 'Accelerometer') + ' found';
-const tiltStateText = (src, t) => src === PIN_NONE ? 'off' : t.value == null ? (t.raw == null ? 'no reading' : 'calibrate') : t.whammy ? 'whammy ' + Math.round(t.value * 100) + ' %' : t.star ? 'STAR POWER' : t.press ? (t.out != null ? 'ACTIVE' : funcName(t.func).toUpperCase()) : 'level';
-const pressWord = (f) => (f === FUNC_STAR ? 'Star power' : funcName(f));
+const quickSlotChip = (c) => c.atilt.findIndex((tv) => isAxisSrc(tv.src) && (!qt.chip === (tv.src < 9)));
+const quickSlotFor = (c, mode) => c.atilt.findIndex((tv, i) => isAxisSrc(tv.src) && slotMode(c, i) === mode);
+const accStatusText = (s, on) => !on ? t('tune.tilt.pick_pins_accelerometer_wired')
+  : !s?.accelType ? t('tune.tilt.looking_accelerometer_check_wiring_sda')
+  : t('tune.tilt.found', { sensor: ACCEL_TYPES[s.accelType] || t('tune.tilt.accelerometer_3') });
+const tiltStateText = (src, tv) => src === PIN_NONE ? t('common.off') : tv.value == null ? (tv.raw == null ? 'no reading' : 'calibrate') : tv.whammy ? t('tune.tilt.whammy', { percent: Math.round(tv.value * 100) }) : tv.star ? t('tune.tilt.star_power') : tv.press ? (tv.out != null ? t('tune.tilt.active') : funcName(tv.func).toUpperCase()) : 'level';
+const pressWord = (f) => (f === FUNC_STAR ? t('common.star_power') : funcName(f));
 const tiltKeyOf = (s) => `${!!s?.accelType}|${!!s?.accel2Type}`;
 
 // accelerometer SDA/SCL pairs: even SDA, a valid I2C pair, pins in use elsewhere left out
@@ -1645,14 +1642,14 @@ function accelPairs(c) {
   const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...hostPins(), c.rumblePin ?? PIN_NONE, ...extPinList(c)].filter((p) => p !== PIN_NONE && !own.has(p)));
   return [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !(p & 1) && i2cPinsOk(p, p + 1) && !taken.has(p) && !taken.has(p + 1));
 }
-const accPinsSelect = (pairs) => `<select id="accPins" aria-label="Accelerometer pins"><option value="255">None</option>${pairs.map((p) => `<option value="${p}">SDA GP${p}, SCL GP${p + 1}</option>`).join('')}</select>`;
+const accPinsSelect = (pairs) => `<select id="accPins" aria-label="${t('tune.tilt.aria_label.accelerometer_pins')}"><option value="255">${t('common.none')}</option>${pairs.map((p) => `<option value="${p}">SDA GP${p}, SCL GP${p + 1}</option>`).join('')}</select>`;
 function wireAccPins(root, rebuild) {
   const c = state.cfg, sel = root.querySelector('#accPins');
   sel.value = String(c.accelSda !== PIN_NONE && i2cPinsOk(c.accelSda, c.accelScl) ? c.accelSda : PIN_NONE);
   sel.onchange = () => {
     const p = +sel.value;
     c.accelSda = p; c.accelScl = p === PIN_NONE ? PIN_NONE : p + 1;
-    if (p === PIN_NONE) c.atilt.forEach((t) => { if (t.src >= 3) t.src = PIN_NONE; });
+    if (p === PIN_NONE) c.atilt.forEach((tv) => { if (tv.src >= 3) tv.src = PIN_NONE; });
     pushCfg(); rebuild();
   };
 }
@@ -1670,8 +1667,8 @@ function quickModel(c, ana = null) {
     if (quickSlotFor(c, 1) >= 0) qt.target = 1; else if (quickSlotFor(c, 0) >= 0) qt.target = 0; else if (btnOk && quickSlotFor(c, 2) >= 0) qt.target = 2;
   }
   if (!found2) qt.chip = 0;
-  else if (mapUi && !qt.chosen) { const sl = c.atilt.find((t) => isAxisSrc(t.src)); if (sl) qt.chip = sl.src >= 9 ? 1 : 0; }
-  qtSlot = found ? (ana != null ? c.atilt.findIndex((t) => t.src === ana) : mapUi ? quickSlotChip(c) : quickSlotFor(c, qt.target)) : -1;
+  else if (mapUi && !qt.chosen) { const sl = c.atilt.find((tv) => isAxisSrc(tv.src)); if (sl) qt.chip = sl.src >= 9 ? 1 : 0; }
+  qtSlot = found ? (ana != null ? c.atilt.findIndex((tv) => tv.src === ana) : mapUi ? quickSlotChip(c) : quickSlotFor(c, qt.target)) : -1;
   const stage = qtSlot >= 0 ? 'result' : qt.level ? 'tilted' : 'level';
   const qs = qtSlot >= 0 ? c.atilt[qtSlot] : null;
   const qsChip = qs ? (qs.src >= 9 ? 2 : 1) : 0;
@@ -1685,31 +1682,27 @@ function quickHtml(m, c) {
   const { ana, found2, mapUi, btnOk, stage, qs, qsChip, qAv, qKind, qShowThr, qResp } = m;
   return `
     <div class="tilt-quick" id="tiltQuick">
-      <h3>Guided setup</h3>
+      <h3>${t('tune.tilt.guided_setup')}</h3>
       <ol class="tilt-steps">
-        ${mapUi ? '' : `<li class="done"><span class="n">✓</span><div><b>What should tilting do?</b>
-          <div class="seg" role="group" aria-label="What should tilting do"><button data-qt="1" class="${qt.target === 1 ? 'on' : ''}">Star power</button><button data-qt="0" class="${qt.target === 0 ? 'on' : ''}">Whammy</button>${btnOk ? `<button data-qt="2" class="${qt.target === 2 ? 'on' : ''}">A button</button>` : ''}</div>
-          ${btnOk && qt.target === 2 ? `<div class="dim small">Which input?</div><select id="qPick" aria-label="Which input should tilting press">${tiltFuncOptions(qt.func, false)}</select>` : ''}
-          ${found2 ? `<div class="dim small">Which sensor?</div><div class="seg" role="group" aria-label="Which sensor"><button data-qc="0" class="${qt.chip === 0 ? 'on' : ''}">Chip 1</button><button data-qc="1" class="${qt.chip === 1 ? 'on' : ''}">Chip 2</button></div>` : ''}
+        ${mapUi ? '' : `<li class="done"><span class="n">✓</span><div><b>${t('tune.tilt.what_should_tilting_do')}</b>
+          <div class="seg" role="group" aria-label="${t('tune.tilt.aria_label.what_should_tilting_do')}"><button data-qt="1" class="${qt.target === 1 ? 'on' : ''}">${t('common.star_power')}</button><button data-qt="0" class="${qt.target === 0 ? 'on' : ''}">${t('common.whammy')}</button>${btnOk ? `<button data-qt="2" class="${qt.target === 2 ? 'on' : ''}">${t('tune.tilt.button')}</button>` : ''}</div>
+          ${btnOk && qt.target === 2 ? `<div class="dim small">${t('tune.tilt.which_input')}</div><select id="qPick" aria-label="${t('tune.tilt.aria_label.which_input_should_tilting_press')}">${tiltFuncOptions(qt.func, false)}</select>` : ''}
+          ${found2 ? `<div class="dim small">${t('tune.tilt.which_sensor')}</div><div class="seg" role="group" aria-label="${t('tune.tilt.aria_label.which_sensor')}"><button data-qc="0" class="${qt.chip === 0 ? 'on' : ''}">${t('tune.tilt.chip_1')}</button><button data-qc="1" class="${qt.chip === 1 ? 'on' : ''}">${t('tune.tilt.chip_2')}</button></div>` : ''}
         </div></li>`}
-        <li class="${stage === 'result' || qt.level ? 'done' : 'active'}"><span class="n">${stage === 'result' || qt.level ? '✓' : mapUi ? '1' : '2'}</span><div><b>Hold the guitar level, the way you play</b>
-          ${mapUi && found2 && stage !== 'result' ? `<div class="dim small">Which sensor?</div><div class="seg" role="group" aria-label="Which sensor"><button data-qc="0" class="${qt.chip === 0 ? 'on' : ''}">Chip 1</button><button data-qc="1" class="${qt.chip === 1 ? 'on' : ''}">Chip 2</button></div>` : ''}
-          ${stage === 'result' ? '' : '<div><button class="btn small" id="qCapLevel">Capture level</button></div>'}</div></li>
-        <li class="${stage === 'result' ? 'done' : qt.level ? 'active' : ''}"><span class="n">${stage === 'result' ? '✓' : mapUi ? '2' : '3'}</span><div><b>Tilt the neck up, ${mapUi ? 'the way you will when playing' : 'like you would for star power'}</b>
-          ${stage === 'result' ? '' : `<div><button class="btn small" id="qCapTilt" ${qt.level ? '' : 'disabled'}>Capture tilted</button></div>`}</div></li>
+        <li class="${stage === 'result' || qt.level ? 'done' : 'active'}"><span class="n">${stage === 'result' || qt.level ? '✓' : mapUi ? '1' : '2'}</span><div>${t('tune.tilt.hold_guitar_level_way_play', { v: mapUi && found2 && stage !== 'result' ? `<div class="dim small">${t('tune.tilt.which_sensor')}</div><div class="seg" role="group" aria-label="${t('tune.tilt.aria_label.which_sensor')}"><button data-qc="0" class="${qt.chip === 0 ? 'on' : ''}">${t('tune.tilt.chip_1')}</button><button data-qc="1" class="${qt.chip === 1 ? 'on' : ''}">${t('tune.tilt.chip_2')}</button></div>` : '', v2: stage === 'result' ? '' : `<div><button class="btn small" id="qCapLevel">${t('tune.tilt.capture_level')}</button></div>` })}</div></li>
+        <li class="${stage === 'result' ? 'done' : qt.level ? 'active' : ''}"><span class="n">${stage === 'result' ? '✓' : mapUi ? '2' : '3'}</span><div>${t('tune.tilt.tilt_neck_up', { v: mapUi ? t('tune.tilt.way_will_when_playing') : t('tune.tilt.like_would_star_power'), v2: stage === 'result' ? '' : `<div><button class="btn small" id="qCapTilt" ${qt.level ? '' : 'disabled'}>${t('tune.tilt.capture_tilted')}</button></div>` })}</div></li>
         ${stage === 'result' ? `
         <li class="done"><span class="n">✓</span><div>
-          ${mapUi ? `<b>Assign to</b><div>${assignSelect(11 + qtSlot, 'Guided setup')}</div>${assignNote(qAv)}
-          <b style="display:block;margin-top:8px">Done. Tilt the neck to try it.</b>` : `<b>Done. ${qt.target === 1 ? 'Tilt the neck to try star power.' : qt.target === 2 ? `Tilt the neck to press ${pressWord(tiltFuncOf(1 + qtSlot))}.` : 'Tilt the guitar to move the whammy.'}</b>`}
+          ${mapUi ? `<b>${t('tune.tilt_switch.assign')}</b><div>${assignSelect(11 + qtSlot, t('tune.tilt.guided_setup'))}</div>${t('tune.tilt.done_tilt_neck_try', { note: assignNote(qAv) })}` : `<b>${t('tune.tilt.done', { v: qt.target === 1 ? t('tune.tilt.tilt_neck_try_star_power') : qt.target === 2 ? t('tune.tilt.tilt_neck_press', { v: pressWord(tiltFuncOf(1 + qtSlot)) }) : t('tune.tilt.tilt_guitar_move_whammy') })}</b>`}
           <div class="tilt-meter"><div class="bar" id="qBar"><i></i></div>${qShowThr ? `<span class="thr" id="qThrMark" style="left:${qs.threshold}%"></span>` : ''}</div>
-          <div class="tilt-readout"><span><span class="tilt-state" id="qSt">–</span></span><span id="qUsing">${ana != null ? 'Using GP' + (26 + ana) + ' (analog).' : `Using Accelerometer${found2 || qsChip === 2 ? ' ' + qsChip : ''} ${'XYZ'[axisIdx(qs.src)]} axis.`}</span></div>
-          ${qShowThr ? `<div class="slider-row"><label for="qThr">${!mapUi ? (qt.target === 1 ? 'Star power at' : 'Press at') : qAv === 'f:' + FUNC_STAR ? 'Star power at' : 'Trigger point'}</label><output class="val" id="qThrV">${qs.threshold} %</output><input type="range" id="qThr" min="5" max="95" step="1" value="${qs.threshold}"></div>`
-            : qKind === 'analog' && (qResp || rangeOk()) ? (qResp ? responseHtml(1 + qtSlot, c.ext.curve[1 + qtSlot], 'Shapes how far the stick or trigger moves.') : '') + rangeFor(11 + qtSlot, qAv)
-            : qKind === 'w' || !mapUi ? '<p class="dim small">Adds to the whammy bar: whichever is further wins.</p>' : ''}
-          <div><button class="btn small" id="qRedo">Redo</button></div>
+          <div class="tilt-readout"><span><span class="tilt-state" id="qSt">–</span></span><span id="qUsing">${ana != null ? t('tune.tilt.using_gp_analog', { pin: 26 + ana }) : t('tune.tilt.using_accelerometer_axis', { v: found2 || qsChip === 2 ? ' ' + qsChip : '', axis: 'XYZ'[axisIdx(qs.src)] })}</span></div>
+          ${qShowThr ? `<div class="slider-row"><label for="qThr">${!mapUi ? (qt.target === 1 ? t('tune.tilt.star_power_at') : t('tune.tilt.press_at')) : qAv === 'f:' + FUNC_STAR ? t('tune.tilt.star_power_at') : t('tune.tilt.trigger_point')}</label><output class="val" id="qThrV">${qs.threshold} %</output><input type="range" id="qThr" min="5" max="95" step="1" value="${qs.threshold}"></div>`
+            : qKind === 'analog' && (qResp || rangeOk()) ? (qResp ? responseHtml(1 + qtSlot, c.ext.curve[1 + qtSlot], t('tune.tilt.shapes_how_far_stick_or')) : '') + rangeFor(11 + qtSlot, qAv)
+            : qKind === 'w' || !mapUi ? `<p class="dim small">${t('tune.tilt.adds_whammy_bar_whichever_further')}</p>` : ''}
+          <div><button class="btn small" id="qRedo">${t('setup.ledmap.redo')}</button></div>
         </div></li>` : ''}
       </ol>
-      ${stage === 'result' ? '' : `<div class="tilt-axes" aria-label="Live reading">${(ana != null ? ['GP' + (26 + ana)] : ['X', 'Y', 'Z']).map((a, i) => `<div>${a} <span id="qV${i}">–</span><div class="bar"><i id="qB${i}"></i></div></div>`).join('')}</div>`}
+      ${stage === 'result' ? '' : `<div class="tilt-axes" aria-label="${t('tune.tilt.aria_label.live_reading')}">${(ana != null ? ['GP' + (26 + ana)] : ['X', 'Y', 'Z']).map((a, i) => `<div>${a} <span id="qV${i}">–</span><div class="bar"><i id="qB${i}"></i></div></div>`).join('')}</div>`}
     </div>`;
 }
 function wireQuick(root, m, c, rebuild) {
@@ -1725,18 +1718,18 @@ function wireQuick(root, m, c, rebuild) {
   };
   root.querySelectorAll('[data-qc]').forEach((b) => (b.onclick = () => { qt.chip = +b.dataset.qc; qt.chosen = true; qt.level = qt.tilted = null; rebuild(); }));
   const capL = root.querySelector('#qCapLevel'), capT = root.querySelector('#qCapTilt');
-  const grab = () => { const r = ana != null ? (state.status?.adc?.[ana] != null ? [state.status.adc[ana]] : null) : chipRaw(state.status, qt.chip); if (!r) toast(ana != null ? 'No reading from this channel yet.' : 'No reading from the accelerometer yet. Check the wiring.', 'bad'); return r; };
+  const grab = () => { const r = ana != null ? (state.status?.adc?.[ana] != null ? [state.status.adc[ana]] : null) : chipRaw(state.status, qt.chip); if (!r) toast(ana != null ? t('tune.tilt.no_reading_from_this_channel') : t('tune.tilt.no_reading_from_accelerometer_yet'), 'bad'); return r; };
   if (capL) capL.onclick = () => { const r = grab(); if (!r) return; qt.level = r; qt.tilted = null; rebuild(); };
   if (capT) capT.onclick = () => {
     const r = grab(); if (!r || !qt.level) return;
     qt.tilted = r;
     const diff = r.map((v, i) => Math.abs(v - qt.level[i]));
     const ax = ana != null ? 0 : diff.indexOf(Math.max(...diff));
-    if (diff[ax] < 100) { qt.tilted = null; toast('Barely moved. Tilt the neck further and capture again.', 'bad'); rebuild(); return; }
+    if (diff[ax] < 100) { qt.tilted = null; toast(t('tune.tilt.barely_moved_tilt_neck_further'), 'bad'); rebuild(); return; }
     const want = qt.target, srcId = ana != null ? ana : (qt.chip ? 9 : 3) + ax;
     if (mapUi) {
-      let sl = ana != null ? c.atilt.findIndex((t) => t.src === ana) : quickSlotChip(c), fresh = false;
-      if (sl < 0) { sl = qSlotPref >= 0 ? qSlotPref : c.atilt.findIndex((t) => t.src === PIN_NONE); fresh = true; if (sl < 0) sl = 0; }
+      let sl = ana != null ? c.atilt.findIndex((tv) => tv.src === ana) : quickSlotChip(c), fresh = false;
+      if (sl < 0) { sl = qSlotPref >= 0 ? qSlotPref : c.atilt.findIndex((tv) => tv.src === PIN_NONE); fresh = true; if (sl < 0) sl = 0; }
       const lv = qt.level[ax], tl = r[ax];
       Object.assign(c.atilt[sl], { src: srcId, min: Math.min(lv, tl), max: Math.max(lv, tl), invert: lv > tl });
       if (fresh) { c.atilt[sl].target = 1; c.atilt[sl].threshold = 50; c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR]; c.tiltFunc[1 + sl] = FUNC_STAR; }
@@ -1744,8 +1737,8 @@ function wireQuick(root, m, c, rebuild) {
       live(); rebuild();
       return;
     }
-    let slot = ana != null ? c.atilt.findIndex((t) => t.src === ana) : c.atilt.findIndex((t, i) => slotMode(c, i) === want && isAxisSrc(t.src));
-    if (slot < 0) slot = qSlotPref >= 0 ? qSlotPref : c.atilt.findIndex((t) => t.src === PIN_NONE);
+    let slot = ana != null ? c.atilt.findIndex((tv) => tv.src === ana) : c.atilt.findIndex((tv, i) => slotMode(c, i) === want && isAxisSrc(tv.src));
+    if (slot < 0) slot = qSlotPref >= 0 ? qSlotPref : c.atilt.findIndex((tv) => tv.src === PIN_NONE);
     if (slot < 0) slot = 0;
     const lv = qt.level[ax], tl = r[ax];
     // a button is a "press" target (1) whose input sits in tiltFunc; star power is the same with the star input
@@ -1761,7 +1754,7 @@ function wireQuick(root, m, c, rebuild) {
   if (redo) redo.onclick = () => { qt.level = qt.tilted = null; if (qtSlot >= 0) c.atilt[qtSlot].src = PIN_NONE; qtBtnSlot = -1; live(); rebuild(); };
   const qthr = root.querySelector('#qThr');
   if (qthr) {
-    qthr.oninput = () => { const t = c.atilt[qtSlot]; t.threshold = +qthr.value; root.querySelector('#qThrV').textContent = t.threshold + ' %'; root.querySelector('#qThrMark').style.left = t.threshold + '%'; live(); };
+    qthr.oninput = () => { const tv = c.atilt[qtSlot]; tv.threshold = +qthr.value; root.querySelector('#qThrV').textContent = tv.threshold + ' %'; root.querySelector('#qThrMark').style.left = tv.threshold + '%'; live(); };
     qthr.onchange = () => rebuild();   // refresh the fine-tune card too
   }
 }
@@ -1776,7 +1769,7 @@ function buildTilt() {
   const c = state.cfg, body = $('#tiltBody');
   if (!body) return;
   if ((c.cfgVersion ?? 0) < 5) {
-    body.innerHTML = '<p class="notice small">Tilt sensors need firmware 0.29 or newer. Update the firmware on the Install page.</p>';
+    body.innerHTML = `<p class="notice small">${t('tune.tilt.tilt_sensors_need_firmware_0')}</p>`;
     return;
   }
   const pairs = accelPairs(c);
@@ -1784,62 +1777,62 @@ function buildTilt() {
   const two = fwAtLeast(ACCEL2_MIN_MINOR);   // firmware 0.36+ finds a second accelerometer on the same bus
   const srcOpts = (i) => {
     const other = c.atilt[1 - i].src;
-    return '<option value="255">Off</option>' + ATILT_SOURCES.map((s) => {
+    return `<option value="255">${t('common.off_2')}</option>${ATILT_SOURCES.map((s) => {
       const busy = (s.kind === 'adc' && s.id === c.whammyCh) || (s.id === other && other !== PIN_NONE);
       const needs = (s.kind !== 'adc' && !accelOn) || (s.kind === 'accel2' && !two);
       if (needs && c.atilt[i].src !== s.id) return '';
       const name = two && s.kind === 'accel' ? s.name.replace('Accelerometer', 'Accelerometer 1') : s.name;
-      const note = s.id === c.whammyCh ? ' (whammy bar)' : s.id === other ? ' (other sensor)' : s.kind === 'lis' ? ' (LIS3DH only)' : '';
+      const note = s.id === c.whammyCh ? t('tune.tilt.whammy_bar') : s.id === other ? t('tune.tilt.other_sensor') : s.kind === 'lis' ? t('tune.tilt.lis3dh_only') : '';
       return `<option value="${s.id}" ${busy ? 'disabled' : ''}>${name}${note}</option>`;
-    }).join('');
+    }).join('')}`;
   };
-  const restOf = (t) => (t.invert ? t.max : t.min), tiltOf = (t) => (t.invert ? t.min : t.max);
+  const restOf = (tv) => (tv.invert ? tv.max : tv.min), tiltOf = (tv) => (tv.invert ? tv.min : tv.max);
   // ---- guided capture (shared with the Setup step)
   const qm = quickModel(c); tiltKey = tiltKeyOf(state.status);
   const found = qm.found, mapUi = qm.mapUi;
   const quick = quickHtml(qm, c);
-  const cav = c.atilt.map((t, i) => (mapUi ? assignValue(11 + i) : ''));
+  const cav = c.atilt.map((tv, i) => (mapUi ? assignValue(11 + i) : ''));
   const ckind = cav.map(assignKind);
-  const cthr = c.atilt.map((t, i) => (mapUi ? ['func', 'digital', 'mixed'].includes(ckind[i]) : t.target === 1));
+  const cthr = c.atilt.map((tv, i) => (mapUi ? ['func', 'digital', 'mixed'].includes(ckind[i]) : tv.target === 1));
   body.innerHTML = `
     <div class="tilt-accel">
-      <div class="opt first"><div><h3>Accelerometer</h3><p class="dim">I²C module: SDA on the even pin, SCL on the next one, VCC to 3V3(OUT), GND to GND.</p></div>
+      <div class="opt first"><div><h3>${t('tune.tilt.accelerometer_3')}</h3><p class="dim">${t('tune.tilt.i2c_module_sda_even_pin')}</p></div>
         ${accPinsSelect(pairs)}</div>
       <p class="acc-status" id="accStatus" role="status"></p>
       ${quick}
-      ${found ? '<p class="dim small" style="margin:12px 0 0">Or set everything by hand below.</p>' : ''}
-      <p class="dim small" style="margin:6px 0 0" id="accTwoHint">Two accelerometers: wire both to the same SDA / SCL / 3V3 / GND; give the second a different address (ADXL345: SDO to 3V3 → 0x1D, the first SDO to GND → 0x53; LIS3DH: SA0/SDO high → 0x19; MPU-6050: AD0 high → 0x69).${two ? '' : ' Needs firmware 0.36 or newer.'}</p>
+      ${found ? `<p class="dim small" style="margin:12px 0 0">${t('tune.tilt.or_set_everything_by_hand')}</p>` : ''}
+      <p class="dim small" style="margin:6px 0 0" id="accTwoHint">${t('tune.tilt.two_accelerometers_wire_both_same', { v: two ? '' : t('tune.tilt.needs_firmware_0_36_or') })}</p>
       ${accelOn ? `
-      <div class="tilt-readout" style="margin-top:8px"><span>${two ? 'Chip 1' : 'Chip'}: <b id="accType">looking…</b>${two ? ' · Chip 2: <b id="acc2Type">looking…</b>' : ''}</span><span class="dim">1 g = 1024 counts, 2048 = level</span></div>
-      ${two ? '<p class="dim small" id="acc2Hint" hidden>Chip 2: not found. Wire its SDO to 3V3 for address 0x1D (ADXL345), SA0 high for 0x19 (LIS3DH) or AD0 high for 0x69 (MPU-6050).</p>' : ''}
+      <div class="tilt-readout" style="margin-top:8px">${t('tune.tilt.looking_1_g_1024_counts', { v: two ? t('tune.tilt.chip_1') : t('tune.tilt.chip'), v2: two ? t('tune.tilt.chip_2_looking') : '' })}</div>
+      ${two ? `<p class="dim small" id="acc2Hint" hidden>${t('tune.tilt.chip_2_not_found_wire')}</p>` : ''}
       <div class="tilt-axes">${['X', 'Y', 'Z'].map((a, i) => `<div>${two ? '1 ' : ''}${a} <span id="accV${i}">–</span><div class="bar"><i id="accB${i}"></i></div></div>`).join('')}</div>
       ${two ? `<div class="tilt-axes" id="acc2Axes" style="margin-top:6px">${['X', 'Y', 'Z'].map((a, i) => `<div>2 ${a} <span id="acc2V${i}">–</span><div class="bar"><i id="acc2B${i}"></i></div></div>`).join('')}</div>` : ''}
       <div class="cols" style="margin-top:6px">
         <div>
-          <div class="slider-row"><label for="accLp">Low pass</label><output class="val" id="accLpV"></output><input type="range" id="accLp" min="0" max="50" step="1"></div>
-          <div class="slider-row"><label for="accMed">Median</label><output class="val" id="accMedV"></output><input type="range" id="accMed" min="0" max="4" step="1"></div>
+          <div class="slider-row"><label for="accLp">${t('tune.tilt.low_pass')}</label><output class="val" id="accLpV"></output><input type="range" id="accLp" min="0" max="50" step="1"></div>
+          <div class="slider-row"><label for="accMed">${t('tune.tilt.median')}</label><output class="val" id="accMedV"></output><input type="range" id="accMed" min="0" max="4" step="1"></div>
         </div>
         <div>
-          <div class="slider-row"><label for="accGate">Gravity gate</label><output class="val" id="accGateV"></output><input type="range" id="accGate" min="0" max="50" step="1"></div>
-          <p class="dim small">Low pass smooths the reading, the median drops single spikes, and the gravity gate ignores moments when the guitar is being shaken (a hard strum) instead of tilted. Each is off at 0, as in Santroller.</p>
+          <div class="slider-row"><label for="accGate">${t('tune.tilt.gravity_gate')}</label><output class="val" id="accGateV"></output><input type="range" id="accGate" min="0" max="50" step="1"></div>
+          <p class="dim small">${t('tune.tilt.low_pass_smooths_reading_median')}</p>
         </div>
       </div>` : ''}
     </div>
-    <div class="cols tilt-sensors">${c.atilt.map((t, i) => `
+    <div class="cols tilt-sensors">${c.atilt.map((tv, i) => `
       <div class="tilt-card" data-i="${i}">
-        <div class="head"><h3>Sensor ${i + 1}</h3><span class="tilt-state" id="tSt${i}">off</span></div>
-        <div class="opt first"><div><p class="dim">Reads from</p></div><select data-k="src">${srcOpts(i)}</select></div>
-        ${t.src !== PIN_NONE ? `
-        ${mapUi ? `<div class="opt"><div><p class="dim">Assign to</p></div>${assignSelect(11 + i, 'Sensor ' + (i + 1))}</div>${assignNote(cav[i])}`
-          : `<div class="opt"><div><p class="dim">Acts as</p></div><select data-k="func" aria-label="Sensor ${i + 1} acts as">${tiltFuncOptions(t.target === 0 ? 'w' : tiltFuncOf(1 + i), true)}</select></div>`}
-        ${(mapUi ? ckind[i] === 'analog' : true) && fwAtLeast(43) && c.ext?.curve ? responseHtml(1 + i, c.ext.curve[1 + i], mapUi ? 'Shapes how far the stick or trigger moves.' : 'Used when this sensor is mapped to a stick or trigger on the Test page. The press threshold is not affected.') : ''}
+        <div class="head"><h3>${t('tune.tilt.sensor', { n: i + 1 })}</h3><span class="tilt-state" id="tSt${i}">${t('common.off')}</span></div>
+        <div class="opt first"><div><p class="dim">${t('tune.tilt.reads_from')}</p></div><select data-k="src">${srcOpts(i)}</select></div>
+        ${tv.src !== PIN_NONE ? `
+        ${mapUi ? `<div class="opt"><div><p class="dim">${t('tune.tilt_switch.assign')}</p></div>${assignSelect(11 + i, t('tune.tilt.sensor', { n: i + 1 }))}</div>${assignNote(cav[i])}`
+          : `<div class="opt"><div><p class="dim">${t('tune.tilt_switch.acts_as')}</p></div><select data-k="func" aria-label="${t('tune.tilt.aria_label.sensor_acts_as', { n: i + 1 })}">${tiltFuncOptions(tv.target === 0 ? 'w' : tiltFuncOf(1 + i), true)}</select></div>`}
+        ${(mapUi ? ckind[i] === 'analog' : true) && fwAtLeast(43) && c.ext?.curve ? responseHtml(1 + i, c.ext.curve[1 + i], mapUi ? t('tune.tilt.shapes_how_far_stick_or') : t('tune.tilt.used_when_this_sensor_mapped')) : ''}
         ${mapUi && ckind[i] === 'analog' ? rangeFor(11 + i, cav[i]) : ''}
-        <div class="tilt-meter"><div class="bar" id="tBar${i}"><i></i></div>${cthr[i] ? `<span class="thr" style="left:${t.threshold}%"></span>` : ''}</div>
-        <div class="tilt-readout"><span>reading <b id="tRaw${i}">–</b></span><span>rest ${restOf(t)} · tilted ${tiltOf(t)}</span></div>
+        <div class="tilt-meter"><div class="bar" id="tBar${i}"><i></i></div>${cthr[i] ? `<span class="thr" style="left:${tv.threshold}%"></span>` : ''}</div>
+        <div class="tilt-readout">${t('tune.tilt.reading_rest_tilted', { i, v: restOf(tv), v2: tiltOf(tv) })}</div>
         <div class="row" style="margin-top:10px;flex-wrap:wrap">
-          <button class="btn small" data-cap="rest">Set rest (guitar level)</button><button class="btn small" data-cap="tilt">Set tilted (neck up)</button></div>
-        ${cthr[i] ? `<div class="slider-row"><label>${(mapUi ? cav[i] === 'f:' + FUNC_STAR : tiltFuncOf(1 + i) === FUNC_STAR) ? 'Star power at' : mapUi ? 'Trigger point' : 'Press at'}</label><output class="val">${t.threshold} %</output><input type="range" data-k="threshold" min="5" max="95" step="1" value="${t.threshold}"></div>`
-          : !mapUi || ckind[i] === 'w' ? '<p class="dim small" style="margin-top:8px">Adds to the whammy bar: whichever is further wins. The whammy dead zone above applies.</p>' : ''}` : ''}
+          <button class="btn small" data-cap="rest">${t('tune.tilt.set_rest_guitar_level')}</button><button class="btn small" data-cap="tilt">${t('tune.tilt.set_tilted_neck_up')}</button></div>
+        ${cthr[i] ? `<div class="slider-row"><label>${(mapUi ? cav[i] === 'f:' + FUNC_STAR : tiltFuncOf(1 + i) === FUNC_STAR) ? t('tune.tilt.star_power_at') : mapUi ? t('tune.tilt.trigger_point') : t('tune.tilt.press_at')}</label><output class="val">${tv.threshold} %</output><input type="range" data-k="threshold" min="5" max="95" step="1" value="${tv.threshold}"></div>`
+          : !mapUi || ckind[i] === 'w' ? `<p class="dim small" style="margin-top:8px">${t('tune.tilt.adds_whammy_bar_whichever_further_2')}</p>` : ''}` : ''}
       </div>`).join('')}
     </div>`;
   const live = () => { pushCfg(); };
@@ -1852,9 +1845,9 @@ function buildTilt() {
     const lp = $('#accLp'), md = $('#accMed'), gt = $('#accGate');
     const MED = [0, 3, 5, 7, 9];
     const show = () => {
-      $('#accLpV').textContent = c.accelLowpass ? c.accelLowpass + ' Hz' : 'off';
-      $('#accMedV').textContent = c.accelMedian ? c.accelMedian + ' samples' : 'off';
-      $('#accGateV').textContent = c.accelGate ? '±' + (c.accelGate / 100).toFixed(2) + ' g' : 'off';
+      $('#accLpV').textContent = c.accelLowpass ? c.accelLowpass + ' Hz' : t('common.off');
+      $('#accMedV').textContent = c.accelMedian ? t('tune.tilt.samples', { accelMedian: c.accelMedian }) : t('common.off');
+      $('#accGateV').textContent = c.accelGate ? '±' + (c.accelGate / 100).toFixed(2) + ' g' : t('common.off');
     };
     lp.value = c.accelLowpass; md.value = Math.max(0, MED.indexOf(c.accelMedian)); gt.value = c.accelGate;
     lp.oninput = () => { c.accelLowpass = +lp.value; show(); live(); };
@@ -1863,25 +1856,25 @@ function buildTilt() {
     show();
   }
   body.querySelectorAll('.tilt-card').forEach((card) => {
-    const i = +card.dataset.i, t = c.atilt[i];
+    const i = +card.dataset.i, tv = c.atilt[i];
     const s = card.querySelector('select[data-k="src"]');
-    s.value = String(t.src);
-    s.onchange = () => { t.src = +s.value; live(); buildTilt(); };
+    s.value = String(tv.src);
+    s.onchange = () => { tv.src = +s.value; live(); buildTilt(); };
     const fs = card.querySelector('select[data-k="func"]');
     if (fs) fs.onchange = () => {
-      if (fs.value === 'w') t.target = 0;
-      else { t.target = 1; c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR]; c.tiltFunc[1 + i] = +fs.value; }
+      if (fs.value === 'w') tv.target = 0;
+      else { tv.target = 1; c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR]; c.tiltFunc[1 + i] = +fs.value; }
       live(); buildTilt();
     };
     const th = card.querySelector('input[data-k="threshold"]');
-    if (th) th.oninput = () => { t.threshold = +th.value; th.previousElementSibling.textContent = t.threshold + ' %'; card.querySelector('.thr').style.left = t.threshold + '%'; live(); };
+    if (th) th.oninput = () => { tv.threshold = +th.value; th.previousElementSibling.textContent = tv.threshold + ' %'; card.querySelector('.thr').style.left = tv.threshold + '%'; live(); };
     card.querySelectorAll('[data-cap]').forEach((b) => (b.onclick = () => {
-      const raw = tiltSourceRaw(state.status, t.src);
-      if (raw == null) { toast('No reading from this sensor yet. Check the wiring' + (t.src >= 3 ? ' and that the accelerometer was found.' : '.'), 'bad'); return; }
-      let rest = restOf(t), tilted = tiltOf(t);
+      const raw = tiltSourceRaw(state.status, tv.src);
+      if (raw == null) { toast(t('tune.tilt.no_reading_from_this_sensor', { v: tv.src >= 3 ? t('tune.tilt.that_accelerometer_was_found') : '.' }), 'bad'); return; }
+      let rest = restOf(tv), tilted = tiltOf(tv);
       if (b.dataset.cap === 'rest') rest = raw; else tilted = raw;
-      Object.assign(t, { min: Math.min(rest, tilted), max: Math.max(rest, tilted), invert: rest > tilted });
-      if (t.max - t.min < 8) toast('Rest and tilted read almost the same. Tilt further before setting the other end.', 'bad');
+      Object.assign(tv, { min: Math.min(rest, tilted), max: Math.max(rest, tilted), invert: rest > tilted });
+      if (tv.max - tv.min < 8) toast(t('tune.tilt.rest_tilted_read_almost_same'), 'bad');
       live(); buildTilt();
     }));
   });
@@ -1907,7 +1900,7 @@ function updateTilt(s) {
   }
   const ty = $('#accType');
   if (ty) {
-    ty.textContent = s.accelType ? ACCEL_TYPES[s.accelType] || 'unknown' : 'none found, check the wiring';
+    ty.textContent = s.accelType ? ACCEL_TYPES[s.accelType] || t('tune.tilt.unknown') : t('tune.tilt.none_found_check_wiring');
     for (let i = 0; i < 3; i++) {
       const v = s.accelRaw[i], ok = v !== 0xffff;
       $('#accV' + i).textContent = ok ? ((v - 2048) / 1024).toFixed(2) + ' g' : '–';
@@ -1916,7 +1909,7 @@ function updateTilt(s) {
   }
   const ty2 = $('#acc2Type');
   if (ty2) {
-    ty2.textContent = s.accel2Type ? ACCEL_TYPES[s.accel2Type] || 'unknown' : 'not found';
+    ty2.textContent = s.accel2Type ? ACCEL_TYPES[s.accel2Type] || t('tune.tilt.unknown') : t('tune.tilt.not_found');
     const hint = $('#acc2Hint');
     if (hint) hint.hidden = !!s.accel2Type || !s.accelType;   // only once chip 1 is up: chip 2 is searched after it
     for (let i = 0; i < 3; i++) {
@@ -1928,19 +1921,19 @@ function updateTilt(s) {
   const sts = tiltStates(s);
   const qSt = $('#qSt'), qBar = $('#qBar');
   if (qSt && qtSlot >= 0 && sts[qtSlot]) {
-    const t = sts[qtSlot];
-    qSt.textContent = tiltStateText(c.atilt[qtSlot].src, t);
-    qSt.classList.toggle('on', !!t.press || (t.whammy && t.value > 0));
-    if (qBar) { qBar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; qBar.classList.toggle('on', !!t.press); }
+    const tv = sts[qtSlot];
+    qSt.textContent = tiltStateText(c.atilt[qtSlot].src, tv);
+    qSt.classList.toggle('on', !!tv.press || (tv.whammy && tv.value > 0));
+    if (qBar) { qBar.firstElementChild.style.width = ((tv.value ?? 0) * 100).toFixed(1) + '%'; qBar.classList.toggle('on', !!tv.press); }
   }
-  sts.forEach((t, i) => {
+  sts.forEach((tv, i) => {
     const st = $('#tSt' + i), bar = $('#tBar' + i), raw = $('#tRaw' + i);
     if (!st) return;
     const src = c.atilt[i].src;
-    st.textContent = tiltStateText(src, t);
-    st.classList.toggle('on', !!t.press || (t.whammy && t.value > 0));
-    if (raw) raw.textContent = t.raw ?? '–';
-    if (bar) { bar.firstElementChild.style.width = ((t.value ?? 0) * 100).toFixed(1) + '%'; bar.classList.toggle('on', !!t.press); }
+    st.textContent = tiltStateText(src, tv);
+    st.classList.toggle('on', !!tv.press || (tv.whammy && tv.value > 0));
+    if (raw) raw.textContent = tv.raw ?? '–';
+    if (bar) { bar.firstElementChild.style.width = ((tv.value ?? 0) * 100).toFixed(1) + '%'; bar.classList.toggle('on', !!tv.press); }
   });
 }
 
@@ -1950,7 +1943,7 @@ function buildBackup() {
   box.innerHTML = '';
   $('#bkSave').onclick = () => {
     download(backupFileName(state.info), JSON.stringify(makeBackup(state.cfg, state.info), null, 2));
-    toast('Backup downloaded', 'ok');
+    toast(t('backup.backup_downloaded'), 'ok');
   };
   const pickLabel = document.querySelector('label[for=bkFile]');
   pickLabel.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#bkFile').click(); } };
@@ -1961,17 +1954,17 @@ function buildBackup() {
     let parsed;
     try { parsed = readBackup(await file.text()); } catch (err) { toast(err.message, 'bad'); return; }
     const when = parsed.meta.created ? new Date(parsed.meta.created).toLocaleString() : 'unknown date';
-    box.innerHTML = `<p class="bk-meta">${file.name}: made ${when}${parsed.meta.board ? ` on a ${parsed.meta.board}` : ''}${parsed.meta.firmware ? `, firmware <b>v${parsed.meta.firmware}</b>` : ''}. Choose what to restore.</p>
+    box.innerHTML = `<p class="bk-meta">${t('backup.made_choose_what_restore', { name: file.name, when, v: parsed.meta.board ? t('backup.on_a', { board: parsed.meta.board }) : '', v2: parsed.meta.firmware ? t('backup.firmware_v', { firmware: parsed.meta.firmware }) : '' })}</p>
       <div class="choice-list" id="bkSections">${SECTIONS.filter((sec) => !sec.ext || state.cfg.ext).map((sec) => {
         const has = !!parsed.sections[sec.id];
-        return `<label class="${has ? '' : 'off'}"><input type="checkbox" value="${sec.id}" ${has ? 'checked' : 'disabled'}><div><b>${sec.name}</b><span class="dim">${has ? sec.desc : 'Not in this backup'}</span></div></label>`;
+        return `<label class="${has ? '' : 'off'}"><input type="checkbox" value="${sec.id}" ${has ? 'checked' : 'disabled'}><div><b>${sec.name}</b><span class="dim">${has ? sec.desc : t('backup.not_this_backup')}</span></div></label>`;
       }).join('')}</div>
-      ${parsed.skipped.length ? `<p class="dim small">Some values were not valid and will be left as they are: ${parsed.skipped.join(', ')}.</p>` : ''}
-      <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn quiet" id="bkCancel">Cancel</button><button class="btn primary" id="bkApply">Restore and save</button></div>`;
+      ${parsed.skipped.length ? `<p class="dim small">${t('backup.some_values_were_not_valid', { list: parsed.skipped.join(', ') })}</p>` : ''}
+      <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn quiet" id="bkCancel">${t('common.cancel')}</button><button class="btn primary" id="bkApply">${t('backup.restore_save')}</button></div>`;
     $('#bkCancel').onclick = () => { box.innerHTML = ''; };
     $('#bkApply').onclick = async () => {
       const chosen = [...box.querySelectorAll('#bkSections input:checked')].map((i) => i.value);
-      if (!chosen.length) { toast('Pick at least one section to restore.'); return; }
+      if (!chosen.length) { toast(t('backup.pick_at_least_one_section')); return; }
       try {
         state.cfg = applyBackup(state.cfg, parsed, chosen);
         await state.dev.setConfig(state.cfg);
@@ -1979,8 +1972,8 @@ function buildBackup() {
         await sleep(400);
         state.cfg = await state.dev.getConfig();
         buildUi(); takeSnapshot();
-        toast(`Restored ${chosen.length === SECTIONS.filter((sec) => !sec.ext || state.cfg.ext).length ? 'all settings' : chosen.map((id) => SECTIONS.find((x) => x.id === id).name.toLowerCase()).join(', ')} and saved to the controller`, 'ok');
-      } catch (err) { toast('Restore failed: ' + err.message, 'bad'); }
+        toast(chosen.length === SECTIONS.filter((sec) => !sec.ext || state.cfg.ext).length ? t('backup.restored_all_saved_controller') : t('backup.restored_saved_controller', { list: sectionList(chosen.map((id) => SECTIONS.find((x) => x.id === id).name)) }), 'ok');
+      } catch (err) { toast(t('backup.restore_failed', { message: err.message }), 'bad'); }
     };
   };
 }
@@ -1988,7 +1981,7 @@ function buildBackup() {
 // ------------------------------------------------------------------ lights
 function liveWhammy(s, cfg = state.cfg) {
   const ts = tiltStates(s);
-  return Math.max(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0, ...ts.map((t) => (t.whammy ? t.value : 0)));
+  return Math.max(cfg.whammyCh !== PIN_NONE ? whammyValue(s.adc[cfg.whammyCh], cfg) : 0, ...ts.map((tv) => (tv.whammy ? tv.value : 0)));
 }
 // colours of the LED order chips follow the config
 function refreshChain() {
@@ -2023,23 +2016,23 @@ function brightNote(c) {
   const m = maxBrightness(c);
   if (m === 255) return '';
   const two = c.fretLeds === 2 && !c.noFretLeds;
-  const what = c.noFretLeds ? 'strum LEDs only' : !c.strumLeds ? 'two LEDs under each fret' : two ? 'two LEDs per fret and strum LEDs' : 'fret and strum LEDs together';
-  return `<p class="dim small">Brightness is limited to ${m} with ${what}, to keep the current the LED chain draws in check.</p>`;
+  const kind = c.noFretLeds ? 'strum_only' : !c.strumLeds ? 'two_per_fret' : two ? 'two_per_fret_strum' : 'fret_strum';
+  return `<p class="dim small">${t('lights.hw.brightness_limited.' + kind, { m })}</p>`;
 }
 // LED layout controls (setup wizard and Lights page): fret LEDs on / off, how many strum LEDs, wiring order
-const STRUM_COUNTS = ['None', '1', '2', '3', '4', '5', '6', '7', '8'];
+const STRUM_COUNTS = localized(() => ([t('common.none'), '1', '2', '3', '4', '5', '6', '7', '8']));
 function ledLayoutControls(c, pfx = 'lay') {
   const l = ledLayout(c);
   const v6 = (c.cfgVersion ?? 0) >= 6;
-  return `<div class="opt"><div><h3>Fret LEDs</h3><p class="dim">LEDs under the five frets.</p></div>
+  return `<div class="opt"><div><h3>${t('common.fret_leds')}</h3><p class="dim">${t('lights.hw.leds_under_five_frets')}</p></div>
       <label class="switch"><input type="checkbox" id="${pfx}Frets" ${l.frets ? 'checked' : ''}><i></i></label></div>
-    ${l.frets && v6 ? `<div class="opt"><div><h3>LEDs per fret</h3><p class="dim">Two under each fret light together, in the fret's colour.</p></div>
-      <select id="${pfx}Per"><option value="1" ${l.per === 1 ? 'selected' : ''}>One</option><option value="2" ${l.per === 2 ? 'selected' : ''}>Two</option></select></div>` : ''}
-    <div class="opt"><div><h3>Strum bar LEDs</h3><p class="dim">LEDs on the strum bar, on the same chain. They light up when you strum.</p></div>
-      <select id="${pfx}Strum">${STRUM_COUNTS.map((t, n) => `<option value="${n}" ${n === l.strum ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
-    ${l.frets && l.strum ? `<div class="opt"><div><h3>Wiring order</h3><p class="dim">Which LEDs come first on the chain, starting from the data pin.</p></div>
-      <select id="${pfx}Order"><option value="0" ${!l.strumFirst ? 'selected' : ''}>Frets first</option><option value="1" ${l.strumFirst ? 'selected' : ''}>Strum LEDs first</option></select></div>` : ''}
-    ${!l.frets && !l.strum ? '<p class="dim small">Choose fret LEDs, strum LEDs or both.</p>' : ''}`;
+    ${l.frets && v6 ? `<div class="opt"><div><h3>${t('lights.hw.leds_per_fret')}</h3><p class="dim">${t('lights.hw.two_under_each_fret_light')}</p></div>
+      <select id="${pfx}Per"><option value="1" ${l.per === 1 ? 'selected' : ''}>${t('lights.hw.one')}</option><option value="2" ${l.per === 2 ? 'selected' : ''}>${t('lights.hw.two')}</option></select></div>` : ''}
+    <div class="opt"><div><h3>${t('common.strum_bar_leds')}</h3><p class="dim">${t('lights.hw.leds_strum_bar_same_chain')}</p></div>
+      <select id="${pfx}Strum">${STRUM_COUNTS.map((tv, n) => `<option value="${n}" ${n === l.strum ? 'selected' : ''}>${tv}</option>`).join('')}</select></div>
+    ${l.frets && l.strum ? `<div class="opt"><div><h3>${t('lights.hw.wiring_order')}</h3><p class="dim">${t('lights.hw.which_leds_come_first_chain')}</p></div>
+      <select id="${pfx}Order"><option value="0" ${!l.strumFirst ? 'selected' : ''}>${t('lights.hw.frets_first')}</option><option value="1" ${l.strumFirst ? 'selected' : ''}>${t('lights.hw.strum_leds_first')}</option></select></div>` : ''}
+    ${!l.frets && !l.strum ? `<p class="dim small">${t('lights.hw.choose_fret_leds_strum_leds')}</p>` : ''}`;
 }
 function wireLedLayout(c, changed, pfx = 'lay') {
   const set = (patch) => { const l = ledLayout(c); applyLedLayout(c, { frets: l.frets, strum: l.strum, strumFirst: l.strumFirst, per: l.per, ...patch }); changed(); };
@@ -2056,30 +2049,30 @@ function chainLabels(c) {
     if (f < 0 && l.frets && l.per === 2) f = (c.ledMap2 || []).indexOf(p);
     if (f >= 0) return { fret: f, color: c.colors[f], name: funcName(f) };
     const k = c.strumMap.slice(0, l.strum).indexOf(p);
-    return { strum: k, color: c.strumColor || '#ffffff', name: `Strum ${k + 1}` };
+    return { strum: k, color: c.strumColor || '#ffffff', name: t('lights.hw.strum', { n: k + 1 }) };
   });
 }
 
 // ------------------------------------------------------------------ LED setup helpers (guided step, ledmap step, Lights page)
 const fwApaOk = () => !!state.info && (state.info.major > 0 || state.info.minor >= 32);   // APA102 at 4 MHz + the SK9822 fix
 const LED_SHORT = ['WS2812B', 'SK6812 RGBW', 'APA102 / SK9822'];
-const LED_PICKS = [
-  { t: 0, name: 'WS2812B / NeoPixel', wires: '3 wires: 5V, GND, DIN', note: 'The most common' },
-  { t: 1, name: 'SK6812 RGBW', wires: '3 wires: 5V, GND, DIN', note: 'Has an extra white LED' },
-  { t: 2, name: 'APA102 / SK9822 / DotStar', wires: '4 wires: 5V, GND, DI, CI', note: 'Often used in Santroller builds' },
-];
+const LED_PICKS = localized(() => ([
+  { t: 0, name: 'WS2812B / NeoPixel', wires: t('lights.hw.ws2812b_neopixel.wires'), note: t('lights.hw.ws2812b_neopixel.note') },
+  { t: 1, name: 'SK6812 RGBW', wires: t('lights.hw.ws2812b_neopixel.wires'), note: t('lights.hw.sk6812_rgbw.note') },
+  { t: 2, name: 'APA102 / SK9822 / DotStar', wires: t('lights.hw.apa102_sk9822_dotstar.wires'), note: t('lights.hw.apa102_sk9822_dotstar.note') },
+]));
 // tiny picture of the pads at the end of a strip, so the user can match it to what they soldered
-function ledSvg(t) {
-  const pads = t === 2 ? ['5V', 'DI', 'CI', 'GND'] : ['5V', 'DIN', 'GND'];
-  const xs = t === 2 ? [18, 50, 82, 114] : [22, 66, 110];
-  const dots = t === 1 ? ['#ff4d4d', '#3ddc84', '#4d8dff', '#ffffff'] : ['#ff4d4d', '#3ddc84', '#4d8dff'];
+function ledSvg(tv) {
+  const pads = tv === 2 ? ['5V', 'DI', 'CI', 'GND'] : ['5V', 'DIN', 'GND'];
+  const xs = tv === 2 ? [18, 50, 82, 114] : [22, 66, 110];
+  const dots = tv === 1 ? ['#ff4d4d', '#3ddc84', '#4d8dff', '#ffffff'] : ['#ff4d4d', '#3ddc84', '#4d8dff'];
   return `<svg viewBox="0 0 132 52" aria-hidden="true"><rect x="2" y="14" width="128" height="34" rx="5" fill="none" stroke="currentColor" opacity=".35"/>
     ${pads.map((p, i) => `<rect x="${xs[i] - 6}" y="18" width="12" height="7" rx="1.5" fill="#d9a441"/><text x="${xs[i]}" y="11" text-anchor="middle" font-size="9" font-family="monospace" fill="currentColor">${p}</text>`).join('')}
     <rect x="48" y="30" width="36" height="14" rx="3" fill="#2a3144" stroke="currentColor" opacity=".9"/>
     ${dots.map((d, i) => `<circle cx="${66 + (i - (dots.length - 1) / 2) * 8}" cy="37" r="2.6" fill="${d}"/>`).join('')}</svg>`;
 }
 function ledTypeCards(c) {
-  return `<div class="led-cards" role="group" aria-label="LED type">${LED_PICKS.map((p) => `<button type="button" class="led-card ${c.ledType === p.t ? 'sel' : ''}" data-ledtype="${p.t}" aria-pressed="${c.ledType === p.t}">
+  return `<div class="led-cards" role="group" aria-label="${t('common.led_type')}">${LED_PICKS.map((p) => `<button type="button" class="led-card ${c.ledType === p.t ? 'sel' : ''}" data-ledtype="${p.t}" aria-pressed="${c.ledType === p.t}">
     ${ledSvg(p.t)}<b>${p.name}</b><span class="dim">${p.wires}</span><span class="tag">${p.note}</span></button>`).join('')}</div>`;
 }
 function wireLedTypeCards(root, c, changed) {
@@ -2093,32 +2086,32 @@ function wireLedTypeCards(root, c, changed) {
 function ledChecks(c) {
   const apa = c.ledType === 2, chain = ledLayout(c).chain;
   const r = [
-    { ok: c.rgbEnabled, text: 'LEDs are switched on', bad: 'LEDs are switched off', why: 'the LEDs are switched off' },
-    { ok: c.rgbPin !== PIN_NONE, text: `Data pin chosen (GP${c.rgbPin})`, bad: 'No data pin chosen', why: 'no data pin is chosen' },
+    { ok: c.rgbEnabled, text: t('lights.hw.leds_are_switched'), bad: t('lights.hw.leds_are_switched_off'), why: t('lights.dark.off') },
+    { ok: c.rgbPin !== PIN_NONE, text: t('lights.hw.data_pin_chosen_gp', { rgbPin: c.rgbPin }), bad: t('lights.hw.no_data_pin_chosen'), why: t('lights.dark.no_data_pin') },
   ];
-  if (apa) r.push({ ok: c.ledClkPin !== PIN_NONE && c.ledClkPin !== c.rgbPin, text: `Clock pin chosen (GP${c.ledClkPin})`, bad: c.ledClkPin === c.rgbPin && c.ledClkPin !== PIN_NONE ? 'Clock pin is the same as the data pin' : 'No clock pin chosen (APA102 LEDs stay dark without it)', why: 'APA102 LEDs need a clock pin as well' });
-  r.push({ ok: chain > 0, text: `${chain} LED${chain === 1 ? '' : 's'} in the layout`, bad: 'No LEDs in the layout (choose fret and / or strum LEDs)', why: 'no fret or strum LEDs are chosen in the layout' });
-  r.push({ ok: c.rgbBrightness > 0, text: `Brightness is ${c.rgbBrightness}`, bad: 'Brightness is 0, which is dark', why: 'the brightness is 0' });
-  if (apa) r.push({ ok: fwApaOk(), text: 'Firmware supports APA102', bad: `Firmware v${state.info?.major}.${state.info?.minor} is too old for APA102 (needs 0.32+)`, why: 'the firmware is too old for APA102 LEDs', update: true });
+  if (apa) r.push({ ok: c.ledClkPin !== PIN_NONE && c.ledClkPin !== c.rgbPin, text: t('lights.hw.clock_pin_chosen_gp', { ledClkPin: c.ledClkPin }), bad: c.ledClkPin === c.rgbPin && c.ledClkPin !== PIN_NONE ? t('lights.hw.clock_pin_same_as_data') : t('lights.hw.no_clock_pin_chosen_apa102'), why: t('lights.dark.no_clock_pin') });
+  r.push({ ok: chain > 0, text: t('lights.led_check.layout_leds', { n: chain }), bad: t('lights.hw.no_leds_layout_choose_fret'), why: t('lights.dark.no_layout') });
+  r.push({ ok: c.rgbBrightness > 0, text: t('lights.hw.brightness', { rgbBrightness: c.rgbBrightness }), bad: t('lights.hw.brightness_0_which_dark'), why: t('lights.dark.brightness_0') });
+  if (apa) r.push({ ok: fwApaOk(), text: t('lights.hw.firmware_supports_apa102'), bad: t('lights.hw.firmware_v_too_old_apa102', { major: state.info?.major, minor: state.info?.minor }), why: t('lights.dark.firmware'), update: true });
   return r;
 }
 // one sentence for why the LEDs are dark right now, or '' when the settings are fine
 const ledWhyDark = (c) => { const b = ledChecks(c).find((k) => !k.ok); return b ? b.why : ''; };
 // reusable troubleshooting panel; `open` keeps it expanded
 function ledHelpHtml(c, open = false) {
-  const li = (ok, t, extra = '') => `<li class="${ok ? 'ok' : 'bad'}"><i>${ok ? '✓' : '✗'}</i><span>${t}${extra}</span></li>`;
-  return `<details class="led-help" ${open ? 'open' : ''}><summary>Not lighting up? Troubleshooting</summary>
-    <h4>Your settings</h4>
-    <ul class="led-checks">${ledChecks(c).map((k) => li(k.ok, k.ok ? k.text : k.bad, k.update && !k.ok ? ' <button type="button" class="btn small" data-led-update>Update firmware</button>' : '')).join('')}
-      <li class="info"><i>i</i><span>LED type is set to <b>${LED_SHORT[c.ledType] || LED_SHORT[0]}</b>. It must match what you wired: 3 wires into the first LED means WS2812B, 4 wires means APA102.</span></li></ul>
-    <h4>Your wiring</h4>
+  const li = (ok, tv, extra = '') => `<li class="${ok ? 'ok' : 'bad'}"><i>${ok ? '✓' : '✗'}</i><span>${tv}${extra}</span></li>`;
+  return `<details class="led-help" ${open ? 'open' : ''}><summary>${t('lights.hw.not_lighting_up_troubleshooting')}</summary>
+    <h4>${t('lights.hw.settings')}</h4>
+    <ul class="led-checks">${ledChecks(c).map((k) => li(k.ok, k.ok ? k.text : k.bad, k.update && !k.ok ? ` <button type="button" class="btn small" data-led-update>${t('common.update_firmware')}</button>` : '')).join('')}
+      <li class="info">${t('lights.hw.i_led_type_set_must', { ledType: LED_SHORT[c.ledType] || LED_SHORT[0] })}</li></ul>
+    <h4>${t('lights.hw.wiring')}</h4>
     <ul class="led-tips">
-      <li>Data goes into the <b>first LED's input</b> (DIN, or DI), not its output (DOUT). Follow the arrow on the strip: it points away from the Pico.</li>
-      <li><b>Ground is shared</b> between the Pico and the LEDs.</li>
-      <li>Power the LEDs from <b>VBUS (5 V)</b>, not 3V3, once there are more than a couple of them.</li>
-      ${c.ledType === 2 ? '<li>APA102: <b>data and clock may be swapped</b>. Try swapping the two pins in the configurator.</li>' : ''}
-      <li>Wrong colours? Change the <b>colour order</b> on the Lights page.${advOn() || c.ledType === 2 || c.ledOrder !== 0 ? '' : ' <button type="button" class="btn small" data-adv-on>Turn on Advanced</button>'}</li>
-      <li>Flicker or random colours: a 330 Ω resistor in the data line and short wires help.</li>
+      <li>${t('lights.hw.data_goes_into_first_led')}</li>
+      <li>${t('lights.hw.ground_shared_between_pico_leds')}</li>
+      <li>${t('lights.hw.power_leds_from_vbus_5')}</li>
+      ${c.ledType === 2 ? `<li>${t('lights.hw.apa102_data_clock_may_be')}</li>` : ''}
+      <li>${t('lights.hw.wrong_colours_change_colour_order', { v: advOn() || c.ledType === 2 || c.ledOrder !== 0 ? '' : ` <button type="button" class="btn small" data-adv-on>${t('common.turn_advanced')}</button>` })}</li>
+      <li>${t('lights.hw.flicker_or_random_colours_330')}</li>
     </ul></details>`;
 }
 document.addEventListener('click', (e) => { if (e.target.closest('[data-led-update]')) goUpdate(); });
@@ -2145,7 +2138,7 @@ async function runLedTest() {
 }
 // run the chase from a button: disables it while running
 async function ledTestButton(btn, label) {
-  btn.disabled = true; btn.textContent = 'Testing…';
+  btn.disabled = true; btn.textContent = t('lights.hw.testing');
   const ok = await runLedTest();
   if (btn.isConnected) { btn.disabled = false; btn.textContent = label; }
   return ok;
@@ -2156,17 +2149,15 @@ function buildLights() {
   const c = state.cfg;
   const $on = $('#rgbOn'), $pin = $('#rgbPin'), $bri = $('#rgbBri'), $spd = $('#fxSpeed');
   const used = new Set(assignedPins());
-  $pin.innerHTML = '<option value="255">Choose pin…</option>' +
-    [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p) || p === c.rgbPin).map((p) => `<option value="${p}">GP${p}</option>`).join('');
+  $pin.innerHTML = `<option value="255">${t('common.choose_pin')}</option>${[...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p) || p === c.rgbPin).map((p) => `<option value="${p}">GP${p}</option>`).join('')}`;
   $('#fxSel').innerHTML = EFFECTS.map((e) => `<option value="${e.id}">${e.name}</option>`).join('');
   $('#presets').innerHTML = RGB_PRESETS.map((p, i) => `<button class="preset" data-preset="${i}">${p.colors.map((x) => `<i style="background:${x}"></i>`).join('')}<span>${p.name}</span></button>`).join('');
   $('#colRows').innerHTML = [0, 1, 2, 3, 4].map((f) => `<div class="col-row"><span><span class="fretdot" style="background:${FRET_DEFAULT_COLORS[f]}"></span>${funcName(f)}</span>
       <input type="color" data-col="${f}"><span class="hex" data-hex="${f}"></span></div>`).join('');
 
   // APA102 / SK9822 send blue first: for them setting 0 is BGR and the BGR slot is GRB (see rgb.c)
-  const orderNames = (t) => LED_ORDERS.map((o, i) => (t === 2 ? (i === 0 ? 'BGR (standard)' : i === 5 ? 'GRB' : o) : (i === 0 ? 'GRB (standard)' : o)));
-  $('#ledClk').innerHTML = '<option value="255">Choose pin…</option>' +
-    [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p) || p === c.ledClkPin).map((p) => `<option value="${p}">GP${p}</option>`).join('');
+  const orderNames = (tv) => LED_ORDERS.map((o, i) => (tv === 2 ? (i === 0 ? t('lights.bgr_standard') : i === 5 ? 'GRB' : o) : (i === 0 ? t('lights.grb_standard') : o)));
+  $('#ledClk').innerHTML = `<option value="255">${t('common.choose_pin')}</option>${[...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p) || p === c.ledClkPin).map((p) => `<option value="${p}">GP${p}</option>`).join('')}`;
   const refresh = () => {
     $on.checked = c.rgbEnabled;
     $('#ledTypeDesc').textContent = (LED_TYPES[c.ledType] || LED_TYPES[0]).desc;
@@ -2175,8 +2166,8 @@ function buildLights() {
     // status line + help: say why the LEDs are dark right now; keep the panel open if the user opened it
     const why = ledWhyDark(c), st = $('#ledStatus'), n = ledLayout(c).chain;
     st.className = 'led-sum-line ' + (why ? 'bad' : 'ok');
-    st.textContent = why ? `The LEDs stay dark because ${why}.`
-      : `\u2713 ${n} LED${n === 1 ? '' : 's'} \u00b7 ${LED_SHORT[c.ledType] || LED_SHORT[0]} on GP${c.rgbPin}${c.ledType === 2 ? ' + GP' + c.ledClkPin : ''} \u00b7 brightness ${c.rgbBrightness}`;
+    st.textContent = why ? why
+      : t('lights.gp_brightness', { v: t('lights.led_count', { n }), ledType: LED_SHORT[c.ledType] || LED_SHORT[0], rgbPin: c.rgbPin, v2: c.ledType === 2 ? ' + GP' + c.ledClkPin : '', rgbBrightness: c.rgbBrightness });
     $('#ledTestBtn').disabled = !!why;
     $('#ledSetupGo').hidden = !why;
     // the hardware controls are tucked away while everything works, and open by themselves when the LEDs would be dark
@@ -2184,19 +2175,19 @@ function buildLights() {
     $('#ledSetupBody').hidden = !open;
     $('#ledSetupBtn').hidden = !!why;
     $('#ledSetupBtn').setAttribute('aria-expanded', String(open));
-    $('#ledSetupBtn').textContent = open ? 'Hide setup' : 'Change setup';
+    $('#ledSetupBtn').textContent = open ? t('lights.hide_setup') : t('lights.change_setup');
     const help = $('#ledHelp'), html = ledHelpHtml(c, !!help.querySelector('details[open]'));
     if (help._html !== html) { help.innerHTML = html; help._html = html; }
     $('#ledOrder').innerHTML = orderNames(c.ledType).map((o, i) => `<option value="${i}">${o}</option>`).join('');
     $('#ledOrder').value = String(c.ledOrder); $('#ledClk').value = String(c.ledClkPin);
     $('#ledOrderRow').style.display = c.ledType !== 1 ? '' : 'none';
-    $('#ledOrderHint').textContent = c.ledType === 2 ? 'Most APA102 and SK9822 LEDs are BGR. If red shows up blue, try RGB.' : 'If red shows up green, try RGB.';
+    $('#ledOrderHint').textContent = c.ledType === 2 ? t('lights.most_apa102_sk9822_leds_are') : t('lights.if_red_shows_up_green');
     $('#ledClkRow').style.display = c.ledType === 2 ? '' : 'none';
     // the data and clock pins can't be the same GPIO
     for (const o of $('#ledClk').options) o.disabled = +o.value !== PIN_NONE && +o.value === c.rgbPin;
     for (const o of $pin.options) o.disabled = c.ledType === 2 && +o.value !== PIN_NONE && +o.value === c.ledClkPin;
     $('#ledClkRow').classList.toggle('warn', c.ledType === 2 && c.rgbEnabled && c.ledClkPin === PIN_NONE);
-    $('#ledClkHint').textContent = c.ledType === 2 && c.ledClkPin === PIN_NONE ? 'Choose the clock pin: APA102 LEDs stay dark without it.' : "Wired to the first LED's clock input (CI / CKI).";
+    $('#ledClkHint').textContent = c.ledType === 2 && c.ledClkPin === PIN_NONE ? t('lights.choose_clock_pin_apa102_leds') : t('lights.wired_first_led_s_clock');
     $pin.value = String(c.rgbPin);
     $bri.max = maxBrightness(c); c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
     $bri.value = c.rgbBrightness; $('#rgbBriVal').textContent = c.rgbBrightness;
@@ -2207,7 +2198,7 @@ function buildLights() {
     for (const id of ['#rgbOpts', '#mapCard', '#strumCard']) $(id).classList.toggle('rgb-disabled', !c.rgbEnabled);
     $('#legacyCard').hidden = (c.cfgVersion ?? 0) >= 7;
     $('#mapView').innerHTML = chainLabels(c).map((l, p) => `${p ? '<span class="arrow">→</span>' : ''}<div class="led" ${l.fret !== undefined ? `data-fret="${l.fret}"` : `data-strum="${l.strum}"`} style="--c:${l.color}"><b style="background:${l.color}"></b>LED ${p + 1}<br>${l.name}</div>`).join('')
-      || '<p class="dim">No LEDs set up: choose fret and / or strum LEDs under LED layout above.</p>';
+      || `<p class="dim">${t('lights.no_leds_set_up_choose')}</p>`;
     applyColors();
     syncStudio();
   };
@@ -2217,7 +2208,7 @@ function buildLights() {
   $pin.onchange = () => { c.rgbPin = +$pin.value; live(); };
   $('#ledSetupBtn').onclick = () => { ledHwOpen = !ledHwOpen; refresh(); };
   $('#ledSetupGo').onclick = () => { showView('setup'); goStep(STEPS.findIndex((s) => s.kind === 'rgb')); };
-  $('#ledTestBtn').onclick = () => ledTestButton($('#ledTestBtn'), 'Test LEDs');
+  $('#ledTestBtn').onclick = () => ledTestButton($('#ledTestBtn'), t('lights.test_leds'));
   $('#ledOrder').onchange = (e) => { c.ledOrder = +e.target.value; live(); };
   $('#ledClk').onchange = (e) => { c.ledClkPin = +e.target.value; if (c.ledClkPin === c.rgbPin) c.ledClkPin = PIN_NONE; live(); };
   $bri.oninput = () => { c.rgbBrightness = +$bri.value; live(); };
@@ -2234,10 +2225,10 @@ function buildLights() {
     wireLedLayout(c, () => { drawLayout(); live(); }, 'lt');
     const n = c.strumLeds || 0;
     const oldFw = (c.cfgVersion ?? 0) < 7;   // firmware 0.34+ sets the strum colours in the lighting studio
-    $('#strumOpts').innerHTML = n ? `${oldFw ? `<div class="col-row"><span>Strum LED colour</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>` : ''}
-      ${n > 1 ? `<div class="opt"><div><h3>How are they placed?</h3><p class="dim">Pick the one that matches your build; it sets what each LED lights up on. Fine-tune each one below.</p></div>
-        <span class="row"><button class="btn small" data-rp="both">One row under the strum bar (all light on up and down)</button><button class="btn small" data-rp="half">Two groups: first half up, second half down</button><button class="btn small" data-rp="alt">Alternate up / down</button></span></div>` : ''}
-      ${[...Array(n).keys()].map((k) => `<div class="opt"><div><h3>Strum LED ${k + 1}</h3><p class="dim">Lights up on</p></div>
+    $('#strumOpts').innerHTML = n ? `${oldFw ? `<div class="col-row"><span>${t('lights.strum_led_colour')}</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>` : ''}
+      ${n > 1 ? `<div class="opt"><div><h3>${t('lights.how_are_they_placed')}</h3><p class="dim">${t('lights.pick_one_that_matches_build')}</p></div>
+        <span class="row"><button class="btn small" data-rp="both">${t('lights.one_row_under_strum_bar')}</button><button class="btn small" data-rp="half">${t('lights.two_groups_first_half_up')}</button><button class="btn small" data-rp="alt">${t('lights.alternate_up_down')}</button></span></div>` : ''}
+      ${[...Array(n).keys()].map((k) => `<div class="opt"><div><h3>${t('lights.strum_led', { n: k + 1 })}</h3><p class="dim">${t('lights.lights_up')}</p></div>
         <select data-role="${k}">${STRUM_ROLES.map((r) => `<option value="${r.id}" ${c.strumRoles[k] === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}</select></div>`).join('')}` : '';
     $('#strumCol')?.addEventListener('input', (e) => { c.strumColor = e.target.value; $('#strumHex').textContent = c.strumColor.toUpperCase(); live(); });
     $('#strumOpts').onchange = (e) => { const k = e.target.dataset.role; if (k !== undefined) { c.strumRoles[+k] = +e.target.value; live(); } };
@@ -2265,28 +2256,27 @@ function buildModes() {
   const running = state.info.mode;
   const setup = !!state.info.setupSession;
   const modeTag = (id) => setup
-    ? (id === running ? '<span class="tag">Setup session</span>' : id === c.usbMode ? '<span class="tag live">Next plug-in</span>' : '<span></span>')
-    : (id === running ? '<span class="tag live">Running</span>' : '<span></span>');
+    ? (id === running ? `<span class="tag">${t('modes.setup_session')}</span>` : id === c.usbMode ? `<span class="tag live">${t('modes.next_plug')}</span>` : '<span></span>')
+    : (id === running ? `<span class="tag live">${t('modes.running')}</span>` : '<span></span>');
   $('#modeCards').innerHTML = availableModes().map((m) => `<div class="mode-row ${c.usbMode === m.id ? 'sel' : ''}" data-mode="${m.id}" role="radio" tabindex="0" aria-checked="${c.usbMode === m.id}" title="${m.desc.replace(/"/g, '&quot;')}">
-      <span class="radio"></span><div><b>${m.name.replace(/ \(experimental\)$/, '')}</b>${m.host ? ' <span class="tag exp">Experimental</span>' : ''}<div class="dim">${MODE_USE[m.id] || ''}</div></div>
+      <span class="radio"></span><div><b>${m.base || m.name}</b>${m.host ? ` <span class="tag exp">${t('modes.experimental')}</span>` : ''}<div class="dim">${MODE_USE[m.id] || ''}</div></div>
       ${modeTag(m.id)}</div>`).join('');
   $('#setupNote').hidden = !setup;
   $('#macNote').hidden = !IS_MAC;
-  $('#macNote').innerHTML = IS_MAC ? `<b>On a Mac:</b> ${MAC_XINPUT_TIP}` : '';
-  $('#setupNote').innerHTML = setup ? `The guitar is in a one-off <b>setup session</b> (XInput with configuration), which is why it can talk to this page. Unplug it and plug it back in to return to <b>${modeName(c.usbMode).replace(/ \(experimental\)$/, '')}</b>.` : '';
+  $('#macNote').innerHTML = IS_MAC ? t('modes.mac', { MAC_XINPUT_TIP: t('modes.mac_xinput_tip') }) : '';
+  $('#setupNote').innerHTML = setup ? t('modes.guitar_one_off_setup_session', { mode: modeBaseName(c.usbMode) }) : '';
   buildHostPort();
   const pick = (row) => { c.usbMode = +row.dataset.mode; buildModes(); $(`#modeCards [data-mode="${c.usbMode}"]`)?.focus(); };
   $('#modeCards').onclick = (e) => { const row = e.target.closest('.mode-row'); if (row) pick(row); };
   $('#modeCards').onkeydown = (e) => { const row = e.target.closest('.mode-row'); if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(row); } };
-  const opts = (sel) => `<option value="255" ${sel === MODE_NONE ? 'selected' : ''}>Nothing (use the default)</option>` +
-    availableModes().map((m) => `<option value="${m.id}" ${sel === m.id ? 'selected' : ''}>${m.name}</option>`).join('');
+  const opts = (sel) => `<option value="255" ${sel === MODE_NONE ? 'selected' : ''}>${t('modes.nothing_use_default')}</option>${availableModes().map((m) => `<option value="${m.id}" ${sel === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}`;
   $('#bootTable').innerHTML = [0, 1, 2, 3, 4].map((i) => `<div class="fret-row" style="--c:${FRET_COLORS[i]}"><span class="fret-key"></span><label for="boot${i}">${funcName(i)}</label>
       <select id="boot${i}" data-fret="${i}">${opts(c.bootModes[i])}</select></div>`).join('');
   $('#bootTable').onchange = (e) => { c.bootModes[+e.target.dataset.fret] = +e.target.value; buildHostPort(); };
 
   // XInput flavour
-  const XI = [{ id: 0, name: 'Guitar Hero guitar', desc: 'Like the Xbox 360 Les Paul and World Tour guitars.' },
-              { id: 1, name: 'Rock Band guitar', desc: 'Like the Xbox 360 Rock Band Stratocaster.' }];
+  const XI = [{ id: 0, name: t('modes.guitar_hero_guitar.name'), desc: t('modes.guitar_hero_guitar.desc') },
+              { id: 1, name: t('modes.rock_band_guitar.name'), desc: t('modes.rock_band_guitar.desc') }];
   $('#xiType').innerHTML = XI.map((x) => `<label><input type="radio" name="xi" value="${x.id}" ${c.xinputType === x.id ? 'checked' : ''}><div><b>${x.name}</b><span class="dim">${x.desc}</span></div></label>`).join('');
   $('#xiType').onchange = (e) => { c.xinputType = +e.target.value; };
   $('#starLeft').checked = !!c.starDpadLeft;
@@ -2317,41 +2307,47 @@ function buildHostPort() {
   const taken = new Set([...c.pins, c.tiltPin, c.rgbPin, c.ledClkPin, ...accelPins(c), c.rumblePin ?? PIN_NONE, ...extPinList(c)].filter((p) => p !== PIN_NONE && !own.has(p)));
   const free = [...Array(NUM_DIGITAL_PINS - 1).keys()].filter((p) => !taken.has(p) && !taken.has(p + 1));
   const sel = $('#hostPin');
-  sel.innerHTML = '<option value="255">Off (no host port)</option>' +
-    free.map((p) => `<option value="${p}">D+ GP${p}, D− GP${p + 1}</option>`).join('');
+  sel.innerHTML = `<option value="255">${t('modes.host.off_no_host_port')}</option>${free.map((p) => `<option value="${p}">D+ GP${p}, D− GP${p + 1}</option>`).join('')}`;
   sel.value = String(free.includes(c.hostPin) ? c.hostPin : PIN_NONE);
   const show = () => {
     const on = c.hostPin !== PIN_NONE;
-    $('#wDp').textContent = on ? 'GP' + c.hostPin : 'the pin you pick';
-    $('#wDm').textContent = on ? 'GP' + (c.hostPin + 1) : 'the next pin';
-    $('#hostPinNote').textContent = 'Two neighbouring free pins. They can\'t be used for buttons while the port is on.';
+    $('#wDp').textContent = on ? 'GP' + c.hostPin : t('modes.host.pin_pick');
+    $('#wDm').textContent = on ? 'GP' + (c.hostPin + 1) : t('modes.host.next_pin');
+    $('#hostPinNote').textContent = t('modes.host.two_neighbouring_free_pins_they');
     const needs = MODES.find((m) => m.id === c.usbMode)?.host || c.bootModes.some((id) => MODES.find((m) => m.id === id)?.host);
     const w = $('#hostWarn');
     w.hidden = !(needs && !on);
-    w.textContent = 'A PS4 / Xbox One mode is selected but the host port is off, so the console will reject the guitar.';
+    w.textContent = t('modes.host.ps4_xbox_one_mode_selected');
   };
   sel.onchange = () => { c.hostPin = +sel.value; show(); };
   show();
 }
 
 // ------------------------------------------------------------------ flash page
-const BOARD_LIST = [
-  { id: 'pico_clone', arch: 'rp2040', name: 'Pico-compatible clone (ESP8285 / “Pico W-style” boards)', help: 'Uses the slower, safer flash settings these clone boards need. Pick this if your board is not an official Raspberry Pi one.' },
-  { id: 'pico', arch: 'rp2040', name: 'Raspberry Pi Pico', help: 'Official Pico (RP2040).' },
-  { id: 'pico_w', arch: 'rp2040', name: 'Raspberry Pi Pico W', help: 'Official Pico W with the CYW43 radio (Bluetooth capable).' },
-  { id: 'pico2', arch: 'rp2350', name: 'Raspberry Pi Pico 2', help: 'Official Pico 2 (RP2350).' },
-  { id: 'pico2_w', arch: 'rp2350', name: 'Raspberry Pi Pico 2 W', help: 'Official Pico 2 W (RP2350, Bluetooth capable).' },
-  { id: 'waveshare_rp2040_zero', arch: 'rp2040', name: 'Waveshare RP2040-Zero', help: 'Tiny USB-C board; fits inside guitar bodies. Its onboard RGB LED is on GP16, so keep that pin free.' },
-  { id: 'waveshare_rp2040_one', arch: 'rp2040', name: 'Waveshare RP2040-One', help: 'USB-A plug board with the same pinout as the Zero.' },
-  { id: 'sparkfun_promicro', arch: 'rp2040', name: 'SparkFun Pro Micro RP2040', help: 'Drop-in replacement footprint for old ATmega32U4 Pro Micro builds. Onboard RGB LED on GP25.' },
-  { id: 'adafruit_kb2040', arch: 'rp2040', name: 'Adafruit KB2040', help: 'Pro Micro footprint with USB-C. Onboard NeoPixel on GP17.' },
-];
+const BOARD_LIST = localized(() => ([
+  { id: 'pico_clone', arch: 'rp2040', name: t('install.pico_clone.name'), help: t('install.pico_clone.help') },
+  { id: 'pico', arch: 'rp2040', name: 'Raspberry Pi Pico', help: t('install.pico.help') },
+  { id: 'pico_w', arch: 'rp2040', name: 'Raspberry Pi Pico W', help: t('install.pico_w.help') },
+  { id: 'pico2', arch: 'rp2350', name: 'Raspberry Pi Pico 2', help: t('install.pico2.help') },
+  { id: 'pico2_w', arch: 'rp2350', name: 'Raspberry Pi Pico 2 W', help: t('install.pico2_w.help') },
+  { id: 'waveshare_rp2040_zero', arch: 'rp2040', name: t('install.waveshare_rp2040_zero.name'), help: t('install.waveshare_rp2040_zero.help') },
+  { id: 'waveshare_rp2040_one', arch: 'rp2040', name: 'Waveshare RP2040-One', help: t('install.waveshare_rp2040_one.help') },
+  { id: 'sparkfun_promicro', arch: 'rp2040', name: t('install.sparkfun_promicro.name'), help: t('install.sparkfun_promicro.help') },
+  { id: 'adafruit_kb2040', arch: 'rp2040', name: t('install.adafruit_kb2040.name'), help: t('install.adafruit_kb2040.help') },
+]));
 
+let applyBoard = () => {};
+function renderBoardList() {
+  const sel = $('#boardSel');
+  const keep = sel.value || store.get('yacc.board') || 'pico_clone';
+  sel.innerHTML = BOARD_LIST.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+  sel.value = keep;
+  if (!BOARD_LIST.some((b) => b.id === sel.value)) sel.value = 'pico_clone';
+  applyBoard();
+}
 function initFlash() {
   const sel = $('#boardSel');
-  sel.innerHTML = BOARD_LIST.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
-  sel.value = store.get('yacc.board') || 'pico_clone';
-  if (!BOARD_LIST.some((b) => b.id === sel.value)) sel.value = 'pico_clone';
+  renderBoardList();
   const apply = () => {
     const b = BOARD_LIST.find((x) => x.id === sel.value);
     store.set('yacc.board', b.id);
@@ -2362,20 +2358,20 @@ function initFlash() {
     $('#directFw').onclick = () => directFlash(fw, `yagcc-${b.id}.uf2`);
     $('#directNuke').onclick = () => directFlash(nk, `yagcc-nuke-${b.arch}.uf2`);
   };
-  sel.onchange = apply; apply();
+  sel.onchange = apply; applyBoard = apply; apply();
   // a connected guitar can jump into the bootloader itself (same as Star power + Plus at plug-in)
   const refreshBootsel = () => { const on = !!state.dev; $('#toBootsel').hidden = !on; $('#bootselNote').hidden = !on; };
   $('#toBootsel').onclick = async () => {
-    try { await state.dev.reboot(true); toast('Restarting into update mode. Copy the firmware to the drive that appears.', 'ok'); }
-    catch (e) { toast('Could not restart it: ' + e.message, 'bad'); }
+    try { await state.dev.reboot(true); toast(t('install.restarting_into_update_mode_copy'), 'ok'); }
+    catch (e) { toast(t('install.could_not_restart', { message: e.message }), 'bad'); }
   };
   setInterval(refreshBootsel, 1000); refreshBootsel();
 
-  if (!window.showDirectoryPicker) { $('#directFw').disabled = true; $('#directNuke').disabled = true; $('#directFw').title = 'Needs Chrome or Edge'; }
+  if (!window.showDirectoryPicker) { $('#directFw').disabled = true; $('#directNuke').disabled = true; $('#directFw').title = t('install.needs_chrome_or_edge'); }
   if (!webusbSupported()) {
     const w = $('#browserWarn');
     w.style.display = '';
-    w.innerHTML = '<b>WebUSB is not available in this browser.</b> Open YAGCC in Chrome, Edge or another Chromium browser to configure the controller. Downloading firmware works everywhere.';
+    w.innerHTML = t('install.webusb_not_available_this_browser');
   }
 }
 
@@ -2383,7 +2379,7 @@ async function directFlash(url, name) {
   try {
     const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
     if (!/RP/i.test(dir.name)) {
-      if (!confirm(`“${dir.name}” does not look like the Pico's bootloader drive (usually RPI-RP2 or RP2350). Write the file anyway?`)) return;
+      if (!confirm(t('install.does_not_look_like_pico', { name: dir.name }))) return;
     }
     const buf = await (await fetch(url)).arrayBuffer();
     const fh = await dir.getFileHandle(name, { create: true });
@@ -2392,10 +2388,10 @@ async function directFlash(url, name) {
       await w.write(buf);
       await w.close();
     } catch { /* the drive disappears as soon as the board reboots into the new firmware */ }
-    $('#flashMsg').textContent = `Wrote ${name}. The board is restarting; if the drive disappeared, it worked.`;
-    toast('Flashed ' + name, 'ok');
+    $('#flashMsg').textContent = t('install.wrote_board_restarting_if_drive', { name });
+    toast(t('install.flashed', { name }), 'ok');
   } catch (e) {
-    if (e.name !== 'AbortError') toast('Direct flash failed: ' + e.message, 'bad');
+    if (e.name !== 'AbortError') toast(t('install.direct_flash_failed', { message: e.message }), 'bad');
   }
 }
 
@@ -2410,7 +2406,7 @@ const isOurHid = (d) => HID_FILTERS.some((f) => f.vendorId === d.vendorId && f.p
 
 async function restartToSetup(dev) {
   const box = $('#otherMode');
-  box.innerHTML = '<div class="result"><span class="pulse"></span><span>Asking the controller to restart in setup mode…</span></div>';
+  box.innerHTML = `<div class="result"><span class="pulse"></span><span>${t('setup.gate.asking_controller_restart_setup_mode')}</span></div>`;
   let gone = false;
   const onGone = (ev) => { if (ev.device === dev) gone = true; };
   navigator.hid.addEventListener('disconnect', onGone);
@@ -2421,18 +2417,17 @@ async function restartToSetup(dev) {
     await dev.sendFeatureReport(0, data);
   } catch (e) {
     navigator.hid.removeEventListener('disconnect', onGone);
-    box.innerHTML = `<div class="result bad">Could not talk to it (${e.message}). Unplug it and hold <b>Plus</b> while plugging it back in instead.</div>`;
+    box.innerHTML = `<div class="result bad">${t('setup.gate.could_not_talk_unplug_hold', { message: e.message })}</div>`;
     return;
   }
   await sleep(3000);
   navigator.hid.removeEventListener('disconnect', onGone);
   if (gone) {
-    box.innerHTML = '<div class="result ok">Restarted in setup mode. If it does not connect by itself in a moment, press <b>Connect controller</b> and pick <b>YAGCC Guitar Controller</b>.</div>';
+    box.innerHTML = `<div class="result ok">${t('setup.gate.restarted_setup_mode_if_does')}</div>`;
     await sleep(1500);
     autoConnect(true);
   } else {
-    box.innerHTML = `<div class="result bad" style="text-align:left">The controller did not restart. It is probably still running older firmware without this feature:
-      flash the latest <b>yagcc-…uf2</b> from the Install page, or unplug it and hold <b>Plus</b> while plugging it back in.</div>`;
+    box.innerHTML = `<div class="result bad" style="text-align:left">${t('setup.gate.controller_did_not_restart_probably')}</div>`;
   }
 }
 
@@ -2441,18 +2436,15 @@ function showOtherMode(dev) {
   if (!box) return;
   if (!dev || state.dev) { box.innerHTML = ''; return; }
   if (dev.vendorId === 0x0f0d) {
-    box.innerHTML = `<div class="notice info" style="text-align:left"><b>Found your controller in Switch mode.</b>
-        That mode has no configuration channel. Unplug it and hold <b>Plus</b> while plugging it back in to configure it.</div>`;
+    box.innerHTML = `<div class="notice info" style="text-align:left">${t('setup.gate.found_controller_switch_mode_that')}</div>`;
   } else if (canRestart(dev)) {
     box.innerHTML = `<div class="notice info" style="text-align:left">
-        <b>Found your controller in ${dev.vendorId === 0x1bad ? 'Wii Rock Band' : dev.productId === 0x0200 ? 'PS3 Rock Band' : 'PS3 Guitar Hero'} mode.</b> That mode has no configuration channel, because it has to look exactly like a real PS3 guitar.
-        <div class="row" style="margin-top:10px"><button class="btn primary small" id="toSetup">Restart it in setup mode</button>
-        <span class="muted" style="font-size:12px">or unplug it and hold <b>Plus</b> while plugging it back in</span></div></div>`;
+        ${t('setup.gate.found_controller_mode_that_mode', { v: dev.vendorId === 0x1bad ? 'Wii Rock Band' : dev.productId === 0x0200 ? 'PS3 Rock Band' : 'PS3 Guitar Hero' })}<div class="row" style="margin-top:10px"><button class="btn primary small" id="toSetup">${t('setup.gate.restart_setup_mode')}</button>
+        <span class="muted" style="font-size:12px">${t('setup.gate.or_unplug_hold_plus_while')}</span></div></div>`;
     $('#toSetup').onclick = () => restartToSetup(dev);
   } else {
     const kb = dev.productId === 0x0003;
-    box.innerHTML = `<div class="notice info" style="text-align:left"><b>Found your controller in ${kb ? 'keyboard' : 'HID'} mode.</b>
-        The browser asks for permission once per mode: press <b>Connect controller</b> and pick <b>YAGCC Guitar (${kb ? 'Keyboard' : 'HID'})</b>.</div>`;
+    box.innerHTML = `<div class="notice info" style="text-align:left">${t('setup.gate.found_controller_mode_browser_asks', { v: kb ? 'keyboard' : 'HID', v2: kb ? t('setup.gate.keyboard') : 'HID' })}</div>`;
   }
 }
 
@@ -2463,13 +2455,13 @@ async function scanHid() {
 
 $('#findHid').onclick = async (e) => {
   e.preventDefault();
-  if (!('hid' in navigator)) { toast('This browser has no WebHID. Use Chrome or Edge.', 'bad'); return; }
+  if (!('hid' in navigator)) { toast(t('app.misc.this_browser_has_no_webhid'), 'bad'); return; }
   try {
     const [d] = await navigator.hid.requestDevice({ filters: HID_FILTERS });
-    if (!d) { toast('No controller in PS3 or HID mode was picked.'); return; }
+    if (!d) { toast(t('app.misc.no_controller_ps3_or_hid')); return; }
     if (canRestart(d)) restartToSetup(d);   // you picked it to configure it: switch straight away
     else showOtherMode(d);
-  } catch (err) { toast('Search failed: ' + err.message, 'bad'); }
+  } catch (err) { toast(t('app.misc.search_failed', { message: err.message }), 'bad'); }
 };
 if ('hid' in navigator) {
   navigator.hid.addEventListener('connect', () => scanHid());
@@ -2489,3 +2481,32 @@ if (webusbSupported()) {
   navigator.usb.addEventListener('disconnect', () => { if (state.dev) { state.dev.stopPolling(); onLost(); } });
   autoConnect(true);   // already-authorised controller -> straight to setup
 }
+
+// ------------------------------------------------------------------ language
+// Static markup (data-i18n*) is refreshed by applyI18n(); everything the code renders is rebuilt from state, so a
+// switch never reloads the page or touches the unsaved configuration.
+const langSel = $('#langSel');
+function syncLangPicker() {
+  const pseudo = isPseudo();
+  langSel.innerHTML = (pseudo ? '<option value="xx" lang="en">Pseudo (xx)</option>' : '')
+    + LANGS.map((l) => `<option value="${l.code}" lang="${l.code}">${l.name}</option>`).join('');
+  langSel.value = pseudo ? 'xx' : getLang();
+  const cur = LANGS.find((l) => l.code === getLang()) || { name: 'Pseudo', code: 'xx' };
+  $('#langCur').textContent = pseudo ? 'xx' : cur.name;
+  $('#langCode').textContent = cur.code.split('-')[0].toUpperCase();
+}
+langSel.addEventListener('change', () => setLang(langSel.value, { persist: langSel.value !== 'xx' }));
+function onLanguageChanged() {
+  syncLangPicker();
+  bpClose(false);                                   // a half-finished button prompt would keep the old language
+  renderHardware($('#hwList'));
+  renderCompat($('#compatList'));
+  renderBoardList();
+  syncSteps();                                      // localized() rebuilt STEPS; re-add the optional steps
+  updatePill();
+  if (state.dev && state.cfg) { buildUi(); updateBar(); checkFirmware(); }
+  const sb = $('#siteBanner');
+  if (!sb.hidden) checkSite();
+}
+document.addEventListener('langchange', onLanguageChanged);
+syncLangPicker();

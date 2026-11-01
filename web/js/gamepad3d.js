@@ -7,6 +7,7 @@ import { createPad } from './gamepad.js?v=dev';
 import { webglAvailable } from './guitar3d.js?v=dev';
 import { loadGLB, isCached, createLoadBox, createFallbackNote } from './modelload.js?v=dev';
 import { outName, outputSupported, modeFamily } from './mapping.js?v=dev';
+import { t } from './i18n.js?v=dev';
 
 let libP = null;
 const lib = () => (libP ||= import('../vendor/three-yagcc.js?v=dev'));
@@ -77,7 +78,7 @@ function glyphCanvas(def, T) {
   else if (g === 'create') { x.lineWidth = 10; x.beginPath(); x.moveTo(-28, 4); x.lineTo(-28, 26); x.lineTo(28, 26); x.lineTo(28, 4); x.moveTo(0, 22); x.lineTo(0, -26); x.moveTo(-17, -12); x.lineTo(0, -28); x.lineTo(17, -12); x.stroke(); }
   else if (g === 'ring') { x.lineWidth = 12; x.beginPath(); x.arc(0, 0, 40, 0, Math.PI * 2); x.stroke(); x.beginPath(); x.arc(0, 0, 12, 0, Math.PI * 2); x.fill(); }
   else if (g === 'capture') { x.lineWidth = 9; x.strokeRect(-30, -24, 60, 48); x.beginPath(); x.arc(0, 0, 11, 0, Math.PI * 2); x.stroke(); }
-  const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4; return t;
+  const tv = new T.CanvasTexture(c); tv.colorSpace = T.SRGBColorSpace; tv.anisotropy = 4; return tv;
 }
 
 // ---- the 3D view (one canvas; swaps the model when the mode's model changes)
@@ -110,7 +111,7 @@ export function createPad3D(host, { onPick, onReady, onFail, onLoading, onProgre
     const canvas = document.createElement('canvas');
     canvas.className = 'pad3d';
     canvas.setAttribute('role', 'img');
-    canvas.setAttribute('aria-label', 'Live 3D view of the controller. Drag to turn it all the way round, double-click to reset. The list of buttons below the drawing works with the keyboard.');
+    canvas.setAttribute('aria-label', t('gamepad3d.aria_label'));
     let renderer;
     try { renderer = new T.WebGLRenderer({ canvas, antialias: !lite, alpha: true, powerPreference: 'low-power' }); } catch (e) { onFail?.(e); return; }
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
@@ -256,9 +257,9 @@ export function createPad3D(host, { onPick, onReady, onFail, onLoading, onProgre
     }
     const labelOf = (name, sub) => {
       const m = st.mode;
-      if (name === 'ls' || name === 'rs') return sub && sub.startsWith('stick:') ? `${name === 'ls' ? 'Left' : 'Right'} stick ${sub.slice(6)}` : outName(OUT[name], m);
+      if (name === 'ls' || name === 'rs') return sub && sub.startsWith('stick:') ? t('test.pad.stick', { v: name === 'ls' ? t('test.out.left') : t('test.out.right'), v2: t('dir.' + sub.slice(6)) }) : outName(OUT[name], m);
       if (name === 'dpad') return outName(DIR_OUT[sub] || 14, m);
-      if (name === 'capture') return 'Capture (no output)';
+      if (name === 'capture') return t('test.pad.capture_no_output');
       return OUT[name] ? outName(OUT[name], m) : '';
     };
 
@@ -305,7 +306,7 @@ export function createPad3D(host, { onPick, onReady, onFail, onLoading, onProgre
             p.rotation.x = rest.r.x + (cfg.trig * Math.PI / 180) * s.v;
             glow(p, s.v > 0.02 ? 0.25 + 0.75 * s.v : 0, k, hov);
           } else if (role === 'stick') {
-            const L = name === 'ls', x = clamp1(L ? pad.lx : pad.rx), y = clamp1(L ? pad.ly : pad.ry), click = bit(pad, u.out);
+            const Lv = name === 'ls', x = clamp1(Lv ? pad.lx : pad.rx), y = clamp1(Lv ? pad.ly : pad.ry), click = bit(pad, u.out);
             const mag = Math.hypot(x, y), sc = mag > 1 ? 1 / mag : 1;
             u.tx = ease(u.tx || 0, x * sc, k); u.ty = ease(u.ty || 0, y * sc, k); s.v = ease(s.v, click ? 1 : 0, k);
             p.rotation.z = rest.r.z - u.tx * cfg.tilt; p.rotation.x = rest.r.x - u.ty * cfg.tilt;   // Y+ is up on the pad = away from the player (-z)
@@ -386,8 +387,8 @@ export function createPad3D(host, { onPick, onReady, onFail, onLoading, onProgre
     canvas.addEventListener('pointerup', (e) => {
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) { down = null; return; }   // a drag turns the model
       down = null;
-      const h = hit(e), t = h && targetOf(h);
-      if (t) onPick?.(t);
+      const h = hit(e), tv = h && targetOf(h);
+      if (tv) onPick?.(tv);
     });
     canvas.addEventListener('pointermove', (e) => {
       if (down || e.pointerType === 'touch' || hoverRaf) return;
@@ -409,7 +410,7 @@ export function createPadAuto(onPick) {
   const pad2 = createPad(onPick);
   if (!webglAvailable()) return pad2;
   const card = pad2.el, svg = pad2.svg;
-  const wrap = document.createElement('div'); wrap.className = 'gp-3d loading';
+  const wrap = document.createElement('div'); wrap.className = 'gp-3d loading'; wrap.dataset.hint = t('guitar.drag_hint');
   card.insertBefore(wrap, svg);
   const box = createLoadBox(wrap);
   let mode = 0, p3 = null, pendingPad = null, note = null, upReady = false;
@@ -418,16 +419,16 @@ export function createPadAuto(onPick) {
   reserve();
   const to3D = () => { note?.remove(); note = null; wrap.hidden = false; svg.classList.add('gp-sr'); card.classList.add('is-3d'); };
   const fail = (e, hadModel) => {
-    const again = () => { to3D(); box.show('Loading controller…', hadModel); p3.retry(); };
-    if (hadModel) { box.error('Couldn\u2019t load this controller', again); return; }   // old model stays; retry in place
+    const again = () => { to3D(); box.show(t('test.pad.loading_controller'), hadModel); p3.retry(); };
+    if (hadModel) { box.error(t('test.pad.couldnt_load_this_controller'), again); return; }   // old model stays; retry in place
     box.hide(); wrap.hidden = true; svg.classList.remove('gp-sr'); card.classList.remove('is-3d');
     note?.remove(); note = createFallbackNote(svg, again);
   };
   to3D();
-  box.show('Loading controller…');
+  box.show(t('test.pad.loading_controller'));
   p3 = createPad3D(wrap, {
     onPick, watch: card,
-    onLoading: (key, over) => { box.show('Loading controller…', over); reserve(); },
+    onLoading: (key, over) => { box.show(t('test.pad.loading_controller'), over); reserve(); },
     onProgress: (f) => box.progress(f),
     onLoaded: () => box.hide(),
     onReady: () => { upReady = true; wrap.classList.remove('loading'); reserve(); box.hide(); to3D(); },

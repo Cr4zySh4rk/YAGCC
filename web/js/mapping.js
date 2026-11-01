@@ -1,18 +1,19 @@
 // Input mapping (firmware 0.42+): sources (physical inputs), outputs (a generic gamepad), per-mode labels and a JS
 // engine that mirrors the firmware's rules, so the Test page can show what any mode would send. See map_spec.md.
 import { NUM_SRC, MAP_DEFAULT, MAP_NONE } from './protocol.js?v=dev';
+import { t, localized } from './i18n.js?v=dev';
 
 // ---- sources: index = position in a mode's map row
-export const SOURCES = [
-  { id: 0, name: 'Green fret', color: '#22c55e' }, { id: 1, name: 'Red fret', color: '#ef4444' }, { id: 2, name: 'Yellow fret', color: '#facc15' },
-  { id: 3, name: 'Blue fret', color: '#3b82f6' }, { id: 4, name: 'Orange fret', color: '#fb923c' },
-  { id: 5, name: 'Strum up' }, { id: 6, name: 'Strum down' }, { id: 7, name: 'Star power' }, { id: 8, name: 'Plus / Start' },
-  { id: 9, name: 'Whammy bar', analog: true }, { id: 10, name: 'Tilt switch', tilt: true },
-  { id: 11, name: 'Tilt sensor 1', analog: true, tilt: true }, { id: 12, name: 'Tilt sensor 2', analog: true, tilt: true },
-  { id: 13, name: 'D-pad up' }, { id: 14, name: 'D-pad down' }, { id: 15, name: 'D-pad left' }, { id: 16, name: 'D-pad right' },
-  { id: 17, name: 'Select' }, { id: 18, name: 'Home' }, { id: 19, name: 'Stick X', analog: true }, { id: 20, name: 'Stick Y', analog: true },
-  { id: 21, name: 'Stick click' },
-];
+export const SOURCES = localized(() => ([
+  { id: 0, name: t('test.source.green_fret.name'), color: '#22c55e' }, { id: 1, name: t('test.source.red_fret.name'), color: '#ef4444' }, { id: 2, name: t('test.source.yellow_fret.name'), color: '#facc15' },
+  { id: 3, name: t('test.source.blue_fret.name'), color: '#3b82f6' }, { id: 4, name: t('test.source.orange_fret.name'), color: '#fb923c' },
+  { id: 5, name: t('common.strum_up') }, { id: 6, name: t('common.strum_down') }, { id: 7, name: t('common.star_power') }, { id: 8, name: t('test.source.plus_start.name') },
+  { id: 9, name: t('setup.steps.whammy.title'), analog: true }, { id: 10, name: t('common.tilt_switch'), tilt: true },
+  { id: 11, name: t('test.source.tilt_sensor_1.name'), analog: true, tilt: true }, { id: 12, name: t('test.source.tilt_sensor_2.name'), analog: true, tilt: true },
+  { id: 13, name: t('common.d_pad_up') }, { id: 14, name: t('common.d_pad_down') }, { id: 15, name: t('common.d_pad_left') }, { id: 16, name: t('common.d_pad_right') },
+  { id: 17, name: t('common.select') }, { id: 18, name: t('common.home') }, { id: 19, name: t('test.source.stick_x.name'), analog: true }, { id: 20, name: t('test.source.stick_y.name'), analog: true },
+  { id: 21, name: t('common.stick_click') },
+]));
 console.assert(SOURCES.length === NUM_SRC);
 export const isAnalogSrc = (s) => !!SOURCES[s]?.analog;
 export const isStickSrc = (s) => s === 19 || s === 20;
@@ -31,10 +32,10 @@ export const DEFAULT_OUT = [1, 2, 4, 3, 5, 14, 15, 9, 10, 20, null, null, null, 
 export const TILT_AXIS_MODES = [0];   // only XInput shows the tilt on the generic pad (RY); other reports keep it in a native field
 
 // ---- modes shown on the Test page (Auto has no map; keyboard has key bindings instead of a map)
-export const TEST_MODES = [
-  { id: 0, name: 'XInput (Xbox 360 / PC)', family: 'xbox' },
-  { id: 2, name: 'HID gamepad (PC)', family: 'xbox' },
-  { id: 4, name: 'Keyboard (Fortnite Festival)', family: 'xbox', keyboard: true },   // no gamepad map: its own key bindings (cfg.keys)
+export const TEST_MODES = localized(() => ([
+  { id: 0, name: t('test.mode.xinput_xbox_360_pc.name'), family: 'xbox' },
+  { id: 2, name: t('test.mode.hid_gamepad_pc.name'), family: 'xbox' },
+  { id: 4, name: t('test.mode.keyboard_fortnite_festival.name'), family: 'xbox', keyboard: true },   // no gamepad map: its own key bindings (cfg.keys)
   { id: 1, name: 'PS3 Guitar Hero', family: 'ps' },
   { id: 3, name: 'PS3 Rock Band', family: 'ps' },
   { id: 6, name: 'Wii Rock Band', family: 'nin' },
@@ -43,7 +44,7 @@ export const TEST_MODES = [
   { id: 11, name: 'PS5', family: 'ps' },
   { id: 9, name: 'Xbox One', family: 'xbox' },
   { id: 7, name: 'OG Xbox', family: 'xbox' },
-];
+]));
 export const testMode = (id) => TEST_MODES.find((m) => m.id === id);
 export const modeFamily = (id) => testMode(id)?.family || 'xbox';
 
@@ -73,23 +74,23 @@ const FAMILY_NAMES = {
 };
 const MODE_NAME_TWEAK = { 8: { 9: 'Share', 10: 'Options' }, 11: { 9: 'Create', 10: 'Options' }, 7: { 5: 'Black', 6: 'White', 9: 'Back' }, 9: { 9: 'View', 10: 'Menu' } };
 export function outName(out, mode) {
-  if (out === MAP_DEFAULT) return 'Mode default';
-  if (out === MAP_NONE) return 'Nothing';
+  if (out === MAP_DEFAULT) return t('test.out.mode_default');
+  if (out === MAP_NONE) return t('common.nothing');
   const fam = FAMILY_NAMES[modeFamily(mode)];
   if (out <= 13) return MODE_NAME_TWEAK[mode]?.[out] || fam[out - 1];
-  if (out <= 17) return ['D-pad up', 'D-pad down', 'D-pad left', 'D-pad right'][out - 14];
-  if (out <= 21) return ['Left stick X', 'Left stick Y', 'Right stick X', 'Right stick Y'][out - 18];
-  if (out <= 23) return `${fam[out - 22 + 6]} (analog)`;
-  const k = out - 24, st = k < 4 ? 'Left' : 'Right';
-  return `${st} stick ${['left', 'right', 'down', 'up'][k & 3]}`;     // LX-, LX+, LY-, LY+ ... (Y+ = up)
+  if (out <= 17) return [t('common.d_pad_up'), t('common.d_pad_down'), t('common.d_pad_left'), t('common.d_pad_right')][out - 14];
+  if (out <= 21) return [t('test.out.left_stick_x'), t('test.out.left_stick_y'), t('test.out.right_stick_x'), t('test.out.right_stick_y')][out - 18];
+  if (out <= 23) return t('test.out.analog', { v: fam[out - 22 + 6] });
+  const k = out - 24, st = k < 4 ? t('test.out.left') : t('test.out.right');
+  return t('test.out.stick', { st, v: t('dir.' + ['left', 'right', 'down', 'up'][k & 3]) });     // LX-, LX+, LY-, LY+ ... (Y+ = up)
 }
 // a full-press trigger and the analog one have different names so the dropdown stays unambiguous
 export function outLabel(out, mode) {
-  if (out === 7 || out === 8) return `${outName(out, mode)} (full press)`;
+  if (out === 7 || out === 8) return t('test.out.full_press', { output: outName(out, mode) });
   return outName(out, mode);
 }
 // what the mode-default outputs mean on a guitar
-const GUITAR_MEANING = { 1: 'green fret', 2: 'red fret', 3: 'blue fret', 4: 'yellow fret', 5: 'orange fret', 14: 'strum up', 15: 'strum down', 9: 'star power', 10: 'plus', 20: 'whammy', 21: 'tilt' };
+const GUITAR_MEANING = localized(() => ({ 1: t('test.meaning.1'), 2: t('test.meaning.2'), 3: t('test.meaning.3'), 4: t('test.meaning.4'), 5: t('test.meaning.5'), 14: t('test.meaning.14'), 15: t('test.meaning.15'), 9: t('test.meaning.9'), 10: t('test.meaning.10'), 20: t('test.meaning.20'), 21: t('test.meaning.21') }));
 export function guitarMeaning(out) { return GUITAR_MEANING[out] || ''; }
 // "A (green fret)", or just "Back" when nothing guitar-ish is attached to it
 // PlayStation face buttons get a Unicode shape in front of the word (an <option> can't hold the drawn SVG symbol)
@@ -100,13 +101,13 @@ export function outFull(out, mode) {
   const nm = (out >= 1 && out <= 4 && modeFamily(mode) === 'ps' ? PS_SHAPE[out - 1] + ' ' : '') + outName(out, mode);
   return g ? `${nm} (${g})` : nm;
 }
-export const OUT_GROUPS = [
-  { name: 'Buttons', outs: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13] },
-  { name: 'D-pad', outs: [14, 15, 16, 17] },
-  { name: 'Triggers', outs: [7, 8, 22, 23] },
-  { name: 'Sticks', outs: [18, 19, 20, 21] },
-  { name: 'Stick directions (half axes)', outs: [24, 25, 26, 27, 28, 29, 30, 31] },
-];
+export const OUT_GROUPS = localized(() => ([
+  { name: t('common.buttons'), outs: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13] },
+  { name: t('test.d_pad.name'), outs: [14, 15, 16, 17] },
+  { name: t('test.out.triggers.name'), outs: [7, 8, 22, 23] },
+  { name: t('test.out.sticks.name'), outs: [18, 19, 20, 21] },
+  { name: t('test.out.stick_directions_half_axes.name'), outs: [24, 25, 26, 27, 28, 29, 30, 31] },
+]));
 
 // ---- response curve of the analog 0..1 sources (whammy, tilt sensors): c -100..100, 0 = linear. Same maths as the firmware's padmap_curve.
 // c > 0 (expo): gentle near rest, steep at the end, y = (1-e)x + e x^3; c < 0: quick off rest, flatter at the end (the mirror image).

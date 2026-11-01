@@ -3,6 +3,7 @@
 // Every control can be lit up live (pressed), marked as mapped, or focused (dashed ring).
 import { createGuitar3D, webglAvailable } from './guitar3d.js?v=dev';
 import { createLoadBox, createFallbackNote } from './modelload.js?v=dev';
+import { t } from './i18n.js?v=dev';
 const NS = 'http://www.w3.org/2000/svg';
 const COLORS = { green: '#22c55e', red: '#ef4444', yellow: '#facc15', blue: '#3b82f6', orange: '#fb923c' };
 const FRET_NAMES = ['green', 'red', 'yellow', 'blue', 'orange'];
@@ -15,11 +16,11 @@ function el(tag, attrs = {}, parent) {
   return e;
 }
 
-function mix(hex, to, t) {
+function mix(hex, to, tv) {
   const n = parseInt(hex.slice(1), 16);
   const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   const T = to === 'white' ? 255 : 0;
-  return '#' + c.map((v) => Math.round(v + (T - v) * t).toString(16).padStart(2, '0')).join('');
+  return '#' + c.map((v) => Math.round(v + (T - v) * tv).toString(16).padStart(2, '0')).join('');
 }
 
 function grad(defs, id, kind, attrs, stops) {
@@ -33,7 +34,7 @@ function createGuitar2D(onPart) {
   const id = (n) => `g${u}-${n}`;
   const url = (n) => `url(#${id(n)})`;
 
-  const svg = el('svg', { viewBox: '0 0 1100 340', class: 'guitar', role: 'img', 'aria-label': 'Les Paul style guitar controller' });
+  const svg = el('svg', { viewBox: '0 0 1100 340', class: 'guitar', role: 'img', 'aria-label': t('guitar.les_paul_style_guitar_controller') });
   const defs = el('defs', {}, svg);
 
   // ---- gradients / filters
@@ -197,9 +198,9 @@ function createGuitar2D(onPart) {
   const label = (x, y, txt, cls = 'g-label') => { const e = el('text', { class: cls, x, y }, svg); e.textContent = txt; };
   const logo = el('text', { x: 1030, y: 176, class: 'g-logo', 'text-anchor': 'middle' }, svg);
   logo.textContent = 'YAGCC';
-  label(158, 169, 'Star power', 'g-label body'); label(100, 208, 'Plus', 'g-label body');
-  label(286, 122, 'Strum', 'g-label body'); label(176, 276, 'Whammy', 'g-label body');
-  label(600, 114, 'Tilt'); label(828, 222, 'Frets');
+  label(158, 169, t('common.star_power'), 'g-label body'); label(100, 208, t('common.plus'), 'g-label body');
+  label(286, 122, t('assign.strum'), 'g-label body'); label(176, 276, t('common.whammy'), 'g-label body');
+  label(600, 114, t('common.tilt')); label(828, 222, t('common.frets'));
 
   // click-to-map: parts the caller can map get a pointer cursor and a hover outline (CSS .clickable)
   if (onPart) {
@@ -207,7 +208,7 @@ function createGuitar2D(onPart) {
       if (k === 'tilt') continue;
       g.classList.add('clickable');
       g.setAttribute('role', 'button'); g.setAttribute('tabindex', '0');
-      g.setAttribute('aria-label', 'Map ' + k);
+      g.setAttribute('aria-label', t('guitar.map_part', { part: PART_NAMES()[k] || k }));
       g.addEventListener('click', () => onPart(k));
       g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPart(k); } });
     }
@@ -239,19 +240,21 @@ function createGuitar2D(onPart) {
 }
 
 // The live view: the 3D model when WebGL is available, the drawing until it has loaded (or if it can't).
+const PART_NAMES = () => ({ strumUp: t('guitar.part.strumUp'), strumDown: t('guitar.part.strumDown'), star: t('guitar.part.star'), plus: t('guitar.part.plus'), whammy: t('guitar.part.whammy'), green: t('guitar.part.green'), red: t('guitar.part.red'), yellow: t('guitar.part.yellow'), blue: t('guitar.part.blue'), orange: t('guitar.part.orange') });
 export function createGuitar({ compact = false, onPart = null } = {}) {
   const g2 = createGuitar2D(onPart);
   const wrap = document.createElement('div');
   wrap.className = 'guitar-view' + (compact ? ' compact-3d' : '');
+  wrap.dataset.hint = t('guitar.drag_hint');
   wrap.appendChild(g2.el);
   const views = [g2];
   if (webglAvailable() && !/[?&]2d\b/.test(location.search)) {
     wrap.classList.add('loading-3d');   // keep the drawing's space (hidden) while the model loads: a spinner, never the sketch
     const box = createLoadBox(wrap); let note = null;
-    box.show('Loading guitar\u2026');
+    box.show(t('guitar.loading_guitar'));
     const g3 = createGuitar3D(wrap, {
       onPart,
-      onLoading: () => { note?.remove(); note = null; wrap.classList.remove('fallback-3d'); wrap.classList.add('loading-3d'); box.show('Loading guitar\u2026'); },
+      onLoading: () => { note?.remove(); note = null; wrap.classList.remove('fallback-3d'); wrap.classList.add('loading-3d'); box.show(t('guitar.loading_guitar')); },
       onProgress: (f) => box.progress(f),
       onReady: () => { box.hide(); wrap.classList.replace('loading-3d', 'is-3d'); },
       onFail: () => {   // fall back to the drawing, with a way back

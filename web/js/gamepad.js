@@ -2,6 +2,7 @@
 // It lights up from a generic pad ({buttons, lx, ly, rx, ry, lt, rt}), relabels per console family and reports clicks so a
 // source can be assigned to the part that was clicked. Every part is a .gp-part with an aria-label (the output's name).
 import { outName, outputSupported, modeFamily } from './mapping.js?v=dev';
+import { t } from './i18n.js?v=dev';
 
 const NS = 'http://www.w3.org/2000/svg';
 function el(tag, attrs = {}, parent) {
@@ -21,12 +22,12 @@ export function createPad(onPick) {
   card.innerHTML = `
     <div class="gp-head">
       <svg class="gp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 8h11a4.5 4.5 0 0 1 4.4 5.4l-.8 4A2.6 2.6 0 0 1 16.3 18.5L15.2 17H8.8l-1.1 1.5a2.6 2.6 0 0 1-4.8-1.1l-.8-4A4.5 4.5 0 0 1 6.5 8z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r=".6"/><circle cx="17.5" cy="13.5" r=".6"/></svg>
-      <div class="gp-titles"><div class="gp-title">Controller Visualizer</div><div class="gp-device" data-gp="device"></div></div>
+      <div class="gp-titles"><div class="gp-title">${t('test.pad.controller_visualizer')}</div><div class="gp-device" data-gp="device"></div></div>
       <span class="gp-pill" data-gp="pill"><b data-gp="pillText">P1</b><i class="gp-live-dot"></i></span>
     </div>`;
-  const svg = el('svg', { viewBox: '0 0 640 452', class: 'gp-svg', role: 'img', 'aria-label': 'Generic gamepad' });
+  const svg = el('svg', { viewBox: '0 0 640 452', class: 'gp-svg', role: 'img', 'aria-label': t('test.pad.generic_gamepad') });
   card.appendChild(svg);
-  card.insertAdjacentHTML('beforeend', '<div class="gp-legend"><span><i class="gp-key on"></i>Button pressed</span><span><i class="gp-key"></i>Waiting for input</span></div>');
+  card.insertAdjacentHTML('beforeend', `<div class="gp-legend">${t('test.pad.button_pressed_waiting_input')}</div>`);
   const q = (k) => card.querySelector(`[data-gp="${k}"]`);
 
   const parts = [];                  // {g, outs, target}
@@ -150,7 +151,7 @@ export function createPad(onPick) {
     setHeader(device) { q('device').textContent = device; },
     setLive(live, tip = '') {
       q('pill').classList.toggle('live', !!live);
-      q('pillText').textContent = live ? 'P1' : 'Preview';
+      q('pillText').textContent = live ? 'P1' : t('test.preview');
       q('pill').title = tip;
     },
     setMode(m) {
@@ -164,12 +165,12 @@ export function createPad(onPick) {
           r.g.querySelector('.gp-icn').setAttribute('transform', `translate(${cx - r.px} 0)`);
         }
       }
-      for (const [o, t] of Object.entries(labels)) t.textContent = outName(+o, m);
+      for (const [o, tv] of Object.entries(labels)) tv.textContent = outName(+o, m);
       for (const r of parts) r.g.classList.toggle('na', !r.outs.some((o) => outputSupported(m, o)));
       const names = (o) => outName(o, m);
       for (const r of parts) {
-        const t = r.target;
-        r.g.setAttribute('aria-label', t.out ? names(t.out) : t.trigger ? names(t.trigger === 'L' ? 7 : 8) : `${t.stick === 'L' ? 'Left' : 'Right'} stick ${t.dir}`);
+        const tv = r.target;
+        r.g.setAttribute('aria-label', tv.out ? names(tv.out) : tv.trigger ? names(tv.trigger === 'L' ? 7 : 8) : `${t('test.out.stick', { st: tv.stick === 'L' ? t('test.out.left') : t('test.out.right'), v: t('dir.' + tv.dir) })}`);
       }
     },
     setArmed(on) { svg.classList.toggle('armed', !!on); },
