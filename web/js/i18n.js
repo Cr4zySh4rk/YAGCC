@@ -55,7 +55,8 @@ export function detectLang() {
   if (fromQuery) return fromQuery;
   const saved = store.get(STORE_KEY);
   if (saved && known(saved)) return saved;
-  for (const tag of (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language])) {
+  const nav = typeof navigator !== 'undefined' ? navigator : {};   // Node 20 (the CI tests) has no navigator
+  for (const tag of (nav.languages && nav.languages.length ? nav.languages : [nav.language])) {
     const m = matchLang(tag);
     if (m) return m;
   }
