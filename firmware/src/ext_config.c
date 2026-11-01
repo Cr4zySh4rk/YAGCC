@@ -68,6 +68,7 @@ bool ext_validate(const ext_config_t *e, const yacc_config_t *main) {
     for (int i = 0; i < 3; i++) if (e->curve[i] < -100 || e->curve[i] > 100) return false;
     for (int i = 0; i < 4; i++) if (e->range[i] > 1) return false;
     if (!bt_sleep_valid(e->bt_sleep)) return false;
+    if (!devname_valid(e->dev_name)) return false;
     for (int r = 0; r < EXT_MAP_ROWS; r++)
         for (int c = 0; c < EXT_MAP_COLS; c++) {
             uint8_t v = e->map[r][c];

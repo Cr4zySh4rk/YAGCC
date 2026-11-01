@@ -18,3 +18,6 @@ ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -Wno-unused-function -Wno-unused-variable
 IDLE="${TMPDIR:-/tmp}/yagcc_idle_sleep_test"
 ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$IDLE" idle_sleep_test.c ../../src/ext_config.c
 "$IDLE"
+DN="${TMPDIR:-/tmp}/yagcc_dev_name_test"
+${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$DN" dev_name_test.c ../../src/ext_config.c
+"$DN"

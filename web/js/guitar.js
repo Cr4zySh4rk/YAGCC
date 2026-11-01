@@ -2,6 +2,7 @@
 // body on the left, neck and headstock to the right (like a product shot).
 // Every control can be lit up live (pressed), marked as mapped, or focused (dashed ring).
 import { createGuitar3D, webglAvailable } from './guitar3d.js?v=dev';
+import { createLoadBox, createFallbackNote } from './modelload.js?v=dev';
 const NS = 'http://www.w3.org/2000/svg';
 const COLORS = { green: '#22c55e', red: '#ef4444', yellow: '#facc15', blue: '#3b82f6', orange: '#fb923c' };
 const FRET_NAMES = ['green', 'red', 'yellow', 'blue', 'orange'];
@@ -245,11 +246,18 @@ export function createGuitar({ compact = false, onPart = null } = {}) {
   wrap.appendChild(g2.el);
   const views = [g2];
   if (webglAvailable() && !/[?&]2d\b/.test(location.search)) {
-    wrap.classList.add('loading-3d');   // keep the drawing's space but don't flash it while the model loads
+    wrap.classList.add('loading-3d');   // keep the drawing's space (hidden) while the model loads: a spinner, never the sketch
+    const box = createLoadBox(wrap); let note = null;
+    box.show('Loading guitar\u2026');
     const g3 = createGuitar3D(wrap, {
       onPart,
-      onReady: () => { wrap.classList.replace('loading-3d', 'is-3d'); },
-      onFail: () => { wrap.classList.remove('loading-3d', 'is-3d'); },   // fall back to the drawing
+      onLoading: () => { note?.remove(); note = null; wrap.classList.remove('fallback-3d'); wrap.classList.add('loading-3d'); box.show('Loading guitar\u2026'); },
+      onProgress: (f) => box.progress(f),
+      onReady: () => { box.hide(); wrap.classList.replace('loading-3d', 'is-3d'); },
+      onFail: () => {   // fall back to the drawing, with a way back
+        box.hide(); wrap.classList.remove('loading-3d', 'is-3d');
+        note?.remove(); note = createFallbackNote(g2.el, () => g3.retry());
+      },
     });
     views.push(g3);
   }

@@ -5,15 +5,17 @@
 // three.js (MIT) is the bundle in vendor/three-yagcc.js, only downloaded when a 3D pad is created.
 import { createPad } from './gamepad.js?v=dev';
 import { webglAvailable } from './guitar3d.js?v=dev';
+import { loadGLB, isCached, createLoadBox, createFallbackNote } from './modelload.js?v=dev';
 import { outName, outputSupported, modeFamily } from './mapping.js?v=dev';
 
 let libP = null;
 const lib = () => (libP ||= import('../vendor/three-yagcc.js?v=dev'));
-const loaded = new Map();   // model key -> Promise<gltf>
-const loadModel = (key) => {
-  if (!loaded.has(key)) loaded.set(key, lib().then((T) => new T.GLTFLoader().loadAsync(new URL(`../models/${MODELS[key].file}?v=dev`, import.meta.url).href)));
-  return loaded.get(key);
+const loaded = new Map();   // model key -> {p, ...}: a model that has loaded once is instant next time
+const loadModel = (key, onProgress) => {
+  const retry = !loaded.has(key) && libFailed; if (retry) { libP = null; libFailed = false; }
+  return loadGLB(loaded, key, () => lib().catch((e) => { libFailed = true; throw e; }), new URL(`../models/${MODELS[key].file}?v=dev`, import.meta.url).href, onProgress);
 };
+let libFailed = false;
 const force3d = /[?&]force3d\b/.test(location.search);
 const lite = /[?&]force3d=lite\b/.test(location.search);
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -79,15 +81,17 @@ function glyphCanvas(def, T) {
 }
 
 // ---- the 3D view (one canvas; swaps the model when the mode's model changes)
-export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}) {
+export function createPad3D(host, { onPick, onReady, onFail, onLoading, onProgress, onLoaded, watch = host } = {}) {
   let disposed = false, T = null, ready = false;
   const st = { pad: null, mode: 0, key: null, armed: false, hover: '', label: '' };
   const api = {
     setMode(m) { st.mode = m; applyMode(); },
     setArmed(on) { st.armed = !!on; need(); },
     update(pad) { st.pad = pad; need(); },
+    retry() { if (T && started) { applyMode(true); } else { start(); } },
     dispose() { disposed = true; pre.disconnect(); },
   };
+  let started = false;
   let need = () => {};
   let applyMode = () => {};
 
@@ -95,10 +99,11 @@ export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}
   setTimeout(() => pre.observe(watch));
   const start = async () => {
     try {
+      onLoading?.(modelKey(st.mode), false);
       T = await lib();
       if (disposed) return;
-      init();
-    } catch (e) { console.warn('3D pad unavailable:', e); onFail?.(e); }
+      if (!started) { started = true; init(); } else applyMode(true);
+    } catch (e) { libP = null; console.warn('3D pad unavailable:', e); onFail?.(e); }
   };
 
   function init() {
@@ -220,19 +225,21 @@ export function createPad3D(host, { onPick, onReady, onFail, watch = host } = {}
 
     // ---- model switching: keep the old model on screen until the new one is ready
     let wantKey = null;
-    applyMode = () => {
+    applyMode = (again) => {
       const key = modelKey(st.mode); st.key = key;
       if (rig && rig.key === key) { applyLabels(); return; }
       wantKey = key;
-      loadModel(key).then((gltf) => {
+      if (!isCached(loaded, key) || again) onLoading?.(key, !!rig);   // not cached: spinner (over the old model when switching)
+      loadModel(key, (f) => { if (wantKey === key) onProgress?.(f); }).then((gltf) => {
         if (disposed || wantKey !== key) return;
+        onLoaded?.();
         const r = (cache[key] ||= makeRig(key, gltf));
         if (rig) stage.remove(rig.root);
         rig = r; stage.add(r.root); readAccent(); size(); applyLabels();
         if (!ready) { ready = true; host.appendChild(canvas); onReady?.(canvas); }
         if (force3d) window.__pad3d = { T, scene, camera, controls, get rig() { return rig; }, stage, st, renderer, hit: (x, y) => hitAt?.({ clientX: x, clientY: y }) };
         need(); loop();
-      }).catch((e) => { console.warn('3D pad model failed:', e); if (!ready) { onFail?.(e); disposed = true; } });
+      }).catch((e) => { if (wantKey !== key) return; console.warn('3D pad model failed:', e); onFail?.(e, !!rig); });
     };
     const cache = {};
     // dim parts the current mode can't send; labels for tooltips
@@ -402,19 +409,34 @@ export function createPadAuto(onPick) {
   const pad2 = createPad(onPick);
   if (!webglAvailable()) return pad2;
   const card = pad2.el, svg = pad2.svg;
-  const wrap = document.createElement('div'); wrap.className = 'gp-3d'; wrap.hidden = true;
+  const wrap = document.createElement('div'); wrap.className = 'gp-3d loading';
   card.insertBefore(wrap, svg);
-  let mode = 0, p3 = null, pendingPad = null;
-  const fail = () => { wrap.remove(); p3 = null; svg.classList.remove('gp-sr'); card.classList.remove('is-3d'); };
+  const box = createLoadBox(wrap);
+  let mode = 0, p3 = null, pendingPad = null, note = null, upReady = false;
+  // reserve the model's height while it loads (CSS aspect-ratio, see .gp-3d.loading), so nothing jumps when the canvas arrives
+  const reserve = () => { if (!upReady) wrap.style.setProperty('--r', MODELS[modelKey(mode)].ratio); };
+  reserve();
+  const to3D = () => { note?.remove(); note = null; wrap.hidden = false; svg.classList.add('gp-sr'); card.classList.add('is-3d'); };
+  const fail = (e, hadModel) => {
+    const again = () => { to3D(); box.show('Loading controller…', hadModel); p3.retry(); };
+    if (hadModel) { box.error('Couldn\u2019t load this controller', again); return; }   // old model stays; retry in place
+    box.hide(); wrap.hidden = true; svg.classList.remove('gp-sr'); card.classList.remove('is-3d');
+    note?.remove(); note = createFallbackNote(svg, again);
+  };
+  to3D();
+  box.show('Loading controller…');
   p3 = createPad3D(wrap, {
     onPick, watch: card,
-    onReady: () => { wrap.hidden = false; svg.classList.add('gp-sr'); card.classList.add('is-3d'); },
+    onLoading: (key, over) => { box.show('Loading controller…', over); reserve(); },
+    onProgress: (f) => box.progress(f),
+    onLoaded: () => box.hide(),
+    onReady: () => { upReady = true; wrap.classList.remove('loading'); reserve(); box.hide(); to3D(); },
     onFail: fail,
   });
   p3.setMode(mode);
   return Object.assign(Object.create(pad2), {
     el: card, svg,
-    setMode(m) { mode = m; pad2.setMode(m); p3?.setMode(m); },
+    setMode(m) { mode = m; pad2.setMode(m); p3?.setMode(m); if (!upReady) reserve(); },
     setArmed(on) { pad2.setArmed(on); p3?.setArmed(on); },
     update(pad) { pad2.update(pad); pendingPad = pad; p3?.update(pad); },
   });

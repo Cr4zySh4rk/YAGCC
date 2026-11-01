@@ -433,8 +433,6 @@ p.warn { color: var(--warn); margin-top: 8px; }
 .guitar-view { position: relative; }
 .guitar-view.is-3d svg.guitar { display: none; }
 .guitar-view.loading-3d svg.guitar { visibility: hidden; }
-.guitar-view.loading-3d::before { content: "Loading 3D guitar…"; position: absolute; inset: 0; display: grid; place-items: center; font: 500 13px var(--sans); color: var(--faint); animation: g3d-wait 1.6s ease-in-out infinite; }
-@keyframes g3d-wait { 50% { opacity: .35; } }
 canvas.guitar3d { display: block; width: 100%; cursor: grab; touch-action: none; animation: g3d-in .5s ease-out; }
 canvas.guitar3d.grabbing { cursor: grabbing; }
 .guitar-view.is-3d::after { content: "Drag to turn · double-click to reset"; position: absolute; right: 4px; bottom: 2px; font: 500 11px var(--sans); color: var(--faint); pointer-events: none; }
@@ -935,13 +933,36 @@ body.has-savebar #toasts { bottom: 90px; }
 .gp-svg.armed .gp-part:not(.na) { cursor: pointer; }
 .gp-svg.armed .gp-part:not(.na):hover .gp-shape, .gp-part:focus-visible .gp-shape { stroke: var(--cyan); stroke-width: 3.5; }
 .gp-svg.armed .gp-part.wedge:not(.na):hover .gp-shape, .gp-svg.armed .gp-part.click:not(.na):hover .gp-shape { fill: rgba(28, 198, 255, .28); }
+/* loading overlay for the 3D models (modelload.js): YouTube-style buffering spinner, never the 2D sketch */
+.m3d-load { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 8px; }
+.m3d-load[hidden] { display: none; }
+.m3d-load.scrim { background: color-mix(in srgb, var(--ink, #000) 62%, transparent); border-radius: 14px; }
+.m3d-spin { width: 48px; height: 48px; transform-origin: 50% 50%; animation: m3d-rot 1.1s linear infinite; }
+.m3d-ring, .m3d-arc { fill: none; stroke-width: 4; }
+.m3d-ring { stroke: color-mix(in srgb, var(--text) 14%, transparent); }
+.m3d-arc { stroke: var(--accent); stroke-linecap: round; stroke-dasharray: 34 200; }
+.m3d-load.det .m3d-arc { transform: rotate(-90deg); transform-origin: 50% 50%; }
+.m3d-load.det .m3d-spin { animation-duration: 2.4s; }
+.m3d-load.err .m3d-spin { display: none; }
+.m3d-cap { font: 500 13px var(--sans); color: var(--dim); }
+.m3d-hint { font: 500 12px var(--sans); color: var(--faint); min-height: 1em; }
+.m3d-hint:empty { display: none; }
+.m3d-retry { margin-top: 2px; }
+.m3d-retry[hidden] { display: none; }
+.m3d-note { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 6px 0; font: 500 13px var(--sans); color: var(--dim); }
+@keyframes m3d-rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .m3d-spin { animation: m3d-pulse 1.6s ease-in-out infinite; } .m3d-load.det .m3d-spin { animation-duration: 1.6s; } .m3d-arc { stroke-dasharray: 94 200; } .m3d-load.det .m3d-arc { stroke-dasharray: unset; } }
+@keyframes m3d-pulse { 50% { opacity: .35; } }
 /* 3D controller (gamepad3d.js): the drawing stays in the page, visually hidden, as the keyboard layer; tabbing into the card shows it again */
 .gp-card.is-3d { position: relative; }
 .gp-3d { position: relative; margin: 2px -4px 0; border-radius: 14px; background: radial-gradient(ellipse 62% 56% at 50% 46%, color-mix(in srgb, var(--text) 8%, transparent), transparent 74%); }
 .gp-3d[hidden] { display: none; }
+.gp-3d.loading { aspect-ratio: var(--r, 1.55); min-height: 210px; max-height: 470px; }
+@media (max-width: 520px) { .gp-3d.loading { aspect-ratio: calc(var(--r, 1.55) * .86); } }
 canvas.pad3d { display: block; width: 100%; cursor: grab; touch-action: none; animation: g3d-in .5s ease-out; }
 canvas.pad3d.grabbing { cursor: grabbing; }
 .gp-card.is-3d .gp-3d::after { content: "Drag to turn \00b7  double-click to reset"; position: absolute; right: 8px; bottom: 4px; font: 500 11px var(--sans); color: var(--faint); pointer-events: none; }
+.gp-card.is-3d .gp-3d.loading::after { display: none; }
 .gp-svg.gp-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .gp-card.is-3d:focus-within .gp-svg.gp-sr { position: static; width: 100%; height: auto; margin: 8px auto 0; overflow: visible; clip: auto; clip-path: none; }
 .gp-legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 22px; margin-top: 8px; font-size: 13px; color: var(--dim); }
@@ -1115,3 +1136,12 @@ canvas.pad3d.grabbing { cursor: grabbing; }
 #stepCard .tilt-quick h3 { margin: 0; }
 #stepCard .step-nav .row { flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 700px) { .ts-choices { grid-template-columns: minmax(0, 1fr); } .ts-ch { min-height: 0; } }
+
+/* controller name field (Setup "All done" step and Tune) */
+.namefield p { margin: 6px 0 0; }
+.namerow { display: flex; align-items: center; gap: 12px; }
+.nameinp { height: 38px; width: 100%; max-width: 280px; padding: 0 12px; border-radius: var(--r); border: 1px solid var(--line-2); background: var(--inset); color: var(--text); font: 500 15px var(--sans); }
+.nameinp:focus-visible { outline: 2px solid var(--accent, var(--ok)); outline-offset: 1px; }
+.namecnt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.namemsg { color: var(--warn); font-size: 14px; }
+.name-setup { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }

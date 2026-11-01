@@ -2,9 +2,11 @@
 // split into moving parts and with brand marks removed for YAGCC (see assets/model/README.md).
 // three.js (MIT) is bundled in vendor/three-yagcc.js and only downloaded when a 3D view is created.
 
-let libP = null, modelP = null;
-const lib = () => (libP ||= import('../vendor/three-yagcc.js?v=dev'));
-const loadModel = () => (modelP ||= lib().then((T) => new T.GLTFLoader().loadAsync(new URL('../models/guitar.glb?v=dev', import.meta.url).href)));
+import { loadGLB } from './modelload.js?v=dev';
+let libP = null;
+const lib = () => (libP ||= import('../vendor/three-yagcc.js?v=dev').catch((e) => { libP = null; throw e; }));
+const cache = new Map();   // 'guitar' -> loaded model (instant the second time; a failed load is dropped so Retry re-fetches)
+const loadModel = (onProgress) => loadGLB(cache, 'guitar', lib, new URL('../models/guitar.glb?v=dev', import.meta.url).href, onProgress);
 
 // Only with a real GPU: a software renderer (SwiftShader, llvmpipe) would make the whole page crawl.
 // ?force3d skips that check (tests), ?2d turns the model off.
@@ -30,7 +32,7 @@ const ASPECT = 1100 / 340;   // same box as the 2D drawing, so nothing jumps whe
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // state: what the real guitar is doing. The render loop eases the model towards it.
-export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
+export function createGuitar3D(host, { onReady, onFail, onPart, onLoading, onProgress } = {}) {
   const st = { pressed: {}, whammy: 0, tilt: false, focus: [], hover: '', colors: { ...DEFAULT_COLORS } };
   let disposed = false;
   const api = {
@@ -39,13 +41,14 @@ export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
     setTilt(on) { st.tilt = !!on; },
     setFocus(names) { st.focus = names || []; },
     setFretColors(cols) { Object.keys(FRETS).forEach((n, i) => { st.colors[n] = cols[i] || DEFAULT_COLORS[n]; }); },
+    retry() { start(); },
     dispose() { disposed = true; pre.disconnect(); },
   };
 
   // nothing is downloaded until this view is actually on screen (the Flash page never loads three.js)
   const pre = new IntersectionObserver((es) => { if (es[0].isIntersecting) { pre.disconnect(); start(); } });
   setTimeout(() => pre.observe(host));   // the caller attaches host to the page right after this returns
-  const start = () => Promise.all([lib(), loadModel()]).then(([T, gltf]) => {
+  const start = () => { onLoading?.(); return Promise.all([lib(), loadModel(onProgress)]).then(([T, gltf]) => {
     if (disposed) return;
     const canvas = document.createElement('canvas');
     canvas.className = 'guitar3d';
@@ -258,7 +261,7 @@ export function createGuitar3D(host, { onReady, onFail, onPart } = {}) {
     host.appendChild(canvas);
     onReady?.(canvas);
     loop();
-  }).catch((e) => { console.warn('3D guitar unavailable:', e); onFail?.(e); });
+  }).catch((e) => { console.warn('3D guitar unavailable:', e); onFail?.(e); }); };
 
   return api;
 }

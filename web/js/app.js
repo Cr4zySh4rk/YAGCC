@@ -1,4 +1,4 @@
-import { BT_SLEEP_CHOICES, btSleepByte,
+import { BT_SLEEP_CHOICES, btSleepByte, DEV_NAME_MAX, DEV_NAME_DEFAULT, devNameBadChars, checkDevName,
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
@@ -190,6 +190,43 @@ const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(),
 const isConfigured = (cfg) => cfg.pins.some((p) => p !== PIN_NONE);
 
 let pushTimer = 0;
+// ---- custom controller name (firmware 0.46+, ext bytes 328..343): one field in the last Setup step, one on Tune
+const nameOk = () => fwAtLeast(46) && !!state.cfg?.ext;
+const escAttr = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+function nameFieldHtml(id) {
+  const n = state.cfg.ext.devName || '';
+  return `<div class="namefield" data-namefield>
+    <label class="field-label" for="${id}">Controller name <span class="dim">(optional)</span></label>
+    <div class="namerow"><input type="text" id="${id}" class="nameinp" maxlength="${DEV_NAME_MAX}" placeholder="${DEV_NAME_DEFAULT}" value="${escAttr(n)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="${id}Msg">
+      <span class="namecnt dim" data-namecnt aria-live="off">${n.length} / ${DEV_NAME_MAX}</span></div>
+    <p class="namemsg" id="${id}Msg" data-namemsg role="status" aria-live="polite" hidden></p>
+    <p class="dim">Shows up as: <b data-nameprev>${escAttr((n.trim() || DEV_NAME_DEFAULT) + ' Guitar Controller')}</b></p>
+    <p class="dim small">Your name or gamer tag instead of \u201c${DEV_NAME_DEFAULT}\u201d, up to ${DEV_NAME_MAX} characters: letters, digits, spaces and basic punctuation. Applies after you unplug and replug the guitar (or restart it), and on Bluetooth after its next restart. Windows can keep showing the old name in some places, and may need the guitar unplugged and plugged in again.</p>
+  </div>`;
+}
+function wireNameField(id) {
+  const inp = $('#' + id);
+  if (!inp) return;
+  inp.addEventListener('input', () => {
+    const bad = devNameBadChars(inp.value);
+    if (bad.length) inp.value = [...inp.value].filter((ch) => ch >= ' ' && ch <= '~').join('');
+    const t = checkDevName(inp.value);
+    if (t.ok && state.cfg.ext.devName !== t.name) { state.cfg.ext.devName = t.name; pushCfg(); }
+    refreshNameFields(bad.length ? 'Only plain keyboard characters work here (letters, digits, spaces, basic punctuation). Others were removed.' : '', inp);
+  });
+}
+function refreshNameFields(msg = '', active = null) {
+  const n = state.cfg?.ext?.devName || '';
+  document.querySelectorAll('[data-namefield]').forEach((f) => {
+    const inp = f.querySelector('input');
+    if (inp !== active && inp.value.trim() !== n) inp.value = n;
+    f.querySelector('[data-namecnt]').textContent = inp.value.length + ' / ' + DEV_NAME_MAX;
+    f.querySelector('[data-nameprev]').textContent = (n || DEV_NAME_DEFAULT) + ' Guitar Controller';
+    const m = f.querySelector('[data-namemsg]');
+    if (msg && inp === active) { m.textContent = msg; m.hidden = false; clearTimeout(m._t); m._t = setTimeout(() => { m.hidden = true; }, 6000); }
+  });
+}
+
 function pushCfg() {
   checkDirty();
   clearTimeout(pushTimer);
@@ -1002,6 +1039,7 @@ function renderStep() {
        <tr><td>RGB LEDs</td><td>${pinOr(c.rgbEnabled && c.rgbPin !== PIN_NONE ? 'GP' + c.rgbPin : '', 'off')}</td>${act('rgb')}</tr>
        <tr><td>Bluetooth</td><td>${c.btEnabled ? 'on' : 'off'}</td>${act('bluetooth')}</tr>`;
     card.innerHTML = head + `<table class="sum">${rows}</table>
+      ${nameOk() ? `<div class="panel-inset name-setup">${nameFieldHtml('devNameSetup')}</div>` : ''}
       <p class="dim small" style="margin-top:14px">Try every input: the guitar lights up as you press. Debounce and whammy feel are on the Tune page.</p>
       <div class="step-nav">
         <button class="btn quiet" id="bRedo">Start over</button>
@@ -1017,6 +1055,7 @@ function renderStep() {
       pushCfg(); renderStep();
     }));
     $('#bRedo').addEventListener('click', () => { state.cfg.pins.fill(PIN_NONE); state.cfg.whammyCh = PIN_NONE; state.cfg.tiltPin = PIN_NONE; pushCfg(); goStep(0); });
+    if (nameOk()) wireNameField('devNameSetup');
     $('#bSave').addEventListener('click', saveToController);
   }
 }
@@ -1449,6 +1488,9 @@ function tickStep(s) {
 // ------------------------------------------------------------------ tune
 function buildTune() {
   const c = state.cfg;
+  const np = $('#namePanel');
+  np.hidden = !nameOk();
+  if (nameOk()) { $('#namePanelBody').innerHTML = nameFieldHtml('devNameTune'); wireNameField('devNameTune'); }
   const dt = $('#debT'), ws = $('#wSmooth'), wd = $('#wDead');
   const refresh = () => {
     $('#debTVal').textContent = (c.debounce100us / 10).toFixed(1) + ' ms';

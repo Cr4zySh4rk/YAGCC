@@ -1,6 +1,6 @@
 // Backup and restore of the controller's settings as a JSON file (in the spirit of GP2040-CE's
 // "Data Backup and Restoration"): pick which sections to save or restore.
-import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, NUM_ATILT_SRC, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX, NUM_MODE_ROWS, MAP_ROW, NUM_SRC, EXT_PIN_NAMES } from './protocol.js?v=dev';
+import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, NUM_ATILT_SRC, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX, NUM_MODE_ROWS, MAP_ROW, NUM_SRC, EXT_PIN_NAMES, devNameValid } from './protocol.js?v=dev';
 
 export const BACKUP_FORMAT = 1;
 
@@ -29,6 +29,7 @@ export const SECTIONS = [
     keys: ['map', 'curve', 'range'] },
   { id: 'btsleep', ext: true, name: 'Bluetooth sleep', desc: 'How long the guitar waits before it switches itself off over Bluetooth',
     keys: ['btSleep'] },
+  { id: 'devname', ext: true, name: 'Controller name', desc: 'The name prefix the controller shows up with', keys: ['devName'] },
 ];
 
 const isPin = (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < NUM_DIGITAL_PINS);
@@ -92,13 +93,14 @@ Object.assign(CHECK, {
   extPins: (v) => Array.isArray(v) && v.length === EXT_PIN_NAMES.length && v.every(isPin),
   stickCh: (v) => Array.isArray(v) && v.length === 2 && v.every((c) => c === PIN_NONE || isInt(c, 0, 2)),
   stickFlags: (v) => isInt(v, 0, 7), deadzone: (v) => isInt(v, 0, 50),
+  devName: (v) => devNameValid(v),
   btSleep: (v) => v === 0 || v === 255 || isInt(v, 1, 60),
   range: (v) => Array.isArray(v) && v.length === 4 && v.every((x) => x === 0 || x === 1),
   curve: (v) => Array.isArray(v) && v.length === 3 && v.every((x) => isInt(x, -100, 100)),
   cal: (v) => Array.isArray(v) && v.length === 6 && v.every((x) => isInt(x, 0, 4095)) && v[0] < v[1] && v[1] < v[2] && v[3] < v[4] && v[4] < v[5],
   map: (v) => Array.isArray(v) && v.length === NUM_MODE_ROWS && v.every((r) => Array.isArray(r) && r.length === MAP_ROW && r.every((x, i) => (i >= NUM_SRC ? x === 255 : x === 0 || x === 255 || isInt(x, 1, 31)))),
 });
-Object.assign(LABELS, { extPins: 'D-pad / Select / Home pins', stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: 'stick dead zone', cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: 'Bluetooth sleep timer' });
+Object.assign(LABELS, { extPins: 'D-pad / Select / Home pins', stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: 'stick dead zone', cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: 'Bluetooth sleep timer', devName: 'controller name' });
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));
 
 export function makeBackup(cfg, info) {

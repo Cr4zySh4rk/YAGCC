@@ -603,6 +603,7 @@ export function defaultExt() {
     cal: [0, 2048, 4095, 0, 2048, 4095],
     curve: [0, 0, 0],   // response curve -100..100 of the whammy, tilt sensor 1, tilt sensor 2 (firmware 0.43+, ext bytes 320..322)
     range: [0, 0, 0, 0],   // stick range of the whammy, tilt switch, sensor 1, sensor 2 (firmware 0.44+, ext bytes 323..326): 0 from centre, 1 full sweep
+    devName: '',   // custom name prefix (firmware 0.46+, ext bytes 328..343): up to 10 printable ASCII characters, '' = YAGCC
     btSleep: 0,   // Bluetooth idle sleep (firmware 0.45+, ext byte 327): 0 = 2 minutes (default), 1..60 minutes, 255 = never
     map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
   };
@@ -610,6 +611,23 @@ export function defaultExt() {
 export const BT_SLEEP_NEVER = 255;
 export const BT_SLEEP_CHOICES = [1, 0, 5, 10, 15, 30, 60, BT_SLEEP_NEVER];   // 0 is the 2 minute default
 export const btSleepByte = (v) => (v === BT_SLEEP_NEVER ? BT_SLEEP_NEVER : Number.isInteger(v) && v >= 1 && v <= 60 && v !== 2 ? v : 0);
+export const DEV_NAME_MAX = 10, DEV_NAME_BYTES = 16, DEV_NAME_DEFAULT = 'YAGCC';
+// Characters outside printable ASCII in `s`, as a list (for the friendly message)
+export const devNameBadChars = (s) => [...new Set([...String(s)].filter((c) => c < ' ' || c > '~'))];
+// ok: stored form (trimmed, '' = default); error: why not
+export function checkDevName(s) {
+  const t = String(s ?? '').trim();
+  if (devNameBadChars(t).length) return { ok: false, name: t, error: 'Only letters, digits, spaces and basic punctuation (plain keyboard characters) work in a device name.' };
+  if (t.length > DEV_NAME_MAX) return { ok: false, name: t, error: 'Up to ' + DEV_NAME_MAX + ' characters.' };
+  return { ok: true, name: t };
+}
+export const devNameValid = (s) => typeof s === 'string' && checkDevName(s).ok && s === s.trim();
+export function parseDevName(dv) {
+  const b = Array.from({ length: DEV_NAME_BYTES }, (_, i) => dv.getUint8(328 + i));
+  let n = b.indexOf(0); if (n < 0) n = DEV_NAME_BYTES;
+  const s = String.fromCharCode(...b.slice(0, n));
+  return devNameValid(s) ? s : '';
+}
 export function parseExt(dv) {
   if (dv.byteLength < EXT_SIZE) throw new Error('Short extension page');
   if (dv.getUint32(0, true) !== EXT_MAGIC) throw new Error('Bad extension magic');
@@ -624,6 +642,7 @@ export function parseExt(dv) {
     curve: [0, 1, 2].map((i) => Math.max(-100, Math.min(100, dv.getInt8(320 + i)))),
     range: [0, 1, 2, 3].map((i) => (dv.getUint8(323 + i) === 1 ? 1 : 0)),
     btSleep: btSleepByte(dv.getUint8(327)),
+    devName: parseDevName(dv),
   };
 }
 export function serializeExt(e) {
@@ -641,6 +660,7 @@ export function serializeExt(e) {
   (e.curve || [0, 0, 0]).slice(0, 3).forEach((c, i) => dv.setInt8(320 + i, Math.max(-100, Math.min(100, Math.round(c) | 0))));
   (e.range || [0, 0, 0, 0]).slice(0, 4).forEach((r, i) => dv.setUint8(323 + i, r === 1 ? 1 : 0));
   dv.setUint8(327, btSleepByte(e.btSleep));
+  { const c = checkDevName(e.devName || ''); if (c.ok) [...c.name].forEach((ch, i) => dv.setUint8(328 + i, ch.charCodeAt(0))); }
   dv.setUint32(508, crc32(new Uint8Array(buf, 0, 508)), true);
   return buf;
 }
