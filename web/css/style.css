@@ -582,20 +582,6 @@ nav > button, .nav-help { align-self: stretch; }
 nav button.nav-off { color: var(--faint); }
 nav button.nav-off::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; border: 1.5px solid var(--faint); vertical-align: 1px; }
 nav button.nav-off:hover { color: var(--dim); }
-@media (max-width: 1060px) { .top-inner { gap: 16px; } .brand span { display: none; } .top-right { gap: 12px; } }
-@media (max-width: 640px) {
-  .top-inner { flex-wrap: wrap; height: auto; padding: 8px 16px 0; gap: 0 12px; }
-  .brand { order: 1; }
-  .top-right { order: 2; margin-left: auto; }
-  nav { order: 3; flex: 0 0 100%; justify-content: space-between; height: 42px; margin: 6px -8px 0; }
-  nav button { padding: 0 8px; font-size: 15px; }
-  nav button.active::after { left: 6px; right: 6px; }
-  nav button.nav-off::before { display: none; }
-  .nav-help { position: static; }
-  .help-menu { right: 8px; left: auto; top: calc(100% - 4px); }
-  .adv-toggle span:first-child { font-size: 13px; }
-}
-@media (max-width: 480px) { nav button { padding: 0 4px; font-size: 13px; } nav button.active::after { left: 3px; right: 3px; } .help-btn { gap: 3px; } }
 
 /* ---- navigation: install hero next-step card ---- */
 .next-card { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 18px 20px; border: 1px solid var(--line-2); border-left: 3px solid var(--ok); border-radius: var(--r); background: var(--panel); max-width: 34em; }
@@ -1165,55 +1151,54 @@ canvas.pad3d.grabbing { cursor: grabbing; }
 .lang-sw .lang-cur { max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; }
 .lang-sw .lang-code { display: none; font: 600 12px var(--mono); letter-spacing: .04em; }
 .lang-sw select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; background: var(--panel); color: var(--text); }
-@media (max-width: 1060px) { .lang-sw .lang-cur { display: none; } .lang-sw .lang-code { display: inline; } }
 
-/* ---- longer labels (German, French, Portuguese, pseudo-locale): wrap instead of clipping ---- */
-.adv-toggle { white-space: normal; text-align: right; line-height: 1.15; }
-.adv-toggle > span:first-child { max-width: 11em; }
-.conn #connText { flex-wrap: wrap; row-gap: 2px; }
-@media (max-width: 640px) {
-  .top-inner { row-gap: 6px; }
-  .top-right { flex-wrap: wrap; justify-content: flex-end; gap: 8px 10px; }
-  nav { height: 42px; align-items: stretch; }
-}
 .help-menu button { white-space: normal; }
 .step-list li button > span:nth-child(2) { overflow-wrap: anywhere; }
-/* header stays on one row when labels get longer: nav gives way first, then the connection text trims */
-nav button { padding-left: clamp(5px, .9vw, 13px); padding-right: clamp(5px, .9vw, 13px); }
-.top-right { flex: 0 1 auto; min-width: 0; }
-.conn { min-width: 0; flex: 0 1 auto; }
-.conn #connText { min-width: 0; }
-.conn .seg-item { white-space: nowrap; }
-.conn .seg-item:first-child { overflow: hidden; text-overflow: ellipsis; max-width: 11em; }
-@media (max-width: 1180px) { .top-inner { gap: 16px; } }
 
-/* ---- nav robustness: labels never break inside a word; on phones the nav scrolls inside its own bar ---- */
-nav button, .help-btn { white-space: nowrap; word-break: keep-all; overflow-wrap: normal; hyphens: manual; flex: none; }
-:lang(ja) nav button, :lang(zh-CN) nav button { word-break: keep-all; }
-nav { min-width: 0; }
 .lang-sw { max-width: 100%; }
 .lang-sw select { min-width: 0; padding: 0; height: 100%; max-width: 100%; box-sizing: border-box; }
-@media (max-width: 1280px) { nav button { padding-left: clamp(4px, .7vw, 10px); padding-right: clamp(4px, .7vw, 10px); font-size: 14px; } .top-inner { gap: 12px; } }
-@media (max-width: 1200px) {          /* nav gets its own row under the brand + picker, and scrolls inside its bar if a language needs more room */
-  .top-inner { flex-wrap: wrap; height: auto; padding: 8px 24px 0; gap: 0 12px; row-gap: 6px; }
-  .brand { order: 1; }
-  .top-right { order: 2; margin-left: auto; flex-wrap: nowrap; gap: 12px; }
-  nav { order: 3; flex: 0 0 100%; height: 42px; margin: 0 -8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; justify-content: space-between; align-items: stretch; }
-  nav button { padding: 0 clamp(8px, 1.6vw, 16px); font-size: 15px; }
-  nav button.active::after { left: 8px; right: 8px; bottom: 0; }
-  nav button.nav-off::before { display: none; }
-  nav .nav-help { flex: none; display: flex; position: static; }
-  nav::after { content: ""; flex: 0 0 20px; }
-  .help-menu { right: 8px; left: auto; top: calc(100% - 4px); }
-}
-@media (max-width: 640px) {
-  nav { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; justify-content: flex-start; scroll-padding: 0 24px; }
-  nav button { padding: 0 11px; font-size: 14px; }
-  nav button.active::after { left: 8px; right: 8px; bottom: 0; }
-  nav .nav-help { flex: none; display: flex; }
-  .top-right { flex-wrap: nowrap; gap: 8px; min-width: 0; }
-  .lang-sw { padding: 5px 7px; }
-  .adv-toggle > span:first-child { max-width: 6.5em; font-size: 12px; }
-}
 
-@media (max-width: 480px) { nav button { padding: 0 clamp(6px, 2.2vw, 11px); font-size: 13px; } nav button.active::after { left: 5px; right: 5px; } .top-inner { padding-left: 16px; padding-right: 16px; } nav { margin: 0 -8px; } }
+/* ---- header: content-driven layout. fitHeader() in js/app.js measures the natural widths and sets on header.top
+   .two-row (nav on its own scrolling row), .hl-lang (language picker = globe + code), .hl-adv (Advanced label hidden),
+   .hl-brand (wordmark hidden). There is no fixed breakpoint: fonts, language and the device pill decide. ---- */
+.top-inner { gap: 20px; }
+.brand { flex: none; }
+nav { display: flex; flex: 1 1 auto; min-width: 0; align-self: stretch; }
+nav button, .help-btn { flex: none; padding: 0 12px; font: 600 15px/1.15 var(--sans); white-space: nowrap; word-break: keep-all; overflow-wrap: normal; hyphens: manual; }
+nav .nav-help { flex: none; display: flex; position: static; align-self: stretch; }
+.top-right { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.top-right > * { flex: none; }
+.adv-toggle { white-space: nowrap; line-height: 1.15; }
+.adv-toggle > span:first-child { max-width: none; }
+.lang-sw { max-width: none; }
+.conn { flex: 0 1 auto; min-width: 3.2em; max-width: 30em; overflow: hidden; }
+.conn .led { flex: none; }
+.conn #connText { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conn.on #connText { display: flex; gap: 10px; }
+.conn .seg-item { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12em; }
+.conn .seg-item.mono { flex: none; max-width: none; }
+.conn .seg-item + .seg-item { padding-left: 10px; }
+header.top.hl-lang .lang-sw .lang-cur { display: none; }
+header.top.hl-lang .lang-sw .lang-code { display: inline; }
+header.top.hl-adv .adv-toggle > span:first-child { display: none; }
+header.top.hl-brand .brand span { display: none; }
+header.top.two-row .top-inner { flex-wrap: wrap; height: auto; padding-top: 8px; padding-bottom: 0; gap: 0 12px; row-gap: 6px; }
+header.top.two-row .brand { order: 1; }
+header.top.two-row .top-right { order: 2; flex: 1 1 0; }
+header.top.two-row nav { order: 3; flex: 0 0 100%; height: 42px; margin: 0 -8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; justify-content: space-between; scroll-padding: 0 24px; }
+header.top.two-row nav::after { content: ""; flex: 0 0 12px; }
+header.top.two-row nav button.active::after { left: 8px; right: 8px; bottom: 0; }
+header.top.two-row nav button.nav-off::before { display: none; }
+/* measuring pass: natural, unconstrained widths (never painted; see fitHeader) */
+header.top.hl-probe .top-inner { width: max-content; max-width: none; margin: 0; flex-wrap: nowrap; }
+header.top.hl-probe nav { flex: none; margin: 0; overflow: visible; }
+header.top.hl-probe .top-right { flex: none; }
+header.top.hl-probe.two-row nav { display: none; }
+header.top.hl-probe.two-row .conn { max-width: 9em; }
+/* help menu lives on <body> (position: fixed, placed by JS) so the nav's scroll container never clips it */
+.help-menu { position: fixed; z-index: 60; max-width: calc(100vw - 16px); }
+@media (max-width: 640px) { .top-inner { padding-left: 16px; padding-right: 16px; } header.top.two-row .top-right { gap: 8px; } .lang-sw { padding: 5px 7px; } header.top.two-row nav button { padding: 0 11px; font-size: 14px; } }
+@media (max-width: 480px) { header.top.two-row nav button { padding: 0 clamp(6px, 2.2vw, 11px); font-size: 13px; } header.top.two-row nav button.active::after { left: 5px; right: 5px; } }
+.ts-ch b, .ts-ch span { max-width: 100%; overflow-wrap: anywhere; hyphens: auto; }
+#view-hardware :is(h3, h4, li, p, td, b), #view-compat :is(h3, h4, li, p, td, b) { overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 480px) { table.sum td.sum-act { white-space: normal; } table.sum td.sum-act .btn { margin: 1px 0; } table.sum td { overflow-wrap: anywhere; } }

@@ -139,7 +139,7 @@ function showView(v) {
   state.view = v;
   scrollTo(0, 0);
   document.querySelectorAll('.view').forEach((e) => e.classList.toggle('active', e.id === 'view-' + v));
-  document.querySelectorAll('#nav [data-view]').forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); if (on) { b.setAttribute('aria-current', 'page'); try { const n = b.parentElement; if (n.scrollWidth > n.clientWidth) n.scrollLeft = Math.max(0, b.offsetLeft - (n.clientWidth - b.offsetWidth) / 2); } catch { /* ignore */ } } else b.removeAttribute('aria-current'); });
+  document.querySelectorAll('#nav [data-view], #helpMenu [data-view]').forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); if (on) { b.setAttribute('aria-current', 'page'); try { const n = b.parentElement; if (n.scrollWidth > n.clientWidth) n.scrollLeft = Math.max(0, b.offsetLeft - (n.clientWidth - b.offsetWidth) / 2); } catch { /* ignore */ } } else b.removeAttribute('aria-current'); });
   $('#helpBtn').classList.toggle('active', v === 'hardware' || v === 'compat');
   closeHelp();
   updateBar();
@@ -163,10 +163,19 @@ function closeHelp(focus = false) {
   m.hidden = true; b.setAttribute('aria-expanded', 'false');
   if (focus) b.focus();
 }
+document.body.appendChild($('#helpMenu'));      // outside the nav's scroll container, so it is never clipped
+function placeHelp() {
+  const m = $('#helpMenu'), r = $('#helpBtn').getBoundingClientRect(), w = m.offsetWidth;
+  m.style.top = Math.round(r.bottom - 2) + 'px';
+  m.style.left = Math.round(Math.max(8, Math.min(r.left, innerWidth - w - 8))) + 'px';
+}
 function openHelp(focusFirst = false) {
-  $('#helpMenu').hidden = false; $('#helpBtn').setAttribute('aria-expanded', 'true');
+  $('#helpMenu').hidden = false; $('#helpBtn').setAttribute('aria-expanded', 'true'); placeHelp();
   if (focusFirst) $('#helpMenu [role=menuitem]').focus();
 }
+$('#helpMenu').addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) showView(b.dataset.view); });
+addEventListener('resize', () => closeHelp());
+$('#nav').addEventListener('scroll', () => closeHelp(), { passive: true });
 $('#helpBtn').addEventListener('click', () => { if ($('#helpMenu').hidden) openHelp(); else closeHelp(); });
 $('#helpBtn').addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openHelp(true); } });
 $('#helpMenu').addEventListener('keydown', (e) => {
@@ -177,8 +186,38 @@ $('#helpMenu').addEventListener('keydown', (e) => {
   else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
   else if (e.key === 'Tab') closeHelp();
 });
-document.addEventListener('click', (e) => { if (!e.target.closest('.nav-help')) closeHelp(); });
+document.addEventListener('click', (e) => { if (!e.target.closest('.nav-help, #helpMenu')) closeHelp(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#helpMenu').hidden) { e.stopPropagation(); closeHelp(true); } }, true);
+
+// Header fit: decide from natural widths (not from the current layout, so it cannot oscillate) whether brand + nav + controls
+// share one row; otherwise the nav gets its own row, and the controls compact step by step (language code, no Advanced label, no wordmark).
+(function fitHeader() {
+  const hdr = document.querySelector('header.top'), inner = hdr.querySelector('.top-inner');
+  const ALL = ['two-row', 'hl-lang', 'hl-adv', 'hl-brand'];
+  const PLANS = [[], ['hl-lang'], ['two-row'], ['two-row', 'hl-lang'], ['two-row', 'hl-lang', 'hl-adv'], ['two-row', 'hl-lang', 'hl-adv', 'hl-brand']];
+  const set = (cls) => ALL.forEach((c) => hdr.classList.toggle(c, cls.includes(c)));
+  let raf = 0, lastKey = '';
+  function fit() {
+    raf = 0;
+    const avail = Math.min(1200, hdr.clientWidth) - 10;
+    hdr.classList.add('hl-probe');
+    let pick = PLANS[PLANS.length - 1];
+    for (const plan of PLANS) { set(plan); if (inner.getBoundingClientRect().width <= avail) { pick = plan; break; } }
+    hdr.classList.remove('hl-probe'); set(pick);
+    const key = pick.join(); if (key !== lastKey) closeHelp(); lastKey = key;
+  }
+  const queue = () => { if (!raf) raf = requestAnimationFrame(fit); };
+  window.fitHeader = () => { if (raf) cancelAnimationFrame(raf); fit(); };
+  fit();
+  new ResizeObserver(queue).observe(hdr);
+  const ro = new ResizeObserver(queue);
+  hdr.querySelectorAll('.brand, #nav, .nav-help, .lang-sw, .adv-toggle, #connPill').forEach((e) => ro.observe(e));
+  new MutationObserver(queue).observe(hdr, { childList: true, characterData: true, subtree: true });
+  new MutationObserver(queue).observe($('#nav'), { attributes: true, attributeFilter: ['class'], subtree: true });
+  document.addEventListener('langchange', queue);
+  addEventListener('load', queue);
+  document.fonts?.ready.then(queue); document.fonts?.addEventListener?.('loadingdone', queue);
+})();
 
 // "a, b and c" in the language's own list style (falls back to commas where Intl.ListFormat is missing)
 const sectionList = (names) => { try { return new Intl.ListFormat(isPseudo() ? 'en' : getLang(), { style: 'long', type: 'conjunction' }).format(names); } catch { return names.join(', '); } };
@@ -524,9 +563,11 @@ function updatePill() {
     pill.classList.add('on');
     const m = MODES.find((x) => x.id === state.info.mode);
     $('#connText').innerHTML = `<span class="seg-item">${BOARDS[state.info.board] ?? t('conn.board')}</span><span class="seg-item">${state.info.setupSession ? t('common.setup') : state.info.xinputFallback ? 'XInput → HID' : state.info.autoHost ? t('conn.auto', { v: AUTO_HOSTS[state.info.autoHost] || '?', v2: m ? m.short : '?' }) : m ? m.short : '?'}</span><span class="seg-item mono${state.fwOutdated ? ' old' : ''}" title="${state.fwOutdated ? t('conn.fw_newer_title') : t('conn.fw_version_title')}">v${state.info.major}.${state.info.minor}</span>`;
+    pill.title = [...$('#connText').children].map((x) => x.textContent).join(' | ');
   } else {
     pill.classList.remove('on');
     $('#connText').textContent = state.connecting ? t('conn.connecting') : t('conn.not_connected');
+    pill.title = $('#connText').textContent;
   }
   const on = !!state.dev;
   document.querySelectorAll('#nav [data-needs-dev]').forEach((b) => {

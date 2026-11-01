@@ -31,7 +31,7 @@ export function createKeyboard() {
   const el = document.createElement('div');
   el.className = 'kb';
   const cap = (code, legend, span, cls = '') => (code
-    ? `<div class="kc ${cls}" data-code="${code}" style="grid-column:span ${span}"><b>${legend}</b><small></small></div>`
+    ? `<div class="kc ${cls}" data-code="${code}" title="${String(legend).replace(/"/g, '&quot;')}" style="grid-column:span ${span}"><b>${legend}</b><small></small></div>`
     : `<div class="kspace" style="grid-column:span ${span}"></div>`);
   el.innerHTML = `<div class="kb-main">${MAIN.map((r) => `<div class="kb-row">${r.map(([c, g, w]) => cap(c, g, w)).join('')}</div>`).join('')}</div>
     <div class="kb-nav">${NAV.map((r) => `<div class="kb-row n3">${r.map(([c, g]) => cap(c, g, 1)).join('')}</div>`).join('')}</div>`;
@@ -42,7 +42,7 @@ export function createKeyboard() {
     const s = keys.join();
     if (s === sig) return;
     sig = s;
-    caps.forEach((k) => { k.classList.remove('bound', 'on'); k.querySelector('small').textContent = ''; k.style.removeProperty('--c'); k.removeAttribute('title'); delete k.dataset.slots; });
+    caps.forEach((k) => { k.classList.remove('bound', 'on'); k.querySelector('small').textContent = ''; k.style.removeProperty('--c'); k.title = k.querySelector('b').textContent; delete k.dataset.slots; });
     const by = new Map();
     keys.forEach((code, slot) => { if (code) by.set(code, [...(by.get(code) || []), slot]); });
     by.forEach((slots, code) => {
