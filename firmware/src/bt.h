@@ -13,7 +13,8 @@
 // The Bluetooth device copies the running USB mode (g_usb_mode): same HID descriptor, reports and ids.
 void bt_init(bool enabled, bool pair, bool open_window);
 void bt_task(void);
-void bt_start_pairing(void);
+// Star power + Plus held: true = restart the guitar into pairing mode (see bt.c); the identity is rotated at start-up
+bool bt_start_pairing(bool restartable);
 uint8_t bt_state(void);
 bool bt_supported(void);
 bool bt_running(void);

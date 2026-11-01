@@ -46,6 +46,7 @@ static volatile bool setup_reboot;
 
 // Asked over HID (PS3 mode has no WebUSB interface): restart once in setup mode (XInput + web config)
 #define SETUP_MAGIC 0x59414743u   // "YAGC"
+#define PAIRBOOT_MAGIC   0x59505252u   // "YPRR": restarted into Bluetooth pairing mode (Star + Plus held 5 s), skip the plug-in shortcuts
 #define MODESWITCH_MAGIC 0x594D4F44u   // "YMOD": rebooted by a Bluetooth mode change, skip the plug-in shortcuts
 #define AUTO_MAGIC 0x59415554u         // "YAUT": Auto mode found the host; scratch[1] = mode | host << 8
 void usb_request_setup_reboot(void) {
@@ -479,6 +480,11 @@ static uint8_t pick_mode(void) {
         watchdog_hw->scratch[0] = 0;          // woken from Bluetooth idle sleep by a button that may still be held: no shortcuts
         return g_cfg.usb_mode < NUM_MODES ? g_cfg.usb_mode : MODE_XINPUT;
     }
+    if (watchdog_caused_reboot() && watchdog_hw->scratch[0] == PAIRBOOT_MAGIC) {
+        watchdog_hw->scratch[0] = 0;          // Star power and Plus may still be held: not the UF2 shortcut
+        g_bt_pair_at_boot = true;
+        return g_cfg.usb_mode < NUM_MODES ? g_cfg.usb_mode : MODE_XINPUT;
+    }
     if (watchdog_caused_reboot() && watchdog_hw->scratch[0] == MODESWITCH_MAGIC) {
         watchdog_hw->scratch[0] = 0;          // frets may still be held from the shortcut: use the saved mode
         g_bt_mode_switched = true;
@@ -699,7 +705,12 @@ int main(void) {
             else if (!hold_fired && now - hold_start >= 5000000) {
                 hold_fired = true;
                 if (!(g_cfg.flags & CFG_FLAG_BT_ENABLED)) { g_cfg.flags |= CFG_FLAG_BT_ENABLED; save_pending = true; }
-                bt_start_pairing();
+                if (bt_start_pairing(!tud_mounted())) {
+                    if (save_pending) { config_save(); save_pending = false; }
+                    watchdog_hw->scratch[0] = PAIRBOOT_MAGIC;
+                    watchdog_reboot(0, 0, 20);
+                    while (true) tight_loop_contents();
+                }
             }
         } else {
             hold_start = 0;

@@ -8,20 +8,24 @@
 // sees each mode as its own device and never mixes up their report layouts.
 //
 // Pairing works like PS + Create on a PlayStation controller: hold Star power while plugging in or switching on
-// (or Star power + Plus for 5 s while running) and the guitar forgets the hosts paired with the mode it starts in
-// and becomes discoverable. The other modes keep their pairings. A new mode needs no Star power: the guitar
-// always accepts pairing.
+// (or Star power + Plus for 5 s while running) and the guitar forgets the hosts paired with the mode it starts in,
+// takes a NEW Bluetooth identity for that mode (new static random address, new IRK; see bt_addr.h) and becomes
+// discoverable. A host that was paired before keeps a stale entry it can no longer reach: it does not find the
+// guitar under the old address, so it cannot reconnect, and the user removes the entry there. The other modes
+// keep their pairings. A new mode needs no Star power: the guitar always accepts pairing. The 5 s hold restarts
+// the guitar (watchdog reboot) so the new identity is loaded from a clean radio start.
 // Pairing uses LE Secure Connections with the keys stored in flash, like BTstack's HID demos. Each mode has its
 // own bond list (the bond database is given a mode-specific tag range in the TLV store), so a host paired with
 // several modes keeps a working key for each of them.
 #include "bt.h"
+#include "bt_addr.h"
 
 #ifndef YACC_HAS_BT
 
 bool bt_supported(void) { return false; }
 void bt_init(bool enabled, bool pair, bool open_window) { (void)enabled; (void)pair; (void)open_window; }
 void bt_task(void) {}
-void bt_start_pairing(void) {}
+bool bt_start_pairing(bool restartable) { (void)restartable; return false; }
 uint8_t bt_state(void) { return BT_STATE_OFF; }
 bool bt_running(void) { return false; }
 void bt_send_report(const uint8_t *r, uint16_t len) { (void)r; (void)len; }
@@ -336,6 +340,33 @@ static int mt_store(void *c, uint32_t tag, const uint8_t *d, uint32_t size) { re
 static void mt_delete(void *c, uint32_t tag) { s_tlv->delete_tag(c, map_tag(tag)); }
 static const btstack_tlv_t mode_tlv = { mt_get, mt_store, mt_delete };
 
+// Pairing mode: forget this mode's hosts completely and rotate its identity. Runs before the stack starts
+// (bt_init), so the device database scan, the IR / ER the IRK derives from and the address all start fresh.
+#define ROT_TAG(mode)  TAG4('Y', 'R', (mode), 0)    // u16 rotation counter of the mode's address
+#define PEND_TAG(mode) TAG4('Y', 'P', (mode), 0)    // pairing was asked for while USB was active: rotate at the next start
+static uint16_t s_rot;
+static void load_rot(void) {
+    uint8_t b[2];
+    int n = s_tlv ? s_tlv->get_tag(s_tlv_ctx, ROT_TAG(s_mode), b, 2) : 0;
+    s_rot = n == 2 ? (uint16_t)(b[0] | (b[1] << 8)) : 0;
+}
+static void rotate_identity(void) {
+    if (!s_tlv) return;
+    for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) {
+        s_tlv->delete_tag(s_tlv_ctx, BOND_TAG(s_mode, i));
+        s_tlv->delete_tag(s_tlv_ctx, HASH_TAG(s_mode, i));
+        s_tlv->delete_tag(s_tlv_ctx, CCC_TAG(s_mode, i));
+    }
+    s_tlv->delete_tag(s_tlv_ctx, BOND_TAG(s_mode, 'B'));           // BTstack's database hash ('BTDB')
+    s_tlv->delete_tag(s_tlv_ctx, TAG4('S', 'I', s_mode, 'R'));     // identity root: BTstack makes a new one (new IRK)
+    s_tlv->delete_tag(s_tlv_ctx, TAG4('S', 'E', s_mode, 'R'));
+    uint8_t b[2];
+    uint16_t r = bt_next_rot(s_tlv->get_tag(s_tlv_ctx, ROT_TAG(s_mode), b, 2), b);
+    b[0] = (uint8_t)r; b[1] = (uint8_t)(r >> 8);
+    s_tlv->store_tag(s_tlv_ctx, ROT_TAG(s_mode), b, 2);
+    s_tlv->delete_tag(s_tlv_ctx, PEND_TAG(s_mode));
+}
+
 // Only the running mode: every mode is its own Bluetooth device, so pairing one mode again (Star power at
 // power-on) must not cost the others their pairings. Until v0.22 this wiped every mode, and pairing each
 // new mode that way left only the last one paired.
@@ -566,14 +597,16 @@ static void wii_led(void) {}
 static void wii_connected(const uint8_t *mac) {
     if (s_tlv) s_tlv->store_tag(s_tlv_ctx, WII_HOST_TAG, mac, 6);
 }
-static void wii_init(void) {
+static void wii_forget(void) { if (s_tlv) s_tlv->delete_tag(s_tlv_ctx, WII_HOST_TAG); }
+static void wii_init(bool pair) {
     s_wiimote = true;
     blog(L_BOOT, 0x80, MODE_NONE);
     l2cap_init();
     sm_init();
     btstack_tlv_get_instance(&s_tlv, &s_tlv_ctx);
     uint8_t mac[6];
-    if (s_tlv && s_tlv->get_tag(s_tlv_ctx, WII_HOST_TAG, mac, 6) == 6) wiimote_emulator_set_reconnect_address(mac);
+    if (pair) wii_forget();          // Star power at power-on: forget the console, so it only answers a new SYNC
+    else if (s_tlv && s_tlv->get_tag(s_tlv_ctx, WII_HOST_TAG, mac, 6) == 6) wiimote_emulator_set_reconnect_address(mac);
     wiimote_emulator_set_connection_callback(&wii_connected);
     memset(&s_wii, 0, sizeof(s_wii));
     s_wii.mode = CLASSIC_CONTROLLER;
@@ -610,7 +643,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     s_mode = g_usb_mode;
     if (cyw43_arch_init()) return;
     s_running = true;
-    if (g_cfg.xinput_opts & XOPT_WIIMOTE) { wii_init(); return; }   // a Wii Remote instead of a BLE gamepad
+    if (g_cfg.xinput_opts & XOPT_WIIMOTE) { wii_init(pair); return; }   // a Wii Remote instead of a BLE gamepad
     blog(L_BOOT, (uint8_t)(pair | (open_window << 1)), s_mode);
     s_want_pair = pair;
     s_want_window = open_window && !pair;
@@ -625,16 +658,11 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     usb_mode_ids(&vid, &pid, &ver);
     pico_unique_board_id_t uid;
     pico_get_unique_board_id(&uid);
-    bd_addr_t addr;                                  // static random address, different for every mode
-    for (int i = 0; i < 6; i++) addr[i] = uid.id[2 + i];
-    addr[5] ^= (uint8_t)(s_mode * 0x2B + 1);
+    bd_addr_t addr;                                  // static random address of the mode, rotated by pairing mode
     // v0.17: new addresses. Windows can keep a hidden, stale record (with an old legacy key) for an address it
     // was once paired with; it then keeps trying that key alongside the current one and the link fails with a
     // MIC error (0x3D) on every other attempt. Fresh addresses leave any such record behind for good.
-    // (v0.17 used 0xA7 here; v0.18 changed the GATT database, which hosts cache per address.)
-    addr[4] ^= 0x3E;                                 // v0.22: per-mode IRKs, so every mode is paired fresh
-    addr[0] |= 0xC0;                                 // static random: top two bits set
-
+    // (v0.17 used 0xA7 here; v0.18 changed the GATT database, which hosts cache per address; v0.22: per-mode IRKs.)
     l2cap_init();
     sm_init();
     sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
@@ -653,6 +681,9 @@ void bt_init(bool enabled, bool pair, bool open_window) {
             for (int m = 0; m < NUM_MODES; m++) { s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('M', m, i)); s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('N', m, i)); s_tlv->delete_tag(s_tlv_ctx, OLD_BOND_TAG('O', m, i)); }
             s_tlv->delete_tag(s_tlv_ctx, (((uint32_t)'B') << 24) | (((uint32_t)'T') << 16) | (((uint32_t)'C') << 8) | (uint32_t)i);   // shared CCCs of v0.21
         }
+        uint8_t pend[1];
+        bool pending = s_tlv->get_tag(s_tlv_ctx, PEND_TAG(s_mode), pend, 1) == 1;
+        if (pair || pending) { rotate_identity(); s_want_pair = true; }   // before the scan below and before the stack starts
         le_device_db_tlv_configure(&mode_tlv, s_tlv_ctx);
         btstack_tlv_set_instance(&mode_tlv, s_tlv_ctx);   // SM keys and the ATT server's state, per mode too
     }
@@ -667,6 +698,8 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     device_information_service_server_set_model_number(s_name);
     device_information_service_server_set_pnp_id(0x02 /* USB-IF ids */, vid, pid, ver);
     hids_device_init(0, s_desc, s_desc_len);
+    load_rot();
+    bt_identity_addr(uid.id, s_mode, s_rot, addr);
     gap_random_address_set_mode(GAP_RANDOM_ADDRESS_TYPE_STATIC);
     gap_random_address_set(addr);
 
@@ -686,13 +719,19 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     if (pair || open_window) rgb_set_bt(RGB_BT_PAIRING);
 }
 
-void bt_start_pairing(void) {
-    if (s_wiimote) return;                       // a Wii Remote is always findable by the Wii's SYNC button
-    if (!s_running) { bt_init(true, true, false); return; }
+// Star power + Plus held for 5 s. Returns true when the caller must restart the guitar (watchdog reboot with
+// the pairing flag): bt_init then rotates the identity before the stack starts. Not restartable (a USB host is
+// using the guitar): the hosts are forgotten now and the new identity is applied at the next start.
+bool bt_start_pairing(bool restartable) {
+    if (!s_running) { bt_init(true, true, false); return false; }
+    if (s_wiimote) { wii_forget(); return restartable; }   // the console is forgotten; SYNC pairs a new one
+    if (restartable) return true;
     async_context_t *ctx = cyw43_arch_async_context();
     async_context_acquire_lock_blocking(ctx);
+    if (s_tlv) { uint8_t one = 1; s_tlv->store_tag(s_tlv_ctx, PEND_TAG(s_mode), &one, 1); }
     if (s_powered) open_pairing(true, PAIRING_TIMEOUT_MS); else s_want_pair = true;
     async_context_release_lock(ctx);
+    return false;
 }
 
 void bt_task(void) {

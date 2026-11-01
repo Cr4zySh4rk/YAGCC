@@ -24,3 +24,6 @@ ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$DN" dev_name_test.c ../.
 REL="${TMPDIR:-/tmp}/yagcc_rel_test"
 ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -DYACC_HOST_TEST -I../../src -o "$REL" rel_test.c
 "$REL"
+BA="${TMPDIR:-/tmp}/yagcc_bt_addr_test"
+${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$BA" bt_addr_test.c
+"$BA"
