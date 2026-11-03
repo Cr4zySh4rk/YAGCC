@@ -21,6 +21,8 @@ export const LANGS = [
   { code: 'fr', name: 'Français' },
   { code: 'de', name: 'Deutsch' },
   { code: 'zh-CN', name: '简体中文' },
+  { code: 'ru', name: 'Русский' },
+  { code: 'ko', name: '한국어' },
 ];
 export const PSEUDO = 'xx';                          // ?lang=xx: bracketed, accented, ~35 % longer (finds hard-coded English)
 const STORE_KEY = 'yagcc.lang';
@@ -44,7 +46,7 @@ export function matchLang(tag) {
   if (s.startsWith('zh')) return /hant|-tw|-hk|-mo/.test(s) ? null : 'zh-CN';
   const base = s.split('-')[0];
   if (base === 'pt') return 'pt-BR';
-  return ['en', 'ja', 'es', 'fr', 'de'].includes(base) ? base : null;
+  return ['en', 'ja', 'es', 'fr', 'de', 'ru', 'ko'].includes(base) ? base : null;
 }
 
 export function detectLang() {

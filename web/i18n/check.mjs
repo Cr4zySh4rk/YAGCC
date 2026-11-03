@@ -14,7 +14,7 @@ const WEB = path.join(DIR, '..');
 const args = process.argv.slice(2);
 const flag = (n) => args.includes('--' + n);
 const opt = (n) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : null; };
-const CODES = ['ja', 'es', 'pt-BR', 'fr', 'de', 'zh-CN'];
+const CODES = ['ja', 'es', 'pt-BR', 'fr', 'de', 'zh-CN', 'ru', 'ko'];
 const langs = opt('lang') ? opt('lang').split(',') : CODES.filter((c) => fs.existsSync(path.join(DIR, c + '.json')));
 
 const load = (c) => { const d = JSON.parse(fs.readFileSync(path.join(DIR, c + '.json'), 'utf8')); for (const k of Object.keys(d)) if (k.startsWith('_')) delete d[k]; return d; };

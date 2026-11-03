@@ -11,6 +11,8 @@ The web configurator is translated with one flat JSON file per language in this 
 | `fr.json` | Français |
 | `de.json` | Deutsch |
 | `zh-CN.json` | 简体中文 |
+| `ru.json` | Русский |
+| `ko.json` | 한국어 |
 
 The other files start as `{ "_language": "<native name>" }`. Keys that begin with `_` are metadata and are ignored.
 
@@ -20,7 +22,7 @@ The other files start as `{ "_language": "<native name>" }`. Keys that begin wit
 2. Run `node web/i18n/check.mjs --lang de` (Node 18+, nothing to install). It reports keys that are missing or extra, placeholder and HTML-tag mismatches, and, for `en.json`, keys no source file uses. `--allow-missing` ignores missing keys while a translation is in progress, `--quiet` prints only the summary lines. The exit status is 1 when anything is wrong.
 3. Open the configurator with `?lang=de` (`?lang=ja`, `?lang=pt-BR`...) to see the result. The language picker in the header does the same and remembers the choice (`localStorage` key `yagcc.lang`). `?lang=xx` shows the pseudo-locale: every English string in brackets, accented and about 35 % longer. Anything that is still plain English in that view is a string that was not extracted, please report it.
 
-The first visit picks the language from the browser (`navigator.languages`): `zh`, `zh-CN` and `zh-Hans` give 简体中文, `pt` gives Português (Brasil), anything unsupported gives English. Traditional Chinese is not offered, so it falls back to English.
+The first visit picks the language from the browser (`navigator.languages`): `zh`, `zh-CN` and `zh-Hans` give 简体中文, `pt` gives Português (Brasil), `ru` gives Русский, `ko` gives 한국어, anything unsupported gives English. Traditional Chinese is not offered, so it falls back to English.
 
 ## Keys and values
 
@@ -38,7 +40,7 @@ Some keys come as a family: `base.one`, `base.other` (and more for languages tha
 "lights.led_count.other": "{n} LEDs"
 ```
 
-Provide the categories your language uses: Japanese and Chinese only `other`, German `one` + `other`, Spanish, French and Portuguese `one` + `many` + `other` (`many` is for large round numbers such as 1 000 000: "1 000 000 de pines"; check.mjs asks `Intl.PluralRules` for the exact set), Russian-style languages `one`, `few`, `many`, `other`. `other` is always required. A category that is missing falls back to `other`.
+Provide the categories your language uses: Japanese, Korean and Chinese only `other`, German `one` + `other`, Spanish, French and Portuguese `one` + `many` + `other` (`many` is for large round numbers such as 1 000 000: "1 000 000 de pines"; check.mjs asks `Intl.PluralRules` for the exact set), Russian-style languages `one`, `few`, `many`, `other`. `other` is always required. A category that is missing falls back to `other`.
 
 ### What is not translated
 

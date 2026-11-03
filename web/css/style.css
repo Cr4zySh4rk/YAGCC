@@ -28,12 +28,15 @@
 * { box-sizing: border-box; }
 /* per-language CJK order: the same Han characters look different in Japanese and Chinese fonts */
 :root:lang(ja) { --cjk: "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans JP", "Noto Sans CJK JP", "PingFang SC", "Microsoft YaHei"; }
+:root:lang(ko) { --cjk: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", "Pretendard", "Hiragino Sans", "Microsoft YaHei"; }
 :root:lang(zh-CN) { --cjk: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", "Hiragino Sans", "Yu Gothic UI"; }
 /* longer words (German, French, Portuguese) wrap instead of overflowing; CJK has no italics or letter-spacing */
 body { overflow-wrap: break-word; }
 :root:lang(de) body, :root:lang(fr) body, :root:lang(es) body, :root:lang(pt-BR) body { hyphens: auto; }
-:root:lang(ja) .display, :root:lang(zh-CN) .display, :root:lang(ja) .brand, :root:lang(zh-CN) .brand { font-style: normal; letter-spacing: 0; }
-:root:lang(ja) .g-label, :root:lang(zh-CN) .g-label { letter-spacing: .04em; }
+:root:lang(ja) .display, :root:lang(zh-CN) .display, :root:lang(ko) .display, :root:lang(ja) .brand, :root:lang(zh-CN) .brand, :root:lang(ko) .brand { font-style: normal; letter-spacing: 0; }
+:root:lang(ja) .g-label, :root:lang(zh-CN) .g-label, :root:lang(ko) .g-label { letter-spacing: .04em; }
+/* Korean separates words with spaces: keep a word together instead of breaking between syllables */
+:root:lang(ko) body { word-break: keep-all; }
 html { color-scheme: dark; }
 body { margin: 0; min-height: 100vh; background: var(--ink); color: var(--text); font: 16px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
 a { color: var(--cyan); text-underline-offset: 3px; }
@@ -1182,6 +1185,9 @@ header.top.hl-lang .lang-sw .lang-cur { display: none; }
 header.top.hl-lang .lang-sw .lang-code { display: inline; }
 header.top.hl-adv .adv-toggle > span:first-child { display: none; }
 header.top.hl-brand .brand span { display: none; }
+/* tightest plans: the version segment may shrink, and goes when even the wordmark had to (full text stays in the pill's title) */
+header.top.hl-adv .conn .seg-item.mono { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+header.top.hl-brand .conn .seg-item.mono { display: none; }
 header.top.two-row .top-inner { flex-wrap: wrap; height: auto; padding-top: 8px; padding-bottom: 0; gap: 0 12px; row-gap: 6px; }
 header.top.two-row .brand { order: 1; }
 header.top.two-row .top-right { order: 2; flex: 1 1 0; }
