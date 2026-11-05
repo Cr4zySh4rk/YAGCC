@@ -1,6 +1,7 @@
 #include "ext_config.h"
 #include <string.h>
 #include "idle_sleep.h"
+#include "tilt_filter.h"
 
 ext_config_t g_ext;
 
@@ -69,6 +70,7 @@ bool ext_validate(const ext_config_t *e, const yacc_config_t *main) {
     for (int i = 0; i < 4; i++) if (e->range[i] > 1) return false;
     if (!bt_sleep_valid(e->bt_sleep)) return false;
     if (!devname_valid(e->dev_name)) return false;
+    if (e->tilt_sw_type > 1 || e->tilt_sw_filter_ms > TILT_FILTER_MAX_MS) return false;
     for (int r = 0; r < EXT_MAP_ROWS; r++)
         for (int c = 0; c < EXT_MAP_COLS; c++) {
             uint8_t v = e->map[r][c];

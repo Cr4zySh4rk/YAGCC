@@ -645,7 +645,9 @@ export function defaultExt() {
     cal: [0, 2048, 4095, 0, 2048, 4095],
     curve: [0, 0, 0],   // response curve -100..100 of the whammy, tilt sensor 1, tilt sensor 2 (firmware 0.43+, ext bytes 320..322)
     range: [0, 0, 0, 0],   // stick range of the whammy, tilt switch, sensor 1, sensor 2 (firmware 0.44+, ext bytes 323..326): 0 from centre, 1 full sweep
-    devName: '',   // custom name prefix (firmware 0.46+, ext bytes 328..343): up to 10 printable ASCII characters, '' = YAGCC
+    devName: '',   // custom device name (firmware 0.46+, ext bytes 328..353; whole name since 0.51): up to 25 printable ASCII characters, '' = the default names
+    tiltSwType: 0,   // tilt switch type (firmware 0.51+, ext byte 354): 0 = mercury / generic, 1 = SW-520D ball switch
+    tiltSwFilter: 0,   // tilt switch settle time (firmware 0.51+, ext byte 355): 0 = type default (SW-520D about 40 ms), 1..250 ms
     btSleep: 0,   // Bluetooth idle sleep (firmware 0.45+, ext byte 327): 0 = 2 minutes (default), 1..60 minutes, 255 = never
     map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
   };
@@ -653,7 +655,8 @@ export function defaultExt() {
 export const BT_SLEEP_NEVER = 255;
 export const BT_SLEEP_CHOICES = [1, 0, 5, 10, 15, 30, 60, BT_SLEEP_NEVER];   // 0 is the 2 minute default
 export const btSleepByte = (v) => (v === BT_SLEEP_NEVER ? BT_SLEEP_NEVER : Number.isInteger(v) && v >= 1 && v <= 60 && v !== 2 ? v : 0);
-export const DEV_NAME_MAX = 10, DEV_NAME_BYTES = 16, DEV_NAME_DEFAULT = 'YAGCC';
+export const DEV_NAME_MAX = 25, DEV_NAME_BYTES = 26, DEV_NAME_DEFAULT = 'YAGCC Guitar Controller';
+export const TILT_SW_MERCURY = 0, TILT_SW_520D = 1, TILT_SW_FILTER_MAX = 250;
 // Characters outside printable ASCII in `s`, as a list (for the friendly message)
 export const devNameBadChars = (s) => [...new Set([...String(s)].filter((c) => c < ' ' || c > '~'))];
 // ok: stored form (trimmed, '' = default); error: why not
@@ -685,6 +688,8 @@ export function parseExt(dv) {
     range: [0, 1, 2, 3].map((i) => (dv.getUint8(323 + i) === 1 ? 1 : 0)),
     btSleep: btSleepByte(dv.getUint8(327)),
     devName: parseDevName(dv),
+    tiltSwType: dv.getUint8(354) === 1 ? 1 : 0,
+    tiltSwFilter: Math.min(TILT_SW_FILTER_MAX, dv.getUint8(355)),
   };
 }
 export function serializeExt(e) {
@@ -703,6 +708,8 @@ export function serializeExt(e) {
   (e.range || [0, 0, 0, 0]).slice(0, 4).forEach((r, i) => dv.setUint8(323 + i, r === 1 ? 1 : 0));
   dv.setUint8(327, btSleepByte(e.btSleep));
   { const c = checkDevName(e.devName || ''); if (c.ok) [...c.name].forEach((ch, i) => dv.setUint8(328 + i, ch.charCodeAt(0))); }
+  dv.setUint8(354, e.tiltSwType === 1 ? 1 : 0);
+  dv.setUint8(355, Math.max(0, Math.min(TILT_SW_FILTER_MAX, Math.round(e.tiltSwFilter) | 0)));
   dv.setUint32(508, crc32(new Uint8Array(buf, 0, 508)), true);
   return buf;
 }

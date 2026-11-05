@@ -1,4 +1,4 @@
-import { BT_SLEEP_CHOICES, btSleepByte, DEV_NAME_MAX, DEV_NAME_DEFAULT, devNameBadChars, checkDevName,
+import { TILT_SW_FILTER_MAX, BT_SLEEP_CHOICES, btSleepByte, DEV_NAME_MAX, DEV_NAME_DEFAULT, devNameBadChars, checkDevName,
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName, modeBaseName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
@@ -231,18 +231,18 @@ const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(),
 const isConfigured = (cfg) => cfg.pins.some((p) => p !== PIN_NONE);
 
 let pushTimer = 0;
-// ---- custom controller name (firmware 0.46+, ext bytes 328..343): one field in the last Setup step, one on Tune
-const nameOk = () => fwAtLeast(46) && !!state.cfg?.ext;
+// ---- custom controller name (ext bytes 328..353; whole device name since 0.51, so the field needs firmware 0.51: 0.46-0.50 would reject names over 10 characters): one field in the last Setup step, one on Tune
+const nameOk = () => fwAtLeast(51) && !!state.cfg?.ext;
 const escAttr = (tv) => String(tv).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 function nameFieldHtml(id) {
   const n = state.cfg.ext.devName || '';
   return `<div class="namefield" data-namefield>
     <label class="field-label" for="${id}">${t('name.controller_name_optional')}</label>
-    <div class="namerow"><input type="text" id="${id}" class="nameinp" maxlength="${DEV_NAME_MAX}" placeholder="${DEV_NAME_DEFAULT}" value="${escAttr(n)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="${id}Msg">
+    <div class="namerow"><input type="text" id="${id}" class="nameinp" maxlength="${DEV_NAME_MAX}" placeholder="${escAttr(DEV_NAME_DEFAULT)}" value="${escAttr(n)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="${id}Msg">
       <span class="namecnt dim" data-namecnt aria-live="off">${n.length} / ${DEV_NAME_MAX}</span></div>
     <p class="namemsg" id="${id}Msg" data-namemsg role="status" aria-live="polite" hidden></p>
-    <p class="dim">${t('name.shows_up_as')}<b data-nameprev>${escAttr(t('name.guitar_controller', { name: n.trim() || DEV_NAME_DEFAULT }))}</b></p>
-    <p class="dim small">${t('name.name_or_gamer_tag_instead', { name: DEV_NAME_DEFAULT, DEV_NAME_MAX })}</p>
+    <p class="dim">${t('name.shows_up_as')}<b data-nameprev>${escAttr(n.trim() || DEV_NAME_DEFAULT)}</b></p>
+    <p class="dim small">${t('name.name_or_gamer_tag_instead', { name: DEV_NAME_DEFAULT, DEV_NAME_MAX })} ${t('name.since_this_whole_name')}</p>
   </div>`;
 }
 function wireNameField(id) {
@@ -262,7 +262,7 @@ function refreshNameFields(msg = '', active = null) {
     const inp = f.querySelector('input');
     if (inp !== active && inp.value.trim() !== n) inp.value = n;
     f.querySelector('[data-namecnt]').textContent = inp.value.length + ' / ' + DEV_NAME_MAX;
-    f.querySelector('[data-nameprev]').textContent = t('name.guitar_controller', { name: n || DEV_NAME_DEFAULT });
+    f.querySelector('[data-nameprev]').textContent = n || DEV_NAME_DEFAULT;
     const m = f.querySelector('[data-namemsg]');
     if (msg && inp === active) { m.textContent = msg; m.hidden = false; clearTimeout(m._t); m._t = setTimeout(() => { m.hidden = true; }, 6000); }
   });
@@ -1055,7 +1055,7 @@ function renderStep() {
         ${c.tiltEnabled ? `<div class="result ${have ? 'ok' : ''}" id="result" style="margin-top:12px">${have
           ? t('setup.tilt.tilt_switch_gp', { tiltPin: c.tiltPin })
           : `<span class="pulse"></span><span>${t('setup.tilt.tilt_guitar_up_twice_within')}</span>`}</div>` : ''}
-        ${c.tiltEnabled ? `${tiltTypeHtml('tiltType')}
+        ${c.tiltEnabled ? `${tiltKindHtml('tiltKind')}${tiltTypeHtml('tiltType')}
           <div class="opt"><div><h3>${t('setup.tilt.or_choose_pin_yourself')}</h3><p class="dim">${t('setup.tilt.skips_double_tilt')}</p></div>${tiltPinSelect('tiltPinSel')}</div>` : ''}
         ${c.tiltEnabled && have ? `<div class="tilt-live" id="tiltLive"><i></i>${t('setup.tilt.tilt_not_active_hold_guitar')}</div>
           <div class="notice" id="tiltSuggest" hidden><span id="tiltSuggestTxt"></span> <button type="button" class="btn small primary" id="tiltSuggestBtn">Switch</button></div>` : ''}
@@ -1064,6 +1064,7 @@ function renderStep() {
       stepCtx.active = c.tiltEnabled && !have;
       $('#tiltSw').addEventListener('change', (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); renderTilt(); });
       $('#tRedo')?.addEventListener('click', () => { c.tiltPin = PIN_NONE; pushCfg(); renderTilt(); });
+      wireTiltKind(card, 'tiltKind', renderTilt);
       card.querySelectorAll('#tiltType [data-inv]').forEach((b) => b.addEventListener('click', () => { c.tiltInvert = b.dataset.inv === '1'; pushCfg(); renderTilt(); }));
       $('#tiltPinSel')?.addEventListener('change', (e) => { c.tiltPin = +e.target.value; pushCfg(); stepCtx.active = false; renderStepList(); renderTilt(); });
       $('#tiltSuggestBtn')?.addEventListener('click', () => { c.tiltInvert = !c.tiltInvert; pushCfg(); renderTilt(); });
@@ -1323,6 +1324,29 @@ function tiltTypeHtml(id) {
       <button type="button" role="radio" data-inv="0" aria-checked="${!tiltInverted()}" class="${tiltInverted() ? '' : 'on'}" ${dis}>${t('tune.tilt_switch.switch_closed_tilted_normally_open')}</button>
       <button type="button" role="radio" data-inv="1" aria-checked="${tiltInverted()}" class="${tiltInverted() ? 'on' : ''}" ${dis}>${t('tune.tilt_switch.switch_open_tilted_normally_closed')}</button></div></div>`;
 }
+// firmware 0.51+: switch type (mercury / SW-520D) and, with Advanced on, the settle time. Shared by Setup and Tune.
+const tiltKindOk = () => fwAtLeast(51) && !!state.cfg?.ext;
+function tiltKindHtml(id) {
+  if (!tiltKindOk()) return '';
+  const e = state.cfg.ext, sw = e.tiltSwType === 1, f = e.tiltSwFilter | 0;
+  return `<div class="opt tilt-kind" id="${id}"><div><h3>${t('tune.tilt_switch.switch_type')}</h3>
+    ${sw ? `<p class="dim">${t('tune.tilt_switch.sw520d_hint')}</p>` : ''}</div>
+    <div class="seg" role="radiogroup" aria-label="${t('tune.tilt_switch.aria_label.switch_type')}">
+      <button type="button" role="radio" data-kind="0" aria-checked="${!sw}" class="${sw ? '' : 'on'}">${t('tune.tilt_switch.type_mercury')}</button>
+      <button type="button" role="radio" data-kind="1" aria-checked="${sw}" class="${sw ? 'on' : ''}">${t('tune.tilt_switch.type_sw520d')}</button></div></div>
+    <div class="adv ${f ? 'adv-keep' : ''}"><div class="slider-row"><label for="${id}Flt">${t('tune.tilt_switch.settle_time')}</label><output class="val" id="${id}FltV">${f ? t('tune.tilt_switch.settle_ms', { ms: f }) : t('tune.tilt_switch.settle_auto')}</output>
+        <input type="range" id="${id}Flt" min="0" max="${TILT_SW_FILTER_MAX}" step="1" value="${f}"></div>
+      <p class="dim small">${t('tune.tilt_switch.settle_hint')}</p></div>`;
+}
+function wireTiltKind(root, id, rerender) {
+  root.querySelectorAll(`#${id} [data-kind]`).forEach((b) => b.addEventListener('click', () => { state.cfg.ext.tiltSwType = +b.dataset.kind; pushCfg(); rerender(); }));
+  const sl = root.querySelector(`#${id}Flt`);
+  sl?.addEventListener('input', () => {
+    const v = +sl.value; state.cfg.ext.tiltSwFilter = v;
+    root.querySelector(`#${id}FltV`).textContent = v ? t('tune.tilt_switch.settle_ms', { ms: v }) : t('tune.tilt_switch.settle_auto');
+    pushCfg();
+  });
+}
 function tiltPinSelect(id) {
   const c = state.cfg, used = new Set(assignedPins().filter((p) => p !== c.tiltPin));
   const free = [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !used.has(p));
@@ -1337,6 +1361,7 @@ function buildTiltSwitch() {
     ${c.tiltEnabled ? `<div class="opt"><div><h3>${t('tune.tilt_switch.switch_pin')}</h3><p class="dim">${t('tune.tilt_switch.or_use_setup_find_by')}</p></div>${tiltPinSelect('tsPin')}</div>
       ${tiltMapUi() ? `<div class="opt"><div><h3>${t('tune.tilt_switch.assign')}</h3><p class="dim">${t('tune.tilt_switch.any_guitar_or_gamepad_input')}</p></div>${assignSelect(10, t('common.tilt_switch'))}</div>${assignNote(assignValue(10))}${rangeFor(10, assignValue(10))}`
       : tiltFuncOk() ? `<div class="opt"><div><h3>${t('tune.tilt_switch.acts_as')}</h3><p class="dim">${t('tune.tilt_switch.input_tilt_presses')}</p></div><select id="tsFunc" aria-label="${t('tune.tilt_switch.aria_label.tilt_switch_acts_as')}">${tiltFuncOptions(tiltFuncOf(0), false)}</select></div>` : ''}
+      ${tiltKindHtml('tsKind')}
       ${tiltTypeHtml('tsType')}
       <div class="tilt-live" id="tsLive"><i></i>${t('tune.tilt_switch.tilt_not_active_hold_guitar')}</div>` : ''}`;
   $('#tsOn').onchange = (e) => { c.tiltEnabled = e.target.checked; if (!c.tiltEnabled) c.tiltPin = PIN_NONE; pushCfg(); buildTiltSwitch(); };
@@ -1344,6 +1369,7 @@ function buildTiltSwitch() {
   wireAssign(body);
   if (rangeOk()) wireRange(body, (k) => state.cfg.ext.range[k], (k, v) => { state.cfg.ext.range[k] = v; pushCfg(); });
   $('#tsFunc')?.addEventListener('change', (e) => { c.tiltFunc = c.tiltFunc || [FUNC_STAR, FUNC_STAR, FUNC_STAR]; c.tiltFunc[0] = +e.target.value; pushCfg(); });
+  wireTiltKind(body, 'tsKind', buildTiltSwitch);
   body.querySelectorAll('#tsType [data-inv]').forEach((b) => b.addEventListener('click', () => { c.tiltInvert = b.dataset.inv === '1'; pushCfg(); buildTiltSwitch(); }));
   if (state.status) updateTiltSwitch(state.status);
 }

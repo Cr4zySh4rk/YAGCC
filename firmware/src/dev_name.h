@@ -1,14 +1,16 @@
-// Custom device name prefix (firmware 0.46): ext page bytes 328..343, up to 10 printable ASCII characters
-// (0x20..0x7E), NUL padded. Empty = "YAGCC". Pure helpers so they can be tested on a PC (tests/host_map/dev_name_test.c).
+// Custom device name (firmware 0.51): ext page bytes 328..353, up to 25 printable ASCII characters (0x20..0x7E),
+// NUL padded. The stored name is the WHOLE USB product name / Bluetooth name of our own identities (0.46..0.50 stored a
+// prefix of at most 10 characters that got " Guitar Controller" etc. appended). Empty = the default names below.
+// Pure helpers so they can be tested on a PC (tests/host_map/dev_name_test.c).
 #ifndef YACC_DEV_NAME_H_
 #define YACC_DEV_NAME_H_
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 
-#define DEVNAME_LEN 16   // storage in the ext page
-#define DEVNAME_MAX 10   // longest name allowed
-#define DEVNAME_DEFAULT "YAGCC"
+#define DEVNAME_LEN 26   // storage in the ext page
+#define DEVNAME_MAX 25   // longest name allowed
+#define DEVNAME_MANUF "YAGCC"   // USB manufacturer string of our own identities (never customised)
 
 // Valid stored name: printable ASCII up to the first NUL, zeros after it, no leading or trailing space
 static inline bool devname_valid(const uint8_t *b) {
@@ -19,11 +21,12 @@ static inline bool devname_valid(const uint8_t *b) {
     return n == 0 || (b[0] != ' ' && b[n - 1] != ' ');
 }
 
-// The prefix to show: the stored name, "YAGCC" when empty (or invalid). out needs DEVNAME_LEN + 1 bytes.
-static inline const char *devname_prefix(const uint8_t *b, char *out) {
+// The name to show: the stored name, or `def` (the identity's default name) when empty or invalid.
+// out needs DEVNAME_LEN + 1 bytes at least and room for `def` (longest default: 23 characters).
+static inline const char *devname_product(const uint8_t *b, const char *def, char *out, size_t cap) {
     size_t n = 0;
-    if (devname_valid(b)) while (n < DEVNAME_LEN && b[n]) { out[n] = (char)b[n]; n++; }
-    if (n == 0) { for (const char *p = DEVNAME_DEFAULT; *p; p++) out[n++] = *p; }
+    if (devname_valid(b)) while (n < DEVNAME_LEN && b[n] && n + 1 < cap) { out[n] = (char)b[n]; n++; }
+    if (n == 0) { for (const char *p = def; *p && n + 1 < cap; p++) out[n++] = *p; }
     out[n] = 0;
     return out;
 }

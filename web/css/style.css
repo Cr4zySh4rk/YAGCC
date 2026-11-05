@@ -637,7 +637,8 @@ body.has-savebar #toasts { bottom: 90px; }
 .tilt-live .small { font-weight: 400; }
 .tilt-type .seg button small { display: block; font-weight: 400; font-size: 12px; opacity: .8; }
 .tilt-type .seg button:disabled { opacity: .5; cursor: not-allowed; }
-@media (max-width: 560px) { .tilt-type { flex-direction: column; align-items: stretch; } }
+.tilt-kind .seg button { height: auto; min-height: 36px; padding-top: 8px; padding-bottom: 8px; white-space: normal; }
+@media (max-width: 560px) { .tilt-type, .tilt-kind { flex-direction: column; align-items: stretch; } }
 
 /* ---------- guitar stays in view while setting up ---------- */
 #setupMain .stage { --g3d-maxh: 200px; padding: 12px 18px 8px; }

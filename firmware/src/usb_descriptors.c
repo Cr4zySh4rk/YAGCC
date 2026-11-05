@@ -413,8 +413,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     (void)langid;
     const char *s = NULL;
     char serial[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
-    char pfx[DEVNAME_LEN + 1], prod[DEVNAME_LEN + 24];
-    const char *tail;
+    char prod[40];
     uint8_t chr_count;
 
     if (g_usb_mode == MODE_AUTO) auto_mark_string(index);
@@ -435,7 +434,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                   : g_usb_mode == MODE_PS3_RB ? "Harmonix"
                   : g_usb_mode == MODE_WII_RB ? "Licensed by Nintendo of America "
                   : g_usb_mode == MODE_SWITCH ? "HORI CO.,LTD."
-                  : g_usb_mode == MODE_XBONE  ? "Mad Catz" : devname_prefix(g_ext.dev_name, pfx);
+                  : g_usb_mode == MODE_XBONE  ? "Mad Catz" : DEVNAME_MANUF;
                 break;
             case STR_PRODUCT:
                 s = g_usb_mode == MODE_PS3_GH ? "Guitar Hero3 for PlayStation (R) 3"
@@ -443,14 +442,13 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                   : g_usb_mode == MODE_WII_RB ? "Harmonix Guitar for Nintendo Wii"
                   : g_usb_mode == MODE_SWITCH ? "POKKEN CONTROLLER"
                   : g_usb_mode == MODE_XBONE  ? "Rock Band 4 Stratocaster"
-                  : (devname_prefix(g_ext.dev_name, pfx), tail =
-                       g_usb_mode == MODE_HID      ? " Guitar (HID)"
-                     : g_usb_mode == MODE_AUTO     ? " Guitar"
-                     : g_usb_mode == MODE_KEYBOARD ? " Guitar (Keyboard)"
-                     : g_usb_mode == MODE_PS4      ? " Guitar (PS4)"
-                     : g_usb_mode == MODE_PS5      ? " Guitar (PS5)"
-                                                   : " Guitar Controller",
-                     devname_cat3(prod, sizeof(prod), pfx, tail, ""), prod);
+                  : devname_product(g_ext.dev_name,   // our own identities: the custom name is the whole product name
+                       g_usb_mode == MODE_HID      ? "YAGCC Guitar (HID)"
+                     : g_usb_mode == MODE_AUTO     ? "YAGCC Guitar"
+                     : g_usb_mode == MODE_KEYBOARD ? "YAGCC Guitar (Keyboard)"
+                     : g_usb_mode == MODE_PS4      ? "YAGCC Guitar (PS4)"
+                     : g_usb_mode == MODE_PS5      ? "YAGCC Guitar (PS5)"
+                                                   : "YAGCC Guitar Controller", prod, sizeof prod);
                 break;
             case STR_SERIAL:
                 pico_get_unique_board_id_string(serial, sizeof(serial));

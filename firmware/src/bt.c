@@ -86,8 +86,7 @@ static uint8_t s_report[MAX_REPORT];
 static uint16_t s_report_len;
 static uint8_t s_desc[MAX_DESC];
 static uint16_t s_desc_len;
-static char s_name[40];   // "<prefix, up to 16> <mode>"
-static char s_pfx[DEVNAME_LEN + 1];
+static char s_name[40];   // the custom name, or "YAGCC <mode>"
 static uint16_t s_appearance;
 static uint8_t s_adv[31];
 static uint8_t s_adv_len;
@@ -737,9 +736,12 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     s_want_window = open_window && !pair;
 
     // identity of the running mode
-    // "<prefix> <mode>" (prefix: custom name or YAGCC), built by hand: snprintf would pull the whole printf engine into the image
-    devname_prefix(g_ext.dev_name, s_pfx);
-    devname_cat3(s_name, sizeof(s_name), s_pfx, " ", mode_short(s_mode));
+    // the custom name as it is (0.51), else "YAGCC <mode>"; built by hand: snprintf would pull the whole printf engine into the image
+    {
+        char def[24];
+        devname_cat3(def, sizeof def, "YAGCC", " ", mode_short(s_mode));
+        devname_product(g_ext.dev_name, def, s_name, sizeof s_name);
+    }
     s_appearance = s_mode == MODE_KEYBOARD ? 0x03C1 : 0x03C4;   // HID keyboard / HID gamepad
     build_descriptor();
     uint16_t vid, pid, ver;
@@ -782,7 +784,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     s_gatt_service.write_callback = &gatt_write;
     att_server_register_service_handler(&s_gatt_service);
     device_information_service_server_init();
-    device_information_service_server_set_manufacturer_name(s_pfx);
+    device_information_service_server_set_manufacturer_name(DEVNAME_MANUF);
     device_information_service_server_set_model_number(s_name);
     device_information_service_server_set_pnp_id(0x02 /* USB-IF ids */, vid, pid, ver);
     hids_device_init(0, s_desc, s_desc_len);

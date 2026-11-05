@@ -10,6 +10,7 @@
 #include "wii_out.h"
 #include "ext_config.h"
 #include "padmap.h"
+#include "tilt_filter.h"
 
 // ---- detection grade pin state (fixed debounce, used for pin discovery) ----
 #define DETECT_DEBOUNCE_US 3000
@@ -35,6 +36,7 @@ typedef struct {
 #define PRESS_CONFIRM_US    200u
 #define RELEASE_CONFIRM_US  1000u
 static deb_t slot[NUM_SLOTS];
+static tilt_filter_t tilt_flt;     // 0.51: SW-520D / explicit settle time filter of the tilt switch
 static uint32_t strum_lock_until;
 static bool strum_lock_active;
 
@@ -130,8 +132,14 @@ void input_poll(void) {
             raw = false;                       // a new strum can't start inside the window
         }
         if (s == SLOT_TILT) {
-            // a mercury ball switch chatters for a while as the ball rolls: lock it out for at least 20 ms
-            deb_step(&slot[s], raw, now, win < 20000u ? 20000u : win, 5000u, 10000u);
+            if (tilt_filter_used(g_ext.tilt_sw_type, g_ext.tilt_sw_filter_ms)) {
+                // 0.51: SW-520D ball switch (majority window) and/or an explicit settle time, separate from the fret debounce
+                slot[s].out = tilt_filter_step(&tilt_flt, raw, now, g_ext.tilt_sw_type, g_ext.tilt_sw_filter_ms);
+            } else {
+                tilt_flt.init = false;
+                // a mercury ball switch chatters for a while as the ball rolls: lock it out for at least 20 ms
+                deb_step(&slot[s], raw, now, win < 20000u ? 20000u : win, 5000u, 10000u);
+            }
         } else {
             deb_step(&slot[s], raw, now, win, PRESS_CONFIRM_US, RELEASE_CONFIRM_US);
         }

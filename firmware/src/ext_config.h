@@ -62,12 +62,14 @@ typedef struct __attribute__((packed)) {
     int8_t   curve[3];              // 320 whammy, 321 tilt sensor 1, 322 tilt sensor 2: response curve -100..+100 (0 = linear)
     uint8_t  range[4];              // 323 whammy, 324 tilt switch, 325 sensor 1, 326 sensor 2 (0.44): stick range, 0 = from centre, 1 = full sweep
     uint8_t  bt_sleep;              // 327    (0.45) Bluetooth idle sleep: 0 = 2 minutes (default), 1..60 minutes, 255 = never
-    uint8_t  dev_name[DEVNAME_LEN]; // 328..343 (0.46) custom name prefix, printable ASCII, NUL padded, empty = "YAGCC"
-    uint8_t  rsv2[164];             // 344..507
+    uint8_t  dev_name[DEVNAME_LEN]; // 328..353 (0.46 prefix of 10, 0.51 the whole name, up to 25) printable ASCII, NUL padded, empty = default names
+    uint8_t  tilt_sw_type;          // 354    (0.51) tilt switch: 0 = mercury / generic, 1 = SW-520D ball switch
+    uint8_t  tilt_sw_filter_ms;     // 355    (0.51) settle time: 0 = type default, 1..250 ms
+    uint8_t  rsv2[152];             // 356..507
     uint32_t crc;                   // 508    crc32 of bytes 0..507
 } ext_config_t;
 _Static_assert(sizeof(ext_config_t) == EXT_SIZE, "ext config size");
-_Static_assert(offsetof(ext_config_t, map) == 32 && offsetof(ext_config_t, curve) == 320 && offsetof(ext_config_t, range) == 323 && offsetof(ext_config_t, bt_sleep) == 327 && offsetof(ext_config_t, dev_name) == 328 && offsetof(ext_config_t, crc) == 508, "ext config layout");
+_Static_assert(offsetof(ext_config_t, map) == 32 && offsetof(ext_config_t, curve) == 320 && offsetof(ext_config_t, range) == 323 && offsetof(ext_config_t, bt_sleep) == 327 && offsetof(ext_config_t, dev_name) == 328 && offsetof(ext_config_t, tilt_sw_type) == 354 && offsetof(ext_config_t, tilt_sw_filter_ms) == 355 && offsetof(ext_config_t, crc) == 508, "ext config layout");
 
 extern ext_config_t g_ext;
 
@@ -75,7 +77,7 @@ uint32_t yacc_crc32(const uint8_t *d, size_t n);   // the config crc (zlib crc32
 void ext_defaults(ext_config_t *e);                // sealed
 void ext_seal(ext_config_t *e);                    // fill magic / version / crc
 // magic, version, crc, pins valid and unique and not used by `main` (NULL = skip that check), ADC channels,
-// deadzone, calibration (min < mid < max, <= 4095) and map values (0, 1..31, 0xFF), curves (-100..100), stick ranges (0/1), Bluetooth sleep (0, 1..60, 255), name prefix (printable ASCII)
+// deadzone, calibration (min < mid < max, <= 4095) and map values (0, 1..31, 0xFF), curves (-100..100), stick ranges (0/1), Bluetooth sleep (0, 1..60, 255), name (printable ASCII, 1..25), tilt switch type (0/1) and settle time (0..250)
 bool ext_validate(const ext_config_t *e, const yacc_config_t *main);
 bool ext_pin_used_by_main(const yacc_config_t *c, uint8_t gpio);   // some other feature of the main config owns this GPIO
 
