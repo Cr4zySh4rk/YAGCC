@@ -175,7 +175,7 @@ function openHelp(focusFirst = false) {
 }
 $('#helpMenu').addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) showView(b.dataset.view); });
 addEventListener('resize', () => closeHelp());
-$('#nav').addEventListener('scroll', () => closeHelp(), { passive: true });
+$('#nav').addEventListener('scroll', () => { if (!$('#helpMenu').hidden) placeHelp(); }, { passive: true });   // the menu follows its button (tapping a half-visible Help button can scroll the nav)
 $('#helpBtn').addEventListener('click', () => { if ($('#helpMenu').hidden) openHelp(); else closeHelp(); });
 $('#helpBtn').addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openHelp(true); } });
 $('#helpMenu').addEventListener('keydown', (e) => {
@@ -873,7 +873,7 @@ function renderStep() {
         next = `<button class="btn primary" id="lNext">${t('common.continue')}</button>`;
       } else if (f.sub === 'layout') {
         q = t('setup.rgb.where_are_leds');
-        body = ledLayoutControls(c);
+        body = ledLayoutControls(c, 'lay', true);
         next = `<button class="btn primary" id="lNext" ${chain ? '' : 'disabled'}>${t('common.continue')}</button>`;
       } else if (f.sub === 'pins') {
         q = t('setup.rgb.which_pins_are_they_wired');
@@ -907,7 +907,7 @@ function renderStep() {
       $('#askYes')?.addEventListener('click', () => { c.rgbEnabled = true; applyColors(); pushCfg(); go('type'); });
       $('#askNo')?.addEventListener('click', () => { c.rgbEnabled = false; applyColors(); pushCfg(); leave(); });
       if (f.sub === 'type') wireLedTypeCards(card, c, () => { pushCfg(); renderRgb(); });
-      if (f.sub === 'layout') wireLedLayout(c, () => { pushCfg(); renderRgb(); });
+      if (f.sub === 'layout') { wireLedLayout(c, () => { pushCfg(); renderRgb(); }); wireStrumPlacement(c, () => { pushCfg(); renderRgb(); }, card); }
       if (f.sub === 'pins') {
         $('#rgbPinSel').addEventListener('change', (e) => { c.rgbPin = +e.target.value; pushCfg(); renderRgb(); });
         $('#rgbClkSel')?.addEventListener('change', (e) => { c.ledClkPin = +e.target.value; pushCfg(); renderRgb(); });
@@ -2088,7 +2088,34 @@ function brightNote(c) {
 }
 // LED layout controls (setup wizard and Lights page): fret LEDs on / off, how many strum LEDs, wiring order
 const STRUM_COUNTS = localized(() => ([t('common.none'), '1', '2', '3', '4', '5', '6', '7', '8']));
-function ledLayoutControls(c, pfx = 'lay') {
+// strum LED placement (Setup layout step and Lights page): which strum LEDs follow strum up / down
+function strumPlacementOf(c) {
+  const n = c.strumLeds || 0;
+  const order = [...Array(n).keys()].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
+  const roles = order.map((k) => c.strumRoles[k] || 0);
+  const is = (f) => roles.every((r, j) => r === f(j));
+  if (is(() => 0)) return 'both';
+  if (is((j) => (j < Math.ceil(n / 2) ? 1 : 2))) return 'half';
+  if (is((j) => (j % 2 ? 2 : 1))) return 'alt';
+  return 'custom';
+}
+function strumPlacementHtml(c) {
+  const cur = strumPlacementOf(c);
+  const b = (id, key) => `<button class="btn small ${cur === id ? 'primary' : ''}" data-rp="${id}" aria-pressed="${cur === id}">${t(key)}</button>`;
+  return `<div class="opt strum-place"><div><h3>${t('lights.how_are_they_placed')}</h3><p class="dim">${t('lights.pick_one_that_matches_build')}</p>${cur === 'custom' ? `<p class="dim small">${t('lights.placement_custom')}</p>` : ''}</div>
+    <span class="row">${b('both', 'lights.one_row_under_strum_bar')}${b('half', 'lights.two_groups_first_half_up')}${b('alt', 'lights.alternate_up_down')}</span></div>`;
+}
+// presets, in chain order of the strum LEDs (so "first half" means the first ones along the wire)
+function wireStrumPlacement(c, changed, root) {
+  const n = c.strumLeds || 0;
+  root.querySelectorAll('[data-rp]').forEach((btn) => btn.addEventListener('click', () => {
+    const p = btn.dataset.rp;
+    const order = [...Array(n).keys()].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
+    order.forEach((k, j) => { c.strumRoles[k] = p === 'both' ? 0 : p === 'half' ? (j < Math.ceil(n / 2) ? 1 : 2) : (j % 2 ? 2 : 1); });
+    changed();
+  }));
+}
+function ledLayoutControls(c, pfx = 'lay', placement = false) {
   const l = ledLayout(c);
   const v6 = (c.cfgVersion ?? 0) >= 6;
   return `<div class="opt"><div><h3>${t('common.fret_leds')}</h3><p class="dim">${t('lights.hw.leds_under_five_frets')}</p></div>
@@ -2097,6 +2124,7 @@ function ledLayoutControls(c, pfx = 'lay') {
       <select id="${pfx}Per"><option value="1" ${l.per === 1 ? 'selected' : ''}>${t('lights.hw.one')}</option><option value="2" ${l.per === 2 ? 'selected' : ''}>${t('lights.hw.two')}</option></select></div>` : ''}
     <div class="opt"><div><h3>${t('common.strum_bar_leds')}</h3><p class="dim">${t('lights.hw.leds_strum_bar_same_chain')}</p></div>
       <select id="${pfx}Strum">${STRUM_COUNTS.map((tv, n) => `<option value="${n}" ${n === l.strum ? 'selected' : ''}>${tv}</option>`).join('')}</select></div>
+    ${placement && l.strum > 1 ? strumPlacementHtml(c) : ''}
     ${l.frets && l.strum ? `<div class="opt"><div><h3>${t('lights.hw.wiring_order')}</h3><p class="dim">${t('lights.hw.which_leds_come_first_chain')}</p></div>
       <select id="${pfx}Order"><option value="0" ${!l.strumFirst ? 'selected' : ''}>${t('lights.hw.frets_first')}</option><option value="1" ${l.strumFirst ? 'selected' : ''}>${t('lights.hw.strum_leds_first')}</option></select></div>` : ''}
     ${!l.frets && !l.strum ? `<p class="dim small">${t('lights.hw.choose_fret_leds_strum_leds')}</p>` : ''}`;
@@ -2293,20 +2321,12 @@ function buildLights() {
     const n = c.strumLeds || 0;
     const oldFw = (c.cfgVersion ?? 0) < 7;   // firmware 0.34+ sets the strum colours in the lighting studio
     $('#strumOpts').innerHTML = n ? `${oldFw ? `<div class="col-row"><span>${t('lights.strum_led_colour')}</span><input type="color" id="strumCol" value="${c.strumColor || '#ffffff'}"><span class="hex" id="strumHex">${(c.strumColor || '#ffffff').toUpperCase()}</span></div>` : ''}
-      ${n > 1 ? `<div class="opt"><div><h3>${t('lights.how_are_they_placed')}</h3><p class="dim">${t('lights.pick_one_that_matches_build')}</p></div>
-        <span class="row"><button class="btn small" data-rp="both">${t('lights.one_row_under_strum_bar')}</button><button class="btn small" data-rp="half">${t('lights.two_groups_first_half_up')}</button><button class="btn small" data-rp="alt">${t('lights.alternate_up_down')}</button></span></div>` : ''}
+      ${n > 1 ? strumPlacementHtml(c) : ''}
       ${[...Array(n).keys()].map((k) => `<div class="opt"><div><h3>${t('lights.strum_led', { n: k + 1 })}</h3><p class="dim">${t('lights.lights_up')}</p></div>
         <select data-role="${k}">${STRUM_ROLES.map((r) => `<option value="${r.id}" ${c.strumRoles[k] === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}</select></div>`).join('')}` : '';
     $('#strumCol')?.addEventListener('input', (e) => { c.strumColor = e.target.value; $('#strumHex').textContent = c.strumColor.toUpperCase(); live(); });
-    $('#strumOpts').onchange = (e) => { const k = e.target.dataset.role; if (k !== undefined) { c.strumRoles[+k] = +e.target.value; live(); } };
-    // presets, in chain order of the strum LEDs (so "first half" means the first ones along the wire)
-    $('#strumOpts').onclick = (e) => {
-      const p = e.target.closest('[data-rp]')?.dataset.rp;
-      if (!p) return;
-      const order = [...Array(n).keys()].sort((a, b) => c.strumMap[a] - c.strumMap[b]);
-      order.forEach((k, j) => { c.strumRoles[k] = p === 'both' ? 0 : p === 'half' ? (j < Math.ceil(n / 2) ? 1 : 2) : (j % 2 ? 2 : 1); });
-      drawLayout(); live();
-    };
+    $('#strumOpts').onchange = (e) => { const k = e.target.dataset.role; if (k !== undefined) { c.strumRoles[+k] = +e.target.value; drawLayout(); live(); } };
+    wireStrumPlacement(c, () => { drawLayout(); live(); }, $('#strumOpts'));
   };
   drawLayout();
   buildStudio({

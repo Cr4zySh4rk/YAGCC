@@ -127,6 +127,7 @@ function controlsHtml() {
         <p class="dim small" id="lfxStrumNone" hidden>${t('lights.studio.no_strum_leds_add_them')}</p>
         <div id="lfxStrumBody">
           <div class="lfx-fields">${select('lfxStrumIdle', 'zoneStrum.idle', t('lights.studio.idle'), IDLE_ANIMS)}${select('lfxStrumPress', 'zoneStrum.press', t('lights.studio.when_pressed'), PRESS_FX)}${speedField('lfx-strum-speed', 'zoneStrum.speed')}</div>
+          ${check('lfxPerLed', 'zoneStrum.perLed', t('lights.studio.each_strum_led_its_own'))}
           <div class="lfx-swrow" id="lfxStrumCols" role="group" aria-label="${t('lights.studio.aria_label.strum_bar_colours')}"></div>
           ${check('lfxStrumSame', 'zoneStrum.same', t('lights.studio.pressed_same_colour'))}
           <p class="dim small lfx-warn" id="lfxStrumPressNote" hidden>${t('lights.studio.reaction_picked_above_no_reaction')}</p>
@@ -151,7 +152,6 @@ function controlsHtml() {
         <section class="lfx-grp" id="lfxMoreStrum" aria-labelledby="mStrum"><h4 id="mStrum">${t('lights.studio.strum_bar')}</h4>
           ${slider('lfx-strum-level', 'zoneStrum.idleLevel', t('lights.studio.idle_brightness'), 0, 100, 'pct')}
           ${slider('lfx-strum-fade', 'zoneStrum.fade', t('lights.studio.fade_speed'), 1, 10, 'num')}
-          ${check('lfxPerLed', 'zoneStrum.perLed', t('lights.studio.each_strum_led_its_own'))}
           <div class="row lfx-quick"><button type="button" class="btn small" id="lfxCopy">${t('lights.studio.copy_fret_settings_strum_bar')}</button></div>
         </section>
         <section class="lfx-grp" aria-labelledby="mStar"><h4 id="mStar">${t('common.star_power')}</h4>
@@ -276,7 +276,7 @@ function moreChanged(c, l) {
   if (z.idleLevel !== 25) r.push(t('lights.studio.fret_idle_brightness'));
   if (z.fade !== 5) r.push(t('lights.studio.fret_fade_speed'));
   if (c.fret2Own && l.frets && l.per === 2) r.push(t('lights.studio.second_led_colours'));
-  if (l.strum) { if (s.idleLevel !== 25) r.push(t('lights.studio.strum_idle_brightness')); if (s.fade !== 5) r.push(t('lights.studio.strum_fade_speed')); if (s.perLed) r.push(t('lights.studio.strum_led_colours')); }
+  if (l.strum) { if (s.idleLevel !== 25) r.push(t('lights.studio.strum_idle_brightness')); if (s.fade !== 5) r.push(t('lights.studio.strum_fade_speed')); }
   if (c.starSpeed !== 5) r.push(t('lights.studio.star_power_speed'));
   if (c.starZones !== 3) r.push(t('lights.studio.star_power_zones_2'));
   if (c.starFlash) r.push('star flash');
@@ -310,7 +310,7 @@ function sync() {
   $$('[data-pcol]', root).forEach((e) => { e.classList.toggle('dim-col', e.dataset.b.startsWith('fretPress') ? !!c.zoneFrets.same : !!c.zoneStrum.same); });   // still clickable: picking one switches "same" off
   $$('[data-c2]', root).forEach((e) => { e.disabled = !c.fret2Own; e.classList.toggle('dim-col', !c.fret2Own); });
   $('#lfxStrumPressNote', root).hidden = ![0, 3, 4].includes(c.zoneStrum.press) || !l.strum;
-  $('#lfxPerLed', root).disabled = !l.strum;
+  $('#lfxPerLedRow', root).hidden = l.strum < 2;   // only meaningful with 2+ strum LEDs
   // preview: layout, off notice, star button and its notes
   $('#studioOff', root).hidden = !!c.rgbEnabled;
   const fwn = $('#lfxFwNote', root), pok = !!S.ctx.fwPreview?.();

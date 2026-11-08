@@ -745,6 +745,7 @@ body.has-savebar #toasts { bottom: 90px; }
 .lfx-pick.dim-col:not(:disabled) { opacity: .5; cursor: pointer; }   /* pressed colours stay usable while "same" is on: picking one switches it off */
 .lfx-zones { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 12px; }
 .lfx-check { display: inline-flex; gap: 10px; align-items: center; margin: 6px 16px 6px 0; cursor: pointer; font-size: 15px; }
+.lfx-check[hidden] { display: none; }
 .lfx-check input { width: 18px; height: 18px; accent-color: var(--blue); flex: none; }
 .lfx-warn { color: var(--warn); margin: 8px 0 0; }
 .lfx-quick { margin: 12px 0 4px; }
