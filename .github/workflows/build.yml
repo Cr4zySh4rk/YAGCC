@@ -89,6 +89,9 @@ jobs:
 
       - name: Build
         timeout-minutes: 15
+        # newer runner g++ no longer pulls <cstdint> in transitively, which breaks the SDK's host-built pioasm
+        env:
+          CXXFLAGS: -include cstdint
         run: |
           cmake -S firmware -B build -G Ninja -DPICO_BOARD=${{ matrix.board }} -DPICO_SDK_PATH="$RUNNER_TEMP/pico-sdk" -DPICO_BTSTACK_PATH="$RUNNER_TEMP/btstack"
           cmake --build build
