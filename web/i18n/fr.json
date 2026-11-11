@@ -1436,6 +1436,7 @@
   "btlog.stack_overflow": "DÉBORDEMENT DE PILE ({where}) : le canari de pile a disparu",
   "btlog.ident_ok": "hôte reconnu comme appairage enregistré {index}",
   "btlog.ident_unknown": "l'hôte n'est pas un appairage enregistré",
+  "btlog.stale_host": "un ancien hôte a tenté de se reconnecter (supprimez d'abord la guitare sur cet hôte)",
   "tune.tilt_switch.switch_type": "Type d’interrupteur",
   "tune.tilt_switch.aria_label.switch_type": "Type d’interrupteur d’inclinaison",
   "tune.tilt_switch.type_mercury": "Interrupteur d’inclinaison au mercure / générique",

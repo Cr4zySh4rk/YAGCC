@@ -1432,6 +1432,7 @@
   "btlog.stack_overflow": "STACK OVERFLOW ({where}): the stack canary is gone",
   "btlog.ident_ok": "host recognised as stored bond {index}",
   "btlog.ident_unknown": "host is not a stored bond",
+  "btlog.stale_host": "old host tried to reconnect (remove the guitar on that host first)",
   "tune.tilt_switch.switch_type": "Switch type",
   "tune.tilt_switch.aria_label.switch_type": "Tilt switch type",
   "tune.tilt_switch.type_mercury": "Mercury / generic tilt switch",

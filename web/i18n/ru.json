@@ -1432,6 +1432,7 @@
   "btlog.stack_overflow": "ПЕРЕПОЛНЕНИЕ СТЕКА ({where}): канарейка стека потеряна",
   "btlog.ident_ok": "хост распознан как сохранённая пара {index}",
   "btlog.ident_unknown": "хост не является сохранённой парой",
+  "btlog.stale_host": "старый хост пытался переподключиться (сначала удалите гитару на этом хосте)",
   "app.bt_sleep.minutes.few": "{n} минуты",
   "app.bt_sleep.minutes.many": "{n} минут",
   "app.extras_summary.pin_count.few": "{n} вывода",

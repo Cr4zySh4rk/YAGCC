@@ -1428,6 +1428,7 @@
   "btlog.stack_overflow": "栈溢出（{where}）：栈金丝雀已丢失",
   "btlog.ident_ok": "主机识别为已保存的配对 {index}",
   "btlog.ident_unknown": "该主机不是已保存的配对",
+  "btlog.stale_host": "旧主机尝试重新连接（请先在该主机上移除吉他）",
   "tune.tilt_switch.switch_type": "开关类型",
   "tune.tilt_switch.aria_label.switch_type": "倾斜开关类型",
   "tune.tilt_switch.type_mercury": "水银 / 通用倾斜开关",

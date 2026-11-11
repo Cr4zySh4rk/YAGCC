@@ -1428,6 +1428,7 @@
   "btlog.stack_overflow": "スタックオーバーフロー ({where}): スタックカナリアが消えています",
   "btlog.ident_ok": "ホストを保存済みボンド {index} と照合",
   "btlog.ident_unknown": "保存済みボンドに該当しないホスト",
+  "btlog.stale_host": "以前のホストが再接続を試みました（先にそのホストでギターを削除してください）",
   "tune.tilt_switch.switch_type": "スイッチの種類",
   "tune.tilt_switch.aria_label.switch_type": "チルトスイッチの種類",
   "tune.tilt_switch.type_mercury": "水銀 / 汎用チルトスイッチ",

@@ -1436,6 +1436,7 @@
   "btlog.stack_overflow": "ESTOURO DE PILHA ({where}): o canário da pilha sumiu",
   "btlog.ident_ok": "host reconhecido como pareamento salvo {index}",
   "btlog.ident_unknown": "o host não é um pareamento salvo",
+  "btlog.stale_host": "um host antigo tentou reconectar (remova antes a guitarra nesse host)",
   "tune.tilt_switch.switch_type": "Tipo de chave",
   "tune.tilt_switch.aria_label.switch_type": "Tipo de chave de inclinação",
   "tune.tilt_switch.type_mercury": "Chave de inclinação de mercúrio / genérica",

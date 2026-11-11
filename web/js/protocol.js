@@ -542,6 +542,7 @@ const BT_EVENTS = {
     return b === 0 ? t('btlog.stack_overflow', { where }) : t('btlog.stack_free', { where, bytes: b });
   },
   27: (a, b) => (a ? t('btlog.ident_ok', { index: b }) : t('btlog.ident_unknown')),
+  28: () => t('btlog.stale_host'),
 };
 // Test firmware: log kept in flash, 16 byte records, grouped by power-on
 export function parseBtLogFlash(dv) {

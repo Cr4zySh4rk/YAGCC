@@ -1432,6 +1432,7 @@
   "btlog.stack_overflow": "STACKÜBERLAUF ({where}): der Stack-Canary ist weg",
   "btlog.ident_ok": "Host als gespeicherte Kopplung {index} erkannt",
   "btlog.ident_unknown": "Host ist keine gespeicherte Kopplung",
+  "btlog.stale_host": "ein alter Host wollte sich neu verbinden (zuerst die Gitarre auf diesem Host entfernen)",
   "tune.tilt_switch.switch_type": "Schaltertyp",
   "tune.tilt_switch.aria_label.switch_type": "Typ des Neigungsschalters",
   "tune.tilt_switch.type_mercury": "Quecksilber- / Standard-Neigungsschalter",

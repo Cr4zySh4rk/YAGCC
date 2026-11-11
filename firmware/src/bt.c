@@ -9,11 +9,11 @@
 //
 // Pairing works like PS + Create on a PlayStation controller: hold Star power while plugging in or switching on
 // (or Star power + Plus for 5 s while running) and the guitar forgets the hosts paired with the mode it starts in,
-// takes a NEW Bluetooth identity for that mode (new static random address, new IRK; see bt_addr.h) and becomes
-// discoverable. A host that was paired before keeps a stale entry it can no longer reach: it does not find the
-// guitar under the old address, so it cannot reconnect, and the user removes the entry there. The other modes
-// keep their pairings. A new mode needs no Star power: the guitar always accepts pairing. The 5 s hold restarts
-// the guitar (watchdog reboot) so the new identity is loaded from a clean radio start.
+// keeps its Bluetooth identity (same address and IRK, so a host that pairs again replaces its entry instead of adding a
+// ghost device, like a PS5 controller) and becomes discoverable. An old host that still holds its keys and reconnects
+// during the window is refused pairing and dropped (stale host guard below): remove the guitar there to pair it again.
+// The other modes keep their pairings. A new mode needs no Star power: the guitar always accepts pairing. The 5 s hold
+// restarts the guitar (watchdog reboot) so the radio starts clean.
 // Pairing uses LE Secure Connections with the keys stored in flash, like BTstack's HID demos. Each mode has its
 // own bond list (the bond database is given a mode-specific tag range in the TLV store), so a host paired with
 // several modes keeps a working key for each of them.
@@ -70,6 +70,7 @@ void usb_mode_ids(uint16_t *vid, uint16_t *pid, uint16_t *version);
 
 #define PAIRING_TIMEOUT_MS 120000u       // discoverable for two minutes, like a game controller
 #define WINDOW_TIMEOUT_MS   60000u       // after a mode change: let an already paired host add the new mode
+#define STALE_IDLE_MS 2500u               // an old host that failed to encrypt and then stays silent is dropped after this
 #define MAX_REPORT 64
 #define MAX_DESC   600
 
@@ -102,7 +103,8 @@ enum { L_BOOT = 1, L_WORKING, L_ADV, L_CONNECT, L_ENCRYPT, L_DISCONNECT, L_JUSTW
        L_CCC,        // a: value written, b: handle (Service Changed client configuration)
        L_RESET,      // a: why the last start-up happened (RR_*), b: consecutive unclean resets
        L_STACK,      // a: where (0 connect, 1 pairing started, 2 pairing complete, 3 re-encrypted, 4 disconnect), b: stack bytes never used
-       L_IDENT };    // a: 1 host's identity resolved against a bond / 0 not, b: bond index
+       L_IDENT,      // a: 1 host's identity resolved against a bond / 0 not, b: bond index
+       L_STALE };    // 0.52 a: 1 pairing refused / 2 idle link dropped: an old host (key we no longer have) tried to reconnect in a pairing window
 #define LOG_N 48
 static struct { uint32_t t; uint8_t code, a; uint16_t b; } s_log[LOG_N];
 static uint8_t s_log_head, s_log_count;
@@ -376,17 +378,19 @@ static int mt_store(void *c, uint32_t tag, const uint8_t *d, uint32_t size) { re
 static void mt_delete(void *c, uint32_t tag) { s_tlv->delete_tag(c, map_tag(tag)); }
 static const btstack_tlv_t mode_tlv = { mt_get, mt_store, mt_delete };
 
-// Pairing mode: forget this mode's hosts completely and rotate its identity. Runs before the stack starts
-// (bt_init), so the device database scan, the IR / ER the IRK derives from and the address all start fresh.
-#define ROT_TAG(mode)  TAG4('Y', 'R', (mode), 0)    // u16 rotation counter of the mode's address
-#define PEND_TAG(mode) TAG4('Y', 'P', (mode), 0)    // pairing was asked for while USB was active: rotate at the next start
+// Pairing mode forgets this mode's hosts completely, but since 0.52 KEEPS its Bluetooth identity (address, IR/ER and so
+// the IRK), like a PS5 controller: a host that pairs again replaces its entry instead of adding a "new device"
+// (0.49-0.51 rotated the address, which left a ghost entry behind on every host for each pairing). Runs before the
+// stack starts (bt_init), so the device database scan starts empty.
+#define ROT_TAG(mode)  TAG4('Y', 'R', (mode), 0)    // u16 counter of the mode's address; written by 0.49-0.51 only, read to keep that address
+#define PEND_TAG(mode) TAG4('Y', 'P', (mode), 0)    // pairing was asked for while USB was active: forget at the next start
 static uint16_t s_rot;
 static void load_rot(void) {
     uint8_t b[2];
     int n = s_tlv ? s_tlv->get_tag(s_tlv_ctx, ROT_TAG(s_mode), b, 2) : 0;
     s_rot = n == 2 ? (uint16_t)(b[0] | (b[1] << 8)) : 0;
 }
-static void rotate_identity(void) {
+static void forget_mode_bonds(void) {
     if (!s_tlv) return;
     for (int i = 0; i < NVM_NUM_DEVICE_DB_ENTRIES; i++) {
         s_tlv->delete_tag(s_tlv_ctx, BOND_TAG(s_mode, i));
@@ -394,14 +398,22 @@ static void rotate_identity(void) {
         s_tlv->delete_tag(s_tlv_ctx, CCC_TAG(s_mode, i));
     }
     s_tlv->delete_tag(s_tlv_ctx, BOND_TAG(s_mode, 'B'));           // BTstack's database hash ('BTDB')
-    s_tlv->delete_tag(s_tlv_ctx, TAG4('S', 'I', s_mode, 'R'));     // identity root: BTstack makes a new one (new IRK)
-    s_tlv->delete_tag(s_tlv_ctx, TAG4('S', 'E', s_mode, 'R'));
-    uint8_t b[2];
-    uint16_t r = bt_next_rot(s_tlv->get_tag(s_tlv_ctx, ROT_TAG(s_mode), b, 2), b);
-    b[0] = (uint8_t)r; b[1] = (uint8_t)(r >> 8);
-    s_tlv->store_tag(s_tlv_ctx, ROT_TAG(s_mode), b, 2);
-    s_tlv->delete_tag(s_tlv_ctx, PEND_TAG(s_mode));
+    s_tlv->delete_tag(s_tlv_ctx, PEND_TAG(s_mode));                // SMIR / SMER and ROT_TAG stay: same IRK, same address
 }
+
+// Stale host guard (0.52). Per connection: what the host did first on the security level (bt_policy.h). In a pairing
+// window a host that starts with an encryption attempt we have no key for (we forgot its bond) believes it is still
+// bonded: it is the previous host (say the Mac) reconnecting on its own. BTstack answers it with a negative LTK reply
+// and raises no SM event for it, so the LE LTK request itself is the signal. Such a link is refused pairing (Pairing
+// Failed) and dropped, so it can't silently re-pair and take the guitar from the system being paired.
+static bt_first_sec_t s_first = BT_SEC_NONE;
+static uint32_t s_miss_ms;               // when the first LTK request of this link came; 0 = none outstanding
+static bool s_stale;                     // this link was refused pairing
+static void sec_note(bt_sec_event_t ev) {
+    s_first = bt_first_sec_next(s_first, ev);
+    s_miss_ms = s_first == BT_SEC_REENC_MISSING_KEY ? (s_miss_ms ? s_miss_ms : (to_ms_since_boot(get_absolute_time()) | 1u)) : 0;
+}
+static void sec_reset(void) { s_first = BT_SEC_NONE; s_miss_ms = 0; s_stale = false; }
 
 // Only the running mode: every mode is its own Bluetooth device, so pairing one mode again (Star power at
 // power-on) must not cost the others their pairings. Until v0.22 this wiped every mode, and pairing each
@@ -511,6 +523,7 @@ static void on_connected(uint8_t status, hci_con_handle_t h, uint8_t peer_type, 
     if (status == ERROR_CODE_SUCCESS) {
         if (h == s_con) return;
         s_con = h;
+        sec_reset();
     } else {
         if (now - fail_ms < 5) return;
         fail_ms = now;
@@ -572,6 +585,7 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
                 uint8_t legacy = hci_subevent_le_long_term_key_request_get_encryption_diversifier(packet) != 0;
                 for (int i = 5; i < 13; i++) if (packet[i]) legacy = 1;
                 blog(L_LTK, legacy, hci_subevent_le_long_term_key_request_get_encryption_diversifier(packet));
+                sec_note(BT_SEC_EV_LTK_REQUEST);   // a hit shows up as SM_EVENT_REENCRYPTION_STARTED right after
             }
             break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
@@ -580,16 +594,19 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             if (hci_event_disconnection_complete_get_connection_handle(packet) == s_sc_handle) { s_sc_handle = HCI_CON_HANDLE_INVALID; s_sc_index = -1; }
             s_sc_cccd = 0;
             s_con = HCI_CON_HANDLE_INVALID;
+            sec_reset();
             s_connected = false;
             set_adv(s_pairing);
             rgb_set_bt(s_pairing && !s_paused ? RGB_BT_PAIRING : RGB_BT_OFF);
             break;
         case SM_EVENT_PAIRING_STARTED:
             blog(L_SMSTART, 0, 0);
+            sec_note(BT_SEC_EV_PAIRING_REQUEST);
             blog_stack(1);
             break;
         case SM_EVENT_REENCRYPTION_STARTED:
             blog(L_SMSTART, 1, 0);
+            sec_note(BT_SEC_EV_REENC_STARTED);   // we had the key
             break;
         case SM_EVENT_IDENTITY_RESOLVING_SUCCEEDED:
             blog(L_IDENT, 1, sm_event_identity_resolving_succeeded_get_index(packet));
@@ -619,15 +636,22 @@ static void packet_handler(uint8_t type, uint16_t channel, uint8_t *packet, uint
             break;
         case SM_EVENT_JUST_WORKS_REQUEST:
             blog(L_JUSTWORKS, s_pairing, 0);
-            // always accept (as Santroller does): a host whose key went stale can pair again instead of being
-            // locked out; "pairing mode" forgets old hosts and advertises faster
-            sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
+            // accept (as Santroller does): a host whose key went stale can pair again instead of being locked
+            // out; "pairing mode" forgets old hosts and advertises faster. Except the old host of a pairing window.
+            if (bt_accept_pairing(s_pairing, s_first)) {
+                sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
+            } else {
+                s_stale = true;
+                blog(L_STALE, 1, 0);
+                sm_bonding_decline(sm_event_just_works_request_get_handle(packet));   // Pairing Failed (unspecified reason)
+            }
             break;
         case SM_EVENT_PAIRING_COMPLETE: {
             uint8_t st = sm_event_pairing_complete_get_status(packet);
             int idx = sm_le_device_index(sm_event_pairing_complete_get_handle(packet));
             blog(L_PAIRED, st, sm_event_pairing_complete_get_reason(packet));
             blog_stack(2);
+            if (s_stale && st != ERROR_CODE_SUCCESS) { gap_disconnect(sm_event_pairing_complete_get_handle(packet)); break; }   // refused above; the failure PDU is out
             if (st == ERROR_CODE_SUCCESS) {
                 s_pairing = false;
                 hash_remember(idx);   // a new bond discovers everything
@@ -748,7 +772,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     usb_mode_ids(&vid, &pid, &ver);
     pico_unique_board_id_t uid;
     pico_get_unique_board_id(&uid);
-    bd_addr_t addr;                                  // static random address of the mode, rotated by pairing mode
+    bd_addr_t addr;                                  // static random address of the mode (never rotated since 0.52)
     // v0.17: new addresses. Windows can keep a hidden, stale record (with an old legacy key) for an address it
     // was once paired with; it then keeps trying that key alongside the current one and the link fails with a
     // MIC error (0x3D) on every other attempt. Fresh addresses leave any such record behind for good.
@@ -773,7 +797,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
         }
         uint8_t pend[1];
         bool pending = s_tlv->get_tag(s_tlv_ctx, PEND_TAG(s_mode), pend, 1) == 1;
-        if (pair || pending) { rotate_identity(); s_want_pair = true; }   // before the scan below and before the stack starts
+        if (pair || pending) { forget_mode_bonds(); s_want_pair = true; }   // before the scan below and before the stack starts
         le_device_db_tlv_configure(&mode_tlv, s_tlv_ctx);
         btstack_tlv_set_instance(&mode_tlv, s_tlv_ctx);   // SM keys and the ATT server's state, per mode too
     }
@@ -810,8 +834,8 @@ void bt_init(bool enabled, bool pair, bool open_window) {
 }
 
 // Star power + Plus held for 5 s. Returns true when the caller must restart the guitar (watchdog reboot with
-// the pairing flag): bt_init then rotates the identity before the stack starts. Not restartable (a USB host is
-// using the guitar): the hosts are forgotten now and the new identity is applied at the next start.
+// the pairing flag): bt_init then forgets the mode's hosts before the stack starts. Not restartable (a USB host is
+// using the guitar): the hosts are forgotten now and the stored flag repeats it at the next start.
 bool bt_start_pairing(bool restartable) {
     if (!s_running) { bt_init(true, true, false); return false; }
     if (s_wiimote) { wii_forget(); return restartable; }   // the console is forgotten; SYNC pairs a new one
@@ -835,6 +859,13 @@ void bt_task(void) {
         return;
     }
     if (!s_running || !s_pairing) return;
+    if (s_miss_ms && (int32_t)(to_ms_since_boot(get_absolute_time()) - s_miss_ms) > STALE_IDLE_MS) {
+        // the old host's link stays up without asking to pair (macOS does): it would hold the only connection
+        async_context_t *c2 = cyw43_arch_async_context();
+        async_context_acquire_lock_blocking(c2);
+        if (s_miss_ms && s_con != HCI_CON_HANDLE_INVALID) { s_miss_ms = 0; s_stale = true; blog(L_STALE, 2, 0); gap_disconnect(s_con); }
+        async_context_release_lock(c2);
+    }
     if ((int32_t)(to_ms_since_boot(get_absolute_time()) - s_pair_until) <= 0) return;
     async_context_t *ctx = cyw43_arch_async_context();     // nobody paired in time: stop being discoverable
     async_context_acquire_lock_blocking(ctx);

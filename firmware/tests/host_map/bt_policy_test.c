@@ -27,6 +27,33 @@ int main(void) {
     CHECK(bt_adv_discoverable(has_bond, false));
     has_bond = bt_ltk_valid(k) && bt_bond_survives(0x00, true);   // a completed pairing
     CHECK(!bt_adv_discoverable(has_bond, false));
+    // stale host guard: pairing is refused only inside a window, for a link whose first security action was a re-encryption
+    // with a key we no longer have
+    bt_first_sec_t f;
+    for (int w = 0; w < 2; w++) {
+        CHECK(bt_accept_pairing(w, BT_SEC_NONE));
+        CHECK(bt_accept_pairing(w, BT_SEC_REENC_OK));
+        CHECK(bt_accept_pairing(w, BT_SEC_PAIRING_REQUEST));
+    }
+    CHECK(!bt_accept_pairing(true, BT_SEC_REENC_MISSING_KEY));
+    CHECK(bt_accept_pairing(false, BT_SEC_REENC_MISSING_KEY));       // outside a window a host that lost its keys pairs again
+    // old Mac: LTK request nobody answers, then it pairs by itself -> refused; the Pairing Request does not make it a fresh host
+    f = bt_first_sec_next(BT_SEC_NONE, BT_SEC_EV_LTK_REQUEST);
+    CHECK(f == BT_SEC_REENC_MISSING_KEY);
+    f = bt_first_sec_next(f, BT_SEC_EV_PAIRING_REQUEST);
+    CHECK(f == BT_SEC_REENC_MISSING_KEY && !bt_accept_pairing(true, f));
+    // fresh Windows: opens with the Pairing Request (even if it asks for encryption after) -> accepted
+    f = bt_first_sec_next(BT_SEC_NONE, BT_SEC_EV_PAIRING_REQUEST);
+    f = bt_first_sec_next(f, BT_SEC_EV_LTK_REQUEST);
+    CHECK(f == BT_SEC_PAIRING_REQUEST && bt_accept_pairing(true, f));
+    // bonded host reconnecting inside a window: LTK request answered (REENC_STARTED) -> not stale
+    f = bt_first_sec_next(BT_SEC_NONE, BT_SEC_EV_LTK_REQUEST);
+    f = bt_first_sec_next(f, BT_SEC_EV_REENC_STARTED);
+    CHECK(f == BT_SEC_REENC_OK && bt_accept_pairing(true, f));
+    // host with a key we hold that pairs directly: REENC_STARTED/COMPLETE(missing) then PAIRING_STARTED -> accepted
+    f = bt_first_sec_next(BT_SEC_NONE, BT_SEC_EV_REENC_STARTED);
+    f = bt_first_sec_next(f, BT_SEC_EV_PAIRING_REQUEST);
+    CHECK(f == BT_SEC_REENC_OK && bt_accept_pairing(true, f));
     if (fails) return 1;
     puts("bt_policy_test OK");
     return 0;

@@ -1,4 +1,4 @@
-// Host test for the Bluetooth identity rotation (bt_addr.h): pairing mode must give a new address.
+// Host test for the Bluetooth identity (bt_addr.h). Since 0.52 pairing mode does not rotate it: the counter is only read.
 #include <stdio.h>
 #include <string.h>
 #include "bt_addr.h"
@@ -25,12 +25,9 @@ int main(void) {
     }
     bt_identity_addr(uid, 3, 5, a); bt_identity_addr(uid, 3, 6, b);
     CHECK(memcmp(a, b, 6) != 0);
-    // counter: missing / wrong-sized storage starts at 1, otherwise +1, wraps
-    uint8_t s2[2] = {0x34, 0x12};
-    CHECK(bt_next_rot(-1, 0) == 1);
-    CHECK(bt_next_rot(0, 0) == 1);
-    CHECK(bt_next_rot(2, s2) == 0x1235);
-    s2[0] = s2[1] = 0xFF; CHECK(bt_next_rot(2, s2) == 0);
+    // 0.49-0.51 users keep the address they reached (their counter is read as is); 0.52 never changes a counter
+    bt_identity_addr(uid, 3, 7, a); bt_identity_addr(uid, 3, 7, b);
+    CHECK(memcmp(a, b, 6) == 0);
     if (fails) return 1;
     puts("bt_addr_test OK");
     return 0;

@@ -1436,6 +1436,7 @@
   "btlog.stack_overflow": "DESBORDAMIENTO DE PILA ({where}): el canario de pila ha desaparecido",
   "btlog.ident_ok": "host reconocido como vínculo guardado {index}",
   "btlog.ident_unknown": "el host no es un vínculo guardado",
+  "btlog.stale_host": "un host anterior intentó reconectar (primero elimina la guitarra en ese host)",
   "tune.tilt_switch.switch_type": "Tipo de interruptor",
   "tune.tilt_switch.aria_label.switch_type": "Tipo de interruptor de inclinación",
   "tune.tilt_switch.type_mercury": "Interruptor de inclinación de mercurio / genérico",
