@@ -1440,5 +1440,11 @@
   "tune.tilt_switch.settle_hint": "기울임 상태가 바뀌기 전에 스위치가 가만히 있어야 하는 시간입니다. 자동은 스위치 종류의 기본값을 사용합니다(SW-520D 약 40 ms, 수은은 일반 디바운스).",
   "name.since_this_whole_name": "0.51부터는 이것이 이름 전체입니다. 뒤에 아무것도 붙지 않습니다(0.46~0.50에서는 “Guitar Controller” 등이 붙었습니다).",
   "backup.section.tiltsw.name": "틸트 스위치 종류",
-  "backup.section.tiltsw.desc": "수은 또는 SW-520D, 그리고 틸트 스위치의 안정화 시간"
+  "backup.section.tiltsw.desc": "수은 또는 SW-520D, 그리고 틸트 스위치의 안정화 시간",
+  "tune.strum_guard.title": "스트럼 해제 가드",
+  "tune.strum_guard.hint": "스트럼 바에서 손을 뗀 직후 잠시 동안 반대 방향 스트럼을 무시하여, 바가 중앙을 지나 튕겨도 불필요한 스트럼으로 인식되지 않게 합니다. 그래도 스트럼이 두 번 인식되면 값을 높이고, 매우 빠른 교대 스트럼이 늦게 느껴지면 값을 낮추세요.",
+  "tune.strum_guard.needs_update": "이 기능을 사용하려면 펌웨어를 0.53 이상으로 업데이트하세요.",
+  "tune.strum_guard.ms": "{ms} ms",
+  "backup.section.strumguard.name": "스트럼 해제 가드",
+  "backup.section.strumguard.desc": "스트럼 바를 놓은 뒤 반대 방향 스트럼을 무시하는 시간"
 }

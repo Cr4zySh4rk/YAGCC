@@ -1448,5 +1448,11 @@
   "tune.tilt_switch.settle_hint": "Quanto tempo a chave precisa ficar parada antes de o estado de inclinação mudar. Auto usa o padrão do tipo de chave (SW-520D cerca de 40 ms, mercúrio o debounce normal).",
   "name.since_this_whole_name": "Desde a 0.51 este é o nome completo: nada mais é acrescentado depois dele (da 0.46 à 0.50 era acrescentado “Guitar Controller” e similares).",
   "backup.section.tiltsw.name": "Tipo de chave de inclinação",
-  "backup.section.tiltsw.desc": "Mercúrio ou SW-520D, e o tempo de estabilização da chave de inclinação"
+  "backup.section.tiltsw.desc": "Mercúrio ou SW-520D, e o tempo de estabilização da chave de inclinação",
+  "tune.strum_guard.title": "Proteção ao soltar o strum",
+  "tune.strum_guard.hint": "Ignora o strum oposto por um instante depois que você solta a barra de strum, para que o quique da barra passando do centro não registre um strum a mais. Aumente se ainda aparecerem strums duplos; diminua se o strum alternado muito rápido parecer atrasado.",
+  "tune.strum_guard.needs_update": "Atualize o firmware para a versão 0.53 ou mais recente para usar isto.",
+  "tune.strum_guard.ms": "{ms} ms",
+  "backup.section.strumguard.name": "Proteção ao soltar o strum",
+  "backup.section.strumguard.desc": "Por quanto tempo o strum oposto é ignorado depois que a barra de strum é solta"
 }

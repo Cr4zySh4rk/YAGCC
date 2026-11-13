@@ -1448,5 +1448,11 @@
   "tune.tilt_switch.settle_hint": "Durée pendant laquelle l’interrupteur doit rester stable avant que l’état d’inclinaison change. Auto utilise la valeur par défaut du type (SW-520D environ 40 ms, mercure l’antirebond habituel).",
   "name.since_this_whole_name": "Depuis la 0.51, c’est le nom complet : plus rien n’est ajouté derrière (de la 0.46 à la 0.50, « Guitar Controller » et similaires étaient ajoutés).",
   "backup.section.tiltsw.name": "Type d’interrupteur d’inclinaison",
-  "backup.section.tiltsw.desc": "Mercure ou SW-520D, et temps de stabilisation de l’interrupteur d’inclinaison"
+  "backup.section.tiltsw.desc": "Mercure ou SW-520D, et temps de stabilisation de l’interrupteur d’inclinaison",
+  "tune.strum_guard.title": "Garde au relâchement du strum",
+  "tune.strum_guard.hint": "Ignore le strum opposé un court instant après que vous avez relâché la barre de strum, afin que le rebond de la barre au-delà du centre n'enregistre pas un strum en trop. Augmentez la valeur si vous avez encore des doubles strums ; diminuez-la si le strum alterné très rapide semble en retard.",
+  "tune.strum_guard.needs_update": "Mettez le firmware à jour en 0.53 ou plus récent pour utiliser cette option.",
+  "tune.strum_guard.ms": "{ms} ms",
+  "backup.section.strumguard.name": "Garde au relâchement du strum",
+  "backup.section.strumguard.desc": "Durée pendant laquelle le strum opposé est ignoré après le relâchement de la barre de strum"
 }

@@ -1440,5 +1440,11 @@
   "tune.tilt_switch.settle_hint": "开关必须保持不动多久，倾斜状态才会改变。自动使用该开关类型的默认值（SW-520D 约 40 ms，水银开关为常规消抖）。",
   "name.since_this_whole_name": "从 0.51 起，这里填的就是完整名称：后面不会再追加任何内容（0.46 至 0.50 会追加“Guitar Controller”等）。",
   "backup.section.tiltsw.name": "倾斜开关类型",
-  "backup.section.tiltsw.desc": "水银或 SW-520D，以及倾斜开关的稳定时间"
+  "backup.section.tiltsw.desc": "水银或 SW-520D，以及倾斜开关的稳定时间",
+  "tune.strum_guard.title": "拨弦释放保护",
+  "tune.strum_guard.hint": "松开拨弦杆后的一小段时间内忽略相反方向的拨弦，这样拨弦杆越过中心点回弹时就不会多出一次拨弦。如果仍然出现重复拨弦，请调高；如果极快的交替拨弦感觉延迟，请调低。",
+  "tune.strum_guard.needs_update": "请将固件更新到 0.53 或更高版本以使用此功能。",
+  "tune.strum_guard.ms": "{ms} ms",
+  "backup.section.strumguard.name": "拨弦释放保护",
+  "backup.section.strumguard.desc": "松开拨弦杆后忽略相反方向拨弦的时长"
 }

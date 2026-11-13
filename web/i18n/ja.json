@@ -1440,5 +1440,11 @@
   "tune.tilt_switch.settle_hint": "傾き状態が切り替わるまで、スイッチが静止していなければならない時間です。自動はスイッチの種類ごとの既定値になります（SW-520D は約 40 ms、水銀は通常のデバウンス）。",
   "name.since_this_whole_name": "0.51 以降、これは名前そのものです。後ろには何も付きません（0.46〜0.50 では「Guitar Controller」などが付いていました）。",
   "backup.section.tiltsw.name": "チルトスイッチの種類",
-  "backup.section.tiltsw.desc": "水銀または SW-520D、およびチルトスイッチの整定時間"
+  "backup.section.tiltsw.desc": "水銀または SW-520D、およびチルトスイッチの整定時間",
+  "tune.strum_guard.title": "ストラム解放ガード",
+  "tune.strum_guard.hint": "ストラムバーを放した直後の短い間、反対方向のストラムを無視します。バーが中央を行き過ぎて跳ね返っても、余計なストラムとして認識されません。それでもダブルストラムになる場合は値を上げ、高速の交互ストラムが遅れて感じる場合は値を下げてください。",
+  "tune.strum_guard.needs_update": "この機能を使うにはファームウェアを 0.53 以降に更新してください。",
+  "tune.strum_guard.ms": "{ms} ms",
+  "backup.section.strumguard.name": "ストラム解放ガード",
+  "backup.section.strumguard.desc": "ストラムバーを放した後、反対方向のストラムを無視する時間"
 }

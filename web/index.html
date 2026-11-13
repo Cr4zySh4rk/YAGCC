@@ -172,6 +172,10 @@
             <input type="range" id="debT" min="0" max="250" step="5"></div>
           <div class="opt"><div><h3 data-i18n="tune.shared_strum_lockout">Shared strum lockout</h3><p class="dim" data-i18n="tune.up_down_share_one_window">Up and down share one window, so a bouncing strum bar can't fire both.</p></div>
             <label class="switch"><input type="checkbox" id="combStrum"><i></i></label></div>
+          <div class="slider-row"><label for="strumGuard" data-i18n="tune.strum_guard.title">Strum release guard</label><output class="val" id="strumGuardVal"></output>
+            <input type="range" id="strumGuard" min="0" max="40" step="1"></div>
+          <p class="dim small" data-i18n="tune.strum_guard.hint">Ignores the opposite strum for a moment after you let go of the strum bar, so the bar bouncing past centre doesn't register an extra strum. Raise it if you still get double strums; lower it if very fast alternate strumming feels late.</p>
+          <p class="dim small" id="strumGuardNote" hidden data-i18n="tune.strum_guard.needs_update">Update the firmware to 0.53 or newer to use this.</p>
         </div>
         <div class="panel">
           <h2 data-i18n="common.whammy">Whammy</h2>

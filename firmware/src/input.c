@@ -11,6 +11,7 @@
 #include "ext_config.h"
 #include "padmap.h"
 #include "tilt_filter.h"
+#include "strum_guard.h"
 
 // ---- detection grade pin state (fixed debounce, used for pin discovery) ----
 #define DETECT_DEBOUNCE_US 3000
@@ -36,6 +37,7 @@ typedef struct {
 #define PRESS_CONFIRM_US    200u
 #define RELEASE_CONFIRM_US  1000u
 static deb_t slot[NUM_SLOTS];
+static strum_guard_t strum_grd;    // 0.53: strum release guard
 static tilt_filter_t tilt_flt;     // 0.51: SW-520D / explicit settle time filter of the tilt switch
 static uint32_t strum_lock_until;
 static bool strum_lock_active;
@@ -124,8 +126,12 @@ void input_poll(void) {
     bool combined = (g_cfg.flags & CFG_FLAG_COMBINED_STRUM) && win;
 
     bool up_prev = slot[F_STRUM_UP].out, down_prev = slot[F_STRUM_DOWN].out;
+    // 0.53 strum release guard: the bar bouncing past centre on release must not start the opposite strum
+    bool guard_up, guard_down;
+    strum_guard_step(&strum_grd, raw_for_slot(all, F_STRUM_UP), raw_for_slot(all, F_STRUM_DOWN), up_prev, down_prev, now,
+                     strum_guard_ms(g_ext.strum_guard), &guard_up, &guard_down);
     for (int s = 0; s < NUM_SLOTS; s++) {
-        bool raw = raw_for_slot(all, s);
+        bool raw = s == F_STRUM_UP ? guard_up : s == F_STRUM_DOWN ? guard_down : raw_for_slot(all, s);
         if (combined && (s == F_STRUM_UP || s == F_STRUM_DOWN) &&
             strum_lock_active && (int32_t)(now - strum_lock_until) < 0 &&
             !slot[F_STRUM_UP].out && !slot[F_STRUM_DOWN].out) {

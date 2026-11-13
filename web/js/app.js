@@ -1,4 +1,4 @@
-import { TILT_SW_FILTER_MAX, BT_SLEEP_CHOICES, btSleepByte, DEV_NAME_MAX, DEV_NAME_DEFAULT, devNameBadChars, checkDevName,
+import { TILT_SW_FILTER_MAX, strumGuardMs, strumGuardByte, STRUM_GUARD_DEFAULT_MS, BT_SLEEP_CHOICES, btSleepByte, DEV_NAME_MAX, DEV_NAME_DEFAULT, devNameBadChars, checkDevName,
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName, modeBaseName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
@@ -93,6 +93,7 @@ function assignSelect(src, label) {
   return `<select data-assign="${src}" aria-label="${t('assign.aria_label.assign', { label })}">${extra}${grp(t('assign.guitar'), guitar)}${pads.join('')}</select>`;
 }
 // firmware 0.44+: a 0..1 source (tilt switch, sensors) on a stick axis can rest at the centre or at the opposite end
+const strumGuardOk = () => fwAtLeast(53) && !!state.cfg?.ext;
 const btSleepOk = () => fwAtLeast(45) && !!state.cfg?.ext;
 const btSleepLabel = (v) => (v === 255 ? t('bt.never') : t('app.bt_sleep.minutes', { n: v || 2 }));
 const rangeOk = () => fwAtLeast(44) && !!state.cfg?.ext?.range;
@@ -1560,8 +1561,14 @@ function buildTune() {
     $('#debTVal').textContent = (c.debounce100us / 10).toFixed(1) + ' ms';
     $('#wSmoothVal').textContent = c.whammySmooth === 0 ? t('common.off') : String(c.whammySmooth);
     $('#wDeadVal').textContent = c.whammyDeadzone + ' %';
+    const sg = $('#strumGuard');
+    sg.disabled = !strumGuardOk();
+    $('#strumGuardNote').hidden = strumGuardOk() || !state.info;
+    const gms = strumGuardOk() ? +sg.value : strumGuardMs(0);
+    $('#strumGuardVal').textContent = !strumGuardOk() ? '' : gms === 0 ? t('common.off') : t('tune.strum_guard.ms', { ms: gms });
     document.querySelectorAll('#debPresets [data-deb]').forEach((b) => b.classList.toggle('on', +b.dataset.deb === c.debounce100us));
   };
+  $('#strumGuard').value = strumGuardOk() ? strumGuardMs(c.ext.strumGuard) : STRUM_GUARD_DEFAULT_MS;
   dt.value = c.debounce100us; ws.value = c.whammySmooth; wd.value = c.whammyDeadzone;
   $('#combStrum').checked = c.combinedStrum; $('#wInv').checked = c.whammyInvert;
   const PRESETS = [[t('common.off_2'), 0], [t('tune.fast'), 20], [t('tune.balanced'), 50], [t('tune.safe'), 100], [t('tune.worn_switches'), 200]];
@@ -1570,6 +1577,7 @@ function buildTune() {
   dt.oninput = () => { c.debounce100us = +dt.value; live(); };
   ws.oninput = () => { c.whammySmooth = +ws.value; live(); };
   wd.oninput = () => { c.whammyDeadzone = +wd.value; live(); };
+  $('#strumGuard').oninput = (e) => { if (strumGuardOk()) { c.ext.strumGuard = strumGuardByte(+e.target.value); live(); } };
   $('#combStrum').onchange = (e) => { c.combinedStrum = e.target.checked; live(); };
   $('#wInv').onchange = (e) => { c.whammyInvert = e.target.checked; live(); };
   $('#debPresets').onclick = (e) => { const b = e.target.closest('[data-deb]'); if (b) { c.debounce100us = +b.dataset.deb; dt.value = c.debounce100us; live(); } };

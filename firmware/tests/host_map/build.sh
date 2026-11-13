@@ -33,3 +33,6 @@ ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$BP" bt_policy_test.c
 TF="${TMPDIR:-/tmp}/yagcc_tilt_filter_test"
 ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$TF" tilt_filter_test.c ../../src/ext_config.c
 "$TF"
+SG="${TMPDIR:-/tmp}/yagcc_strum_guard_test"
+${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$SG" strum_guard_test.c ../../src/ext_config.c
+"$SG"

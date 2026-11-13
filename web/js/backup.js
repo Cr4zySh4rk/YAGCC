@@ -32,6 +32,7 @@ export const SECTIONS = localized(() => ([
     keys: ['btSleep'] },
   { id: 'devname', ext: true, name: t('backup.section.devname.name'), desc: t('backup.section.devname.desc'), keys: ['devName'] },
   { id: 'tiltsw', ext: true, name: t('backup.section.tiltsw.name'), desc: t('backup.section.tiltsw.desc'), keys: ['tiltSwType', 'tiltSwFilter'] },
+  { id: 'strumguard', ext: true, name: t('backup.section.strumguard.name'), desc: t('backup.section.strumguard.desc'), keys: ['strumGuard'] },
 ]));
 
 const isPin = (v) => v === PIN_NONE || (Number.isInteger(v) && v >= 0 && v < NUM_DIGITAL_PINS);
@@ -97,13 +98,14 @@ Object.assign(CHECK, {
   stickFlags: (v) => isInt(v, 0, 7), deadzone: (v) => isInt(v, 0, 50),
   devName: (v) => devNameValid(v),
   tiltSwType: (v) => v === 0 || v === 1, tiltSwFilter: (v) => isInt(v, 0, 250),
+  strumGuard: (v) => v === 0 || v === 255 || isInt(v, 1, 40),
   btSleep: (v) => v === 0 || v === 255 || isInt(v, 1, 60),
   range: (v) => Array.isArray(v) && v.length === 4 && v.every((x) => x === 0 || x === 1),
   curve: (v) => Array.isArray(v) && v.length === 3 && v.every((x) => isInt(x, -100, 100)),
   cal: (v) => Array.isArray(v) && v.length === 6 && v.every((x) => isInt(x, 0, 4095)) && v[0] < v[1] && v[1] < v[2] && v[3] < v[4] && v[4] < v[5],
   map: (v) => Array.isArray(v) && v.length === NUM_MODE_ROWS && v.every((r) => Array.isArray(r) && r.length === MAP_ROW && r.every((x, i) => (i >= NUM_SRC ? x === 255 : x === 0 || x === 255 || isInt(x, 1, 31)))),
 });
-Object.assign(LABELS, { extPins: t('backup.d_pad_select_home_pins'), stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: t('backup.stick_dead_zone'), cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: t('backup.bluetooth_sleep_timer'), devName: 'controller name', tiltSwType: t('tune.tilt_switch.switch_type'), tiltSwFilter: t('tune.tilt_switch.settle_time') });
+Object.assign(LABELS, { extPins: t('backup.d_pad_select_home_pins'), stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: t('backup.stick_dead_zone'), cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: t('backup.bluetooth_sleep_timer'), devName: 'controller name', tiltSwType: t('tune.tilt_switch.switch_type'), tiltSwFilter: t('tune.tilt_switch.settle_time'), strumGuard: t('tune.strum_guard.title') });
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));
 
 export function makeBackup(cfg, info) {

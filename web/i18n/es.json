@@ -1448,5 +1448,11 @@
   "tune.tilt_switch.settle_hint": "Cuánto tiempo tiene que quedarse quieto el interruptor antes de que cambie el estado de inclinación. Auto usa el valor por defecto del tipo (SW-520D unos 40 ms, mercurio el antirrebote habitual).",
   "name.since_this_whole_name": "Desde la 0.51 este es el nombre completo: ya no se añade nada después (de la 0.46 a la 0.50 se añadía “Guitar Controller” y similares).",
   "backup.section.tiltsw.name": "Tipo de interruptor de inclinación",
-  "backup.section.tiltsw.desc": "Mercurio o SW-520D, y el tiempo de estabilización del interruptor de inclinación"
+  "backup.section.tiltsw.desc": "Mercurio o SW-520D, y el tiempo de estabilización del interruptor de inclinación",
+  "tune.strum_guard.title": "Protección al soltar el strum",
+  "tune.strum_guard.hint": "Ignora el strum contrario durante un instante después de soltar la barra de strum, para que el rebote de la barra al pasar del centro no registre un strum de más. Súbelo si todavía te salen strums dobles; bájalo si el strum alterno muy rápido se siente con retraso.",
+  "tune.strum_guard.needs_update": "Actualiza el firmware a la 0.53 o posterior para usar esto.",
+  "tune.strum_guard.ms": "{ms} ms",
+  "backup.section.strumguard.name": "Protección al soltar el strum",
+  "backup.section.strumguard.desc": "Cuánto tiempo se ignora el strum contrario después de soltar la barra de strum"
 }

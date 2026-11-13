@@ -1444,5 +1444,11 @@
   "tune.tilt_switch.settle_hint": "How long the switch has to hold still before the tilt state changes. Auto uses the default of the switch type (SW-520D about 40 ms, mercury the usual debounce).",
   "name.since_this_whole_name": "Since 0.51 this is the whole name: nothing is added after it any more (0.46 to 0.50 appended “Guitar Controller” and similar).",
   "backup.section.tiltsw.name": "Tilt switch type",
-  "backup.section.tiltsw.desc": "Mercury or SW-520D, and the settle time of the tilt switch"
+  "backup.section.tiltsw.desc": "Mercury or SW-520D, and the settle time of the tilt switch",
+  "tune.strum_guard.title": "Strum release guard",
+  "tune.strum_guard.hint": "Ignores the opposite strum for a moment after you let go of the strum bar, so the bar bouncing past centre doesn't register an extra strum. Raise it if you still get double strums; lower it if very fast alternate strumming feels late.",
+  "tune.strum_guard.needs_update": "Update the firmware to 0.53 or newer to use this.",
+  "tune.strum_guard.ms": "{ms} ms",
+  "backup.section.strumguard.name": "Strum release guard",
+  "backup.section.strumguard.desc": "How long the opposite strum is ignored after the strum bar is released"
 }

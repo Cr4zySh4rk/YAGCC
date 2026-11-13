@@ -1444,5 +1444,11 @@
   "tune.tilt_switch.settle_hint": "Wie lange der Schalter ruhig bleiben muss, bevor sich der Neigungszustand ändert. Auto nimmt den Standard des Schaltertyps (SW-520D etwa 40 ms, Quecksilber die übliche Entprellung).",
   "name.since_this_whole_name": "Seit 0.51 ist das der ganze Name: dahinter wird nichts mehr angehängt (0.46 bis 0.50 hängten „Guitar Controller“ und Ähnliches an).",
   "backup.section.tiltsw.name": "Typ des Neigungsschalters",
-  "backup.section.tiltsw.desc": "Quecksilber oder SW-520D und die Beruhigungszeit des Neigungsschalters"
+  "backup.section.tiltsw.desc": "Quecksilber oder SW-520D und die Beruhigungszeit des Neigungsschalters",
+  "tune.strum_guard.title": "Strum-Loslass-Schutz",
+  "tune.strum_guard.hint": "Ignoriert den entgegengesetzten Strum einen Moment lang, nachdem du die Strum-Leiste losgelassen hast, damit ein Zurückfedern der Leiste über die Mitte hinaus keinen zusätzlichen Strum auslöst. Erhöhe den Wert, wenn du noch doppelte Strums bekommst; senke ihn, wenn sehr schnelles abwechselndes Strummen verzögert wirkt.",
+  "tune.strum_guard.needs_update": "Aktualisiere die Firmware auf 0.53 oder neuer, um dies zu nutzen.",
+  "tune.strum_guard.ms": "{ms} ms",
+  "backup.section.strumguard.name": "Strum-Loslass-Schutz",
+  "backup.section.strumguard.desc": "Wie lange der entgegengesetzte Strum nach dem Loslassen der Strum-Leiste ignoriert wird"
 }

@@ -195,6 +195,8 @@ YAGCC uses a *lockout + glitch filter* engine, designed after reading how Santro
 
 The only knob is the lockout time (presets from Off to 20 ms, or a slider up to 25 ms). Inputs are sampled at up to 10 kHz.
 
+**Strum release guard (0.53).** When the strum bar is let go it can overshoot the centre and briefly close the *opposite* microswitch, which registered as an extra strum (a held down strum "bouncing" an up strum). The lockout above can't catch that, because it is a different switch. After a strum direction is physically released, the opposite direction can't start a press until a guard time after that release (default 15 ms, on by default). If the opposite switch is still held when the guard ends it is accepted then, so a real fast alternate strum is only delayed by up to the guard time and never dropped, while a bounce shorter than the guard is ignored. Pressing both directions at once is unchanged, and a direction that is already pressed is never affected. It works on the raw switch samples, so a bounce within about a millisecond of the release is caught too. Tune page, *Strum release guard* slider: *Off*, or 1..40 ms; raise it if you still get double strums, lower it if very fast alternate strumming feels late. Needs firmware 0.53 or newer (the slider is disabled with a note on older firmware). Ext byte 356 `strum_guard`: 0 = default (15 ms), 1..40 = ms, 255 = off; anything else makes the ext page invalid. Old configs hold 0, so updating turns the guard on at 15 ms. Backups include it (section *Strum release guard*). Code: `firmware/src/strum_guard.h`, tested on a PC in `firmware/tests/host_map/strum_guard_test.c`.
+
 ## Test page, per-mode mapping and extra controls (0.42)
 
 Needs firmware 0.42 or newer; older firmware simply doesn't show any of this.
@@ -372,6 +374,6 @@ The SW-520D is a cheap ball tilt switch: two legs, a metal ball closes the conta
 * Filter (`firmware/src/tilt_filter.h`, used by `input.c`, tested on a PC in `firmware/tests/host_map/tilt_filter_test.c`): type 0 with settle 0 keeps the old lockout debouncer (at least 20 ms). Otherwise the tilt state changes only after the raw pin (already inverted for a normally closed switch) has been stable for the settle time, separate from the fret debounce. Type 1 additionally runs a majority window with hysteresis in front: 8 samples 1 ms apart, high at 6 or more, low at 2 or fewer, in between it holds, so a rattling ball while strumming does not flicker star power; the default settle time is 40 ms. The filtered state is what every tilt switch consumer uses (Acts as, Assign to and the status report).
 * Configurator (firmware 0.51+, hidden on older firmware): *Switch type* (*Mercury / generic tilt switch*, *SW-520D ball tilt switch*, with the wiring and mounting hint for the SW-520D) in Setup's tilt step and the Tune *Tilt switch* panel, and with **Advanced** on a *Settle time* slider (*Auto* at 0, otherwise 1..250 ms; a non-default value stays visible). The live *Tilt: active* indicator keeps working. Backups include both values (section *Tilt switch type*).
 
-## Ext page summary (0.51)
+## Ext page summary (0.53)
 
-Bytes 328..353 `dev_name` (26, NUL padded), 354 `tilt_sw_type`, 355 `tilt_sw_filter_ms`, 356..507 reserved 0, 508 crc32.
+Bytes 328..353 `dev_name` (26, NUL padded), 354 `tilt_sw_type`, 355 `tilt_sw_filter_ms`, 356 `strum_guard` (0.53: 0 = default 15 ms, 1..40 ms, 255 = off), 357..507 reserved 0, 508 crc32.

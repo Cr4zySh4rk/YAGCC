@@ -649,6 +649,7 @@ export function defaultExt() {
     devName: '',   // custom device name (firmware 0.46+, ext bytes 328..353; whole name since 0.51): up to 25 printable ASCII characters, '' = the default names
     tiltSwType: 0,   // tilt switch type (firmware 0.51+, ext byte 354): 0 = mercury / generic, 1 = SW-520D ball switch
     tiltSwFilter: 0,   // tilt switch settle time (firmware 0.51+, ext byte 355): 0 = type default (SW-520D about 40 ms), 1..250 ms
+    strumGuard: 0,   // strum release guard (firmware 0.53+, ext byte 356): 0 = default (15 ms), 1..40 ms, 255 = off
     btSleep: 0,   // Bluetooth idle sleep (firmware 0.45+, ext byte 327): 0 = 2 minutes (default), 1..60 minutes, 255 = never
     map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
   };
@@ -658,6 +659,10 @@ export const BT_SLEEP_CHOICES = [1, 0, 5, 10, 15, 30, 60, BT_SLEEP_NEVER];   // 
 export const btSleepByte = (v) => (v === BT_SLEEP_NEVER ? BT_SLEEP_NEVER : Number.isInteger(v) && v >= 1 && v <= 60 && v !== 2 ? v : 0);
 export const DEV_NAME_MAX = 25, DEV_NAME_BYTES = 26, DEV_NAME_DEFAULT = 'YAGCC Guitar Controller';
 export const TILT_SW_MERCURY = 0, TILT_SW_520D = 1, TILT_SW_FILTER_MAX = 250;
+export const STRUM_GUARD_OFF = 255, STRUM_GUARD_MAX = 40, STRUM_GUARD_DEFAULT_MS = 15;
+// ext byte 356 -> milliseconds shown on the slider (0 = off); anything out of range reads as the default
+export const strumGuardMs = (b) => (b === STRUM_GUARD_OFF ? 0 : Number.isInteger(b) && b >= 1 && b <= STRUM_GUARD_MAX ? b : STRUM_GUARD_DEFAULT_MS);
+export const strumGuardByte = (ms) => (ms <= 0 ? STRUM_GUARD_OFF : Math.min(STRUM_GUARD_MAX, Math.round(ms)));
 // Characters outside printable ASCII in `s`, as a list (for the friendly message)
 export const devNameBadChars = (s) => [...new Set([...String(s)].filter((c) => c < ' ' || c > '~'))];
 // ok: stored form (trimmed, '' = default); error: why not
@@ -691,6 +696,7 @@ export function parseExt(dv) {
     devName: parseDevName(dv),
     tiltSwType: dv.getUint8(354) === 1 ? 1 : 0,
     tiltSwFilter: Math.min(TILT_SW_FILTER_MAX, dv.getUint8(355)),
+    strumGuard: ((b) => (b === STRUM_GUARD_OFF || b <= STRUM_GUARD_MAX ? b : 0))(dv.getUint8(356)),
   };
 }
 export function serializeExt(e) {
@@ -711,6 +717,7 @@ export function serializeExt(e) {
   { const c = checkDevName(e.devName || ''); if (c.ok) [...c.name].forEach((ch, i) => dv.setUint8(328 + i, ch.charCodeAt(0))); }
   dv.setUint8(354, e.tiltSwType === 1 ? 1 : 0);
   dv.setUint8(355, Math.max(0, Math.min(TILT_SW_FILTER_MAX, Math.round(e.tiltSwFilter) | 0)));
+  { const g = e.strumGuard; dv.setUint8(356, g === STRUM_GUARD_OFF ? STRUM_GUARD_OFF : Number.isInteger(g) && g >= 1 && g <= STRUM_GUARD_MAX ? g : 0); }
   dv.setUint32(508, crc32(new Uint8Array(buf, 0, 508)), true);
   return buf;
 }
