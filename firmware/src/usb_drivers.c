@@ -160,7 +160,7 @@ static bool drv_xfer(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
         // XInput rumble report {0x00, 0x08, 0x00, left, right, ...}: games such as YARG use the
         // Santroller convention of right = command, left = parameter (star power, multiplier, ...)
         if (result == XFER_RESULT_SUCCESS && g_usb_mode == MODE_XINPUT && g_xinput_wireless) wireless_command(out_buf, bytes);
-        else if (result == XFER_RESULT_SUCCESS && g_usb_mode == MODE_XINPUT && bytes >= 5 && out_buf[0] == 0x00 && out_buf[1] == 0x08) {
+        else if (result == XFER_RESULT_SUCCESS && mode_is_xinput(g_usb_mode) && bytes >= 5 && out_buf[0] == 0x00 && out_buf[1] == 0x08) {
             usb_game_feedback(out_buf[4], out_buf[3]);
             rumble_xinput(out_buf[3], out_buf[4]);
         } else if (result == XFER_RESULT_SUCCESS && g_usb_mode == MODE_OGXBOX && bytes >= 6 && out_buf[0] == 0x00 && out_buf[1] == 0x06) {
@@ -207,8 +207,10 @@ static void xinput_caps(uint8_t buf[20]) {
     buf[0] = 0x00; buf[1] = 20;
     buf[2] = 0x3F; buf[3] = 0xF7;               // buttons 0xF73F
     buf[4] = 0xFF; buf[5] = 0xFF;               // triggers
-    buf[6] = YACC_VID & 0xFF; buf[7] = YACC_VID >> 8;
-    buf[8] = YACC_PID & 0xFF; buf[9] = YACC_PID >> 8;
+    uint16_t vid, pid;
+    usb_xinput_ids(&vid, &pid);                 // the identity the device descriptor shows
+    buf[6] = vid & 0xFF; buf[7] = vid >> 8;
+    buf[8] = pid & 0xFF; buf[9] = pid >> 8;
     buf[10] = 0x00; buf[11] = xinput_subtype();  // version word = subtype << 8
     buf[12] = 0xC0; buf[13] = 0xFF;             // 0xFFC0
     buf[18] = 0x01; buf[19] = 0x00;             // XINPUT_FLAGS_FORCE_FEEDBACK
@@ -260,7 +262,9 @@ static bool xsm3_request(uint8_t rhport, uint8_t stage, tusb_control_request_t c
                 uint8_t serial[0x0C];
                 pico_get_unique_board_id_string((char *)serial, sizeof(serial));
                 serial[0] = (uint8_t)time_us_32();
-                xsm3_set_vid_pid(serial, YACC_VID, YACC_PID);
+                uint16_t vid, pid;
+                usb_xinput_ids(&vid, &pid);
+                xsm3_set_vid_pid(serial, vid, pid);
                 xsm3_initialise_state();
                 xsm3_set_identification_data(xsm3_id_data_ms_controller);
                 return tud_control_xfer(rhport, req, xsm3_id_data_ms_controller, sizeof(xsm3_id_data_ms_controller));
@@ -338,7 +342,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
     }
     if (g_usb_mode == MODE_OGXBOX) return xid_request(rhport, stage, request);
     if (g_usb_mode == MODE_XBONE) return xbone_dev_control(rhport, stage, request);
-    if (g_usb_mode == MODE_XINPUT) {
+    if (mode_is_xinput(g_usb_mode)) {
         if (request->bRequest >= 0x81 && request->bRequest <= 0x87) return xsm3_request(rhport, stage, request);
         if (request->bRequest == VREQ_XINPUT && request->bmRequestType_bit.direction == TUSB_DIR_IN)
             return xinput_vendor_request(rhport, stage, request);

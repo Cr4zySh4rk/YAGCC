@@ -12,7 +12,12 @@ uint8_t g_usb_mode = MODE_XINPUT;
 
 // Modes that keep the WebUSB configuration interface. The console-facing modes (PS3, Wii, Switch,
 // original Xbox) must look exactly like the real controller, so they don't get one.
-bool mode_has_config(uint8_t mode) { return mode == MODE_XINPUT || mode == MODE_HID || mode == MODE_KEYBOARD || mode == MODE_AUTO; }
+bool mode_has_config(uint8_t mode) { return mode_is_xinput(mode) || mode == MODE_HID || mode == MODE_KEYBOARD || mode == MODE_AUTO; }
+void usb_xinput_ids(uint16_t *vid, uint16_t *pid) {
+    if (g_usb_mode != MODE_X360) { *vid = YACC_VID; *pid = YACC_PID; }
+    else if (g_cfg.xinput_type == XI_ROCK_BAND) { *vid = HARMONIX_VID; *pid = X360_RB_GUITAR_PID; }
+    else { *vid = REDOCTANE_XBOX_VID; *pid = X360_GH_GUITAR_PID; }
+}
 uint8_t xinput_subtype(void) { return g_cfg.xinput_type == XI_ROCK_BAND ? 0x06 : 0x07; }   // guitar / guitar alternate (GH)
 
 // ================================================================ HID report descriptors
@@ -212,6 +217,7 @@ static uint8_t const *device_desc(void) {
         case MODE_AUTO:     desc_device.idProduct = YACC_AUTO_PID; break;
         case MODE_XINPUT:   desc_device.bcdDevice = g_xinput_wireless ? 0x0110 : 0x0101; break;   // each layout gets its own Windows descriptor / driver cache entry (0.38: a fresh one for the wired pad)
         case MODE_KEYBOARD: desc_device.idProduct = 0x0003; break;
+        case MODE_X360: { uint16_t vid, pid; usb_xinput_ids(&vid, &pid); desc_device.idVendor = vid; desc_device.idProduct = pid; break; }   // RedOctane / Harmonix guitar; bcdDevice stays 0x0100 (wired layout, own VID/PID so no driver cache clash)
         case MODE_SWITCH:
             desc_device.idVendor = HORI_VID; desc_device.idProduct = HORI_POKKEN_PID;
             desc_device.iSerialNumber = 0;
@@ -261,7 +267,7 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
             7, TUSB_DESC_ENDPOINT, EP_PAD_OUT, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(0x20), 8,
         };
         memcpy(p, x, sizeof(x)); p += sizeof(x); n_itf++;
-    } else if (g_usb_mode == MODE_XINPUT) {
+    } else if (mode_is_xinput(g_usb_mode)) {
         const uint8_t x[] = {
             9, TUSB_DESC_INTERFACE, ITF_PAD, 0, 2, 0xFF, 0x5D, 0x01, 0,
             17, 0x21, 0x10, 0x01, xinput_subtype(), 0x25, EP_PAD_IN, 0x14, 0x03, 0x03, 0x03, 0x04, 0x13, EP_PAD_OUT, 0x08, 0x03, 0x03,
@@ -294,7 +300,7 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
         const uint8_t c[] = {9, TUSB_DESC_INTERFACE, ITF_CONFIG, 0, 0, 0xFF, 0x00, 0x00, 4};
         memcpy(p, c, sizeof(c)); p += sizeof(c); n_itf++;
     }
-    if (g_usb_mode == MODE_XINPUT || g_usb_mode == MODE_AUTO) {
+    if (mode_is_xinput(g_usb_mode) || g_usb_mode == MODE_AUTO) {
         // Xbox 360 security interface: the console runs its XSM3 challenge through this (see usb_drivers.c)
         const uint8_t sec[] = {9, TUSB_DESC_INTERFACE, ITF_SECURITY, 0, 0, 0xFF, 0xFD, 0x13, 5,
                                6, 0x41, 0x00, 0x01, 0x01, 0x03};
@@ -317,8 +323,8 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
 #define MS_OS_FN_SEC   (0x08 + 0x14)
 
 static uint16_t ms_os_len(void) {
-    return MS_OS_HDR_LEN + MS_OS_CFG_LEN + MS_OS_FN_CFG + ((g_usb_mode == MODE_XINPUT || g_usb_mode == MODE_AUTO) ? MS_OS_FN_SEC : 0) +
-           (g_usb_mode == MODE_XINPUT ? MS_OS_FN_SEC : 0);   // the pad's own compatible id
+    return MS_OS_HDR_LEN + MS_OS_CFG_LEN + MS_OS_FN_CFG + ((mode_is_xinput(g_usb_mode) || g_usb_mode == MODE_AUTO) ? MS_OS_FN_SEC : 0) +
+           (mode_is_xinput(g_usb_mode) ? MS_OS_FN_SEC : 0);   // the pad's own compatible id
 }
 
 static uint8_t desc_bos[TUD_BOS_DESC_LEN + TUD_BOS_WEBUSB_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN];
@@ -369,13 +375,13 @@ const uint8_t *yacc_ms_os_desc(uint16_t *len) {
     for (int i = 0; i < 38; i++) { *p++ = (uint8_t)guid[i]; *p++ = 0; }
     *p++ = 0; *p++ = 0;
     *p++ = 0; *p++ = 0;
-    if (g_usb_mode == MODE_XINPUT || g_usb_mode == MODE_AUTO) {
+    if (mode_is_xinput(g_usb_mode) || g_usb_mode == MODE_AUTO) {
         W16(0x0008); W16(0x0002); *p++ = ITF_SECURITY; *p++ = 0; W16(MS_OS_FN_SEC);           // function subset: security
         W16(0x0014); W16(0x0003);
         memcpy(p, "WINUSB\0\0", 8); p += 8;
         memset(p, 0, 8); p += 8;
     }
-    if (g_usb_mode == MODE_XINPUT) {
+    if (mode_is_xinput(g_usb_mode)) {
         // function subset: the pad. Windows has no driver that matches a third-party XInput pad's class codes unless it
         // can fetch one from Windows Update (Code 28 otherwise); this compatible id binds Microsoft's own xusb22
         W16(0x0008); W16(0x0002); *p++ = ITF_PAD; *p++ = 0; W16(MS_OS_FN_SEC);
@@ -434,7 +440,9 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                   : g_usb_mode == MODE_PS3_RB ? "Harmonix"
                   : g_usb_mode == MODE_WII_RB ? "Licensed by Nintendo of America "
                   : g_usb_mode == MODE_SWITCH ? "HORI CO.,LTD."
-                  : g_usb_mode == MODE_XBONE  ? "Mad Catz" : DEVNAME_MANUF;
+                  : g_usb_mode == MODE_XBONE  ? "Mad Catz"
+                  : g_usb_mode == MODE_X360   ? (g_cfg.xinput_type == XI_ROCK_BAND ? "Harmonix Music Systems" : "RedOctane")
+                  : DEVNAME_MANUF;
                 break;
             case STR_PRODUCT:
                 s = g_usb_mode == MODE_PS3_GH ? "Guitar Hero3 for PlayStation (R) 3"
@@ -442,6 +450,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                   : g_usb_mode == MODE_WII_RB ? "Harmonix Guitar for Nintendo Wii"
                   : g_usb_mode == MODE_SWITCH ? "POKKEN CONTROLLER"
                   : g_usb_mode == MODE_XBONE  ? "Rock Band 4 Stratocaster"
+                  : g_usb_mode == MODE_X360   ? (g_cfg.xinput_type == XI_ROCK_BAND ? "Harmonix Guitar for Xbox 360" : "Guitar Hero X-plorer")
                   : devname_product(g_ext.dev_name,   // our own identities: the custom name is the whole product name
                        g_usb_mode == MODE_HID      ? "YAGCC Guitar (HID)"
                      : g_usb_mode == MODE_AUTO     ? "YAGCC Guitar"
@@ -452,7 +461,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                 break;
             case STR_SERIAL:
                 pico_get_unique_board_id_string(serial, sizeof(serial));
-                if (g_usb_mode == MODE_XINPUT) {
+                if (mode_is_xinput(g_usb_mode)) {
                     // Windows keys its driver bindings on VID/PID/serial: give the wired pad and the receiver slot
                     // their own serials, so one never inherits (or is blocked by) the other's driver record. The
                     // trailing firmware number is a salt too: bumping it makes every Windows PC bind the XInput layouts afresh.

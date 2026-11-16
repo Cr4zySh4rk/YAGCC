@@ -23,7 +23,7 @@ const FRET_COLORS = ['#22c55e', '#ef4444', '#facc15', '#3b82f6', '#fb923c'];
 const MODE_USE = localized(() => ({   // one line per mode: where you'd use it
   10: t('modes.use.any_console_or_computer_finds'),
   11: t('modes.use.ps5_games_needs_p5general_dongle'),
-  0: t('modes.use.windows_xbox_360_clone_hero'), 3: t('modes.use.rock_band_ps3_rpcs3_rock'), 1: t('modes.use.guitar_hero_ps3_ps2_rpcs3'),
+  0: t('modes.use.windows_pc_clone_hero'), 12: t('modes.use.xbox_360_console_guitar'), 3: t('modes.use.rock_band_ps3_rpcs3_rock'), 1: t('modes.use.guitar_hero_ps3_ps2_rpcs3'),
   2: t('modes.use.macos_linux_android_emulators'), 4: t('modes.use.fortnite_festival_playstation_xbox_pc'), 5: 'Nintendo Switch, Fortnite Festival',
   6: t('modes.use.rock_band_wii_wii_u'), 7: t('modes.use.original_xbox_needs_adapter_cable'),
   8: t('modes.use.rock_band_4_ps4_ps5'), 9: t('modes.use.rock_band_4_xbox_one'),

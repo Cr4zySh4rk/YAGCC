@@ -1,4 +1,4 @@
-import { VID, PIDS, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash, EXT_MIN_MINOR, EXT_SIZE, parseExt, serializeExt, STATUS_LEN_42, defaultExt } from './protocol.js?v=dev';
+import { DEVICE_FILTERS, isYaccUsb, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash, EXT_MIN_MINOR, EXT_SIZE, parseExt, serializeExt, STATUS_LEN_42, defaultExt } from './protocol.js?v=dev';
 
 const hexOf = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 const IFACE = 1;   // vendor config interface
@@ -8,7 +8,7 @@ export const webusbSupported = () => 'usb' in navigator;
 export class YaccDevice extends EventTarget {
   constructor(dev) { super(); this.dev = dev; this.info = null; this.polling = false; this.last = null; }
 
-  static filters() { return PIDS.map((productId) => ({ vendorId: VID, productId })); }
+  static filters() { return DEVICE_FILTERS; }   // our ids, plus the RedOctane / Harmonix ids Xbox 360 mode shows
 
   static async pick() {
     const dev = await navigator.usb.requestDevice({ filters: YaccDevice.filters() });
@@ -17,7 +17,7 @@ export class YaccDevice extends EventTarget {
 
   static async authorised() {
     const list = await navigator.usb.getDevices();
-    return list.filter((d) => d.vendorId === VID && PIDS.includes(d.productId)).map((d) => new YaccDevice(d));
+    return list.filter(isYaccUsb).map((d) => new YaccDevice(d));
   }
 
   async open() {

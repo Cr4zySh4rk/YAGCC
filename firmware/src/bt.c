@@ -234,6 +234,7 @@ void bt_log_flash_clear(void) {}
 static const char *mode_short(uint8_t m) {
     switch (m) {
         case MODE_XINPUT:   return "XInput";
+        case MODE_X360:     return "XInput";   // same Bluetooth device as XInput (see bt_init)
         case MODE_PS3_GH:   return "PS3 GH";
         case MODE_PS3_RB:   return "PS3 RB";
         case MODE_HID:      return "HID";
@@ -750,7 +751,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
 #if YACC_BT_LOG_FLASH
     flog_init();
 #endif
-    s_mode = g_usb_mode;
+    s_mode = g_usb_mode == MODE_X360 ? MODE_XINPUT : g_usb_mode;   // Xbox 360 (RedOctane) is the same Bluetooth device as XInput: one identity, one set of bonds
     if (cyw43_arch_init()) return;
     s_running = true;
     if (g_cfg.xinput_opts & XOPT_WIIMOTE) { wii_init(pair); return; }   // a Wii Remote instead of a BLE gamepad
@@ -770,6 +771,7 @@ void bt_init(bool enabled, bool pair, bool open_window) {
     build_descriptor();
     uint16_t vid, pid, ver;
     usb_mode_ids(&vid, &pid, &ver);
+    if (g_usb_mode == MODE_X360) { vid = 0x1209; pid = 0x0001; ver = 0x0101; }   // as XInput's wired identity (YACC_VID / YACC_PID: usb_common.h clashes with btstack's hid.h here)
     pico_unique_board_id_t uid;
     pico_get_unique_board_id(&uid);
     bd_addr_t addr;                                  // static random address of the mode (never rotated since 0.52)

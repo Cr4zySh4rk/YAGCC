@@ -29,7 +29,7 @@ export const OUT = {
 export const NUM_OUT = 32;
 // what a source sends when its map entry is 0xFF (same in every mode). null = the Tune page decides (tilt inputs)
 export const DEFAULT_OUT = [1, 2, 4, 3, 5, 14, 15, 9, 10, 20, null, null, null, 14, 15, 16, 17, 9, 11, 18, 19, 12];
-export const TILT_AXIS_MODES = [0];   // only XInput shows the tilt on the generic pad (RY); other reports keep it in a native field
+export const TILT_AXIS_MODES = [0, 12];   // only XInput shows the tilt on the generic pad (RY); other reports keep it in a native field
 
 // ---- modes shown on the Test page (Auto has no map; keyboard has key bindings instead of a map)
 export const TEST_MODES = localized(() => ([
@@ -63,6 +63,7 @@ export const MODE_OUTPUTS = [
   0x2013f67e,   // 9 Xbox One: buttons 1-6, 9, 10, 12-17, and RX (20, 29) for the whammy
   0xfffffffe,   // 10 Auto (no map of its own: defaults)
   0xeffffffe,   // 11 PS5
+  0xeffffffe,   // 12 Xbox 360 (RedOctane): the XInput report; its map is XInput's row 0, so the Test page lists no mode of its own
 ].map((m) => m >>> 0);
 export const outputSupported = (mode, out) => out === MAP_DEFAULT || out === MAP_NONE || (out > 0 && out < 32 && ((MODE_OUTPUTS[mode] >>> out) & 1) === 1);
 

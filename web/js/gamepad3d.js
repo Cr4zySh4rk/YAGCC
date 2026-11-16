@@ -22,7 +22,7 @@ const lite = /[?&]force3d=lite\b/.test(location.search);
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---- which model each USB mode shows (ids from mapping.js TEST_MODES)
-export const MODE_MODEL = { 0: 'xbox360', 2: 'xboxone', 9: 'xboxone', 7: 'xboxone', 1: 'ds4', 3: 'ds4', 8: 'ds4', 11: 'ds5', 5: 'joycon', 6: 'joycon' };
+export const MODE_MODEL = { 0: 'xbox360', 12: 'xbox360', 2: 'xboxone', 9: 'xboxone', 7: 'xboxone', 1: 'ds4', 3: 'ds4', 8: 'ds4', 11: 'ds5', 5: 'joycon', 6: 'joycon' };
 export const modelKey = (mode) => MODE_MODEL[mode] || 'xboxone';
 
 // ---- the nodes every model shares (names fixed by tools/model/pads/build_pads.mjs) and the generic output each one stands for

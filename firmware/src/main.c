@@ -281,7 +281,7 @@ static void wake_task(const pad_t *s) {
     // Windows, read the SIE and resume regardless of the host's setting. Only once the host has configured us.
     static bool configured;
     if (tud_mounted()) configured = true;
-    bool is360 = g_usb_mode == MODE_XINPUT && !g_xinput_wireless && !g_host_windows;
+    bool is360 = mode_is_xinput(g_usb_mode) && !g_xinput_wireless && !g_host_windows;
     bool sie = configured && is360 && (usb_hw->sie_status & USB_SIE_STATUS_SUSPENDED_BITS);
     static uint64_t last_try;
     uint64_t t = time_us_64();
@@ -313,6 +313,7 @@ static void read_sources(padsrc_t *r) {
 }
 
 static const uint8_t *map_row(uint8_t mode) {
+    mode = mode_map_row_index(mode);   // Xbox 360 (RedOctane) shares XInput's row
     return (mode < EXT_MAP_ROWS && mode != MODE_KEYBOARD && mode != MODE_AUTO) ? g_ext.map[mode] : NULL;   // keyboard / Auto: no map
 }
 
@@ -432,8 +433,8 @@ static bool needs_host(uint8_t mode) { return mode == MODE_PS4 || mode == MODE_P
 static uint8_t auto_mode_for(uint8_t host) {
     bool rb = g_cfg.xinput_type == XI_ROCK_BAND, port = g_cfg.host_dp_pin != PIN_NONE;
     switch (host) {
-        case HOST_WINDOWS:
-        case HOST_XBOX360: return MODE_XINPUT;
+        case HOST_WINDOWS: return MODE_XINPUT;
+        case HOST_XBOX360: return MODE_X360;       // a console gets the RedOctane / Harmonix identity
         case HOST_XBOXONE: return port ? MODE_XBONE : MODE_KEYBOARD;   // no auth controller: Fortnite Festival keys
         case HOST_PS4:     return port ? MODE_PS4 : MODE_PS3_RB;       // Rock Band 4 takes the PS3 Rock Band guitar
         case HOST_PS3:
@@ -565,7 +566,8 @@ int main(void) {
     // Not when Auto mode already identified the host (Windows or an Xbox 360 are certain XInput hosts): Windows
     // reuses its cached driver and may not show any sign of it within the timeout, and falling back there left
     // the guitar as a plain gamepad.
-    enum { XI_WATCH, XI_SWITCHING, XI_AS_HID, XI_RX_SWITCHING, XI_DONE } xi_state = (g_usb_mode == MODE_XINPUT && !g_setup_session && !g_auto_host) ? XI_WATCH : XI_DONE;
+    enum { XI_WATCH, XI_SWITCHING, XI_AS_HID, XI_RX_SWITCHING, XI_DONE } xi_state = (mode_is_xinput(g_usb_mode) && !g_setup_session && !g_auto_host) ? XI_WATCH : XI_DONE;
+    const uint8_t xi_orig_mode = g_usb_mode;   // MODE_XINPUT or MODE_X360: the fallback returns to the one it started as
     uint64_t xi_t = 0, xi_mount_t = 0;
     bool xi_was_mounted = false;
     // a mode Auto picked lasts until the guitar is unplugged (matters for boards on a battery)
@@ -617,7 +619,7 @@ int main(void) {
                     // Windows (it read the Microsoft OS 2.0 descriptors): come back as a wireless receiver slot,
                     // which Steam's driver takes (a wired XInput pad sharing its device with the config interface
                     // makes it choke). A 360 never reads those descriptors, so it keeps the wired pad.
-                    if (tud_mounted() && g_host_windows && !g_xinput_wireless && (g_cfg.xinput_opts & XOPT_RECEIVER) && xi_mount_t && t - xi_mount_t > 1500000) {   // after enumeration has finished, not in the middle of it
+                    if (tud_mounted() && g_usb_mode == MODE_XINPUT && g_host_windows && !g_xinput_wireless && (g_cfg.xinput_opts & XOPT_RECEIVER) && xi_mount_t && t - xi_mount_t > 1500000) {   // after enumeration has finished, not in the middle of it
                         tud_disconnect();
                         g_xinput_wireless = true;
                         xi_state = XI_RX_SWITCHING; xi_t = t; xi_was_mounted = false;
@@ -643,7 +645,7 @@ int main(void) {
                     if (tud_mounted()) { xi_was_mounted = true; xi_t = t; }
                     else if (xi_was_mounted && t - xi_t > 1000000) {   // unplugged: the next host gets XInput again
                         tud_disconnect();
-                        g_usb_mode = MODE_XINPUT;
+                        g_usb_mode = xi_orig_mode;
                         g_xinput_fallback = false;
                         g_xinput_driver_seen = g_host_windows = g_config_seen = false;
                         xi_state = XI_WATCH; xi_t = 0;
@@ -743,7 +745,7 @@ int main(void) {
         read_sources(&src);
         padmap_build(&src, map_row(g_usb_mode), &gp);
         g_gpad = gp;
-        g_gpad_row = map_row(g_usb_mode) ? g_usb_mode : 0xFF;
+        g_gpad_row = map_row(g_usb_mode) ? mode_map_row_index(g_usb_mode) : 0xFF;
         wake_task(&st);
         uint8_t wii_ext[WII_EXT_REPORT_LEN];               // the Wii guitar extension: wired, or over Bluetooth
         build_wii_ext(&st, wii_ext);
@@ -823,7 +825,7 @@ int main(void) {
         }
         if ((dirty || now - last_sent >= 8000) && tud_ready()) {
             bool ok;
-            if (g_usb_mode == MODE_XINPUT || g_usb_mode == MODE_OGXBOX) {
+            if (mode_is_xinput(g_usb_mode) || g_usb_mode == MODE_OGXBOX) {
                 ok = xinput_send(last_report, last_len);
             } else if (g_usb_mode == MODE_PS4) {
                 // every report carries a 6 bit counter; the very first one also taps PS so the console wakes up

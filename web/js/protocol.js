@@ -2,6 +2,10 @@ import { t, localized } from './i18n.js?v=dev';
 // YAGCC wire protocol (the on-wire magic stays 'YACC' for compatibility) - mirrors firmware/src/config.h and usb_common.h
 export const VID = 0x1209;
 export const PIDS = [0x0001, 0x0002, 0x0003, 0x0004];   // 4 = Auto mode before the host is known
+// Xbox 360 mode (firmware 0.54) shows the RedOctane / Harmonix guitar identity instead of ours; its config interface is still there
+export const X360_IDS = [{ vendorId: 0x1430, productId: 0x4748 }, { vendorId: 0x1bad, productId: 0x0002 }];   // Guitar Hero X-plorer, Harmonix Guitar for Xbox 360
+export const DEVICE_FILTERS = [...PIDS.map((productId) => ({ vendorId: VID, productId })), ...X360_IDS];
+export const isYaccUsb = (d) => DEVICE_FILTERS.some((f) => f.vendorId === d.vendorId && f.productId === d.productId);
 
 export const VREQ = {
   INFO: 0x30, STATUS: 0x31, GETCFG: 0x32, SETCFG: 0x33,
@@ -29,8 +33,10 @@ export const MODE_NONE = 0xff;
 export const MODES = localized(() => ([
   { id: 10, name: t('compat.any_console_whatever_plugged.mode'), short: t('mode.auto_detect_console.short'), config: true, min: 30,
     desc: t('mode.auto_detect_console.desc') },
-  { id: 0, name: 'XInput (Xbox 360)', short: 'XInput', config: true,
-    desc: t('mode.xinput_xbox_360.desc') },
+  { id: 0, name: 'XInput (generic Xbox controller)', short: 'XInput', config: true,
+    desc: t('mode.xinput_generic.desc') },
+  { id: 12, name: 'Xbox 360 (RedOctane guitar)', short: 'Xbox 360', config: true, min: 54,
+    desc: t('mode.xbox_360_redoctane.desc') },
   { id: 3, name: 'PS3 Rock Band', short: 'PS3 RB', config: false,
     desc: t('mode.ps3_rock_band.desc') },
   { id: 1, name: 'PS3 Guitar Hero', short: 'PS3 GH', config: false,

@@ -13,6 +13,9 @@
 #define PS3_GH_GUITAR_PID 0x0100
 #define PS3_RB_GUITAR_PID 0x0200   // Rock Band guitar (Santroller uses the same VID/PID)
 #define HARMONIX_VID      0x1BAD
+#define REDOCTANE_XBOX_VID 0x1430   // RedOctane's Xbox 360 vendor id (MODE_X360, Guitar Hero style)
+#define X360_GH_GUITAR_PID 0x4748   // Guitar Hero X-plorer
+#define X360_RB_GUITAR_PID 0x0002   // Harmonix Guitar for Xbox 360 (under HARMONIX_VID)
 #define WII_RB_GUITAR_PID 0x0004
 #define HORI_VID          0x0F0D
 #define HORI_POKKEN_PID   0x0092
@@ -63,4 +66,6 @@ extern volatile bool g_xinput_wireless;
 // so Bluetooth can present the same device
 const uint8_t *usb_hid_report_desc(uint16_t *len);
 void usb_mode_ids(uint16_t *vid, uint16_t *pid, uint16_t *version);
+// VID / PID of the XInput pad as the host sees it (XInput: ours, MODE_X360: the RedOctane / Harmonix guitar); no side effects
+void usb_xinput_ids(uint16_t *vid, uint16_t *pid);
 #endif

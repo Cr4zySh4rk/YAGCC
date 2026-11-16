@@ -38,7 +38,7 @@ yacc_config_t g_cfg;
 static long fails, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { if (fails++ < 40) { printf("FAIL line %d: %s ", __LINE__, #c); printf(__VA_ARGS__); printf("\n"); } } } while (0)
 
-enum { M_COUNT = 12 };
+enum { M_COUNT = 13 };   // MODE_X360 (12) shares MODE_XINPUT's map row and report
 static uint16_t old_build(int mode, const old_pad_t *s, uint8_t *o, int *isxb) {
     *isxb = 0;
     switch (mode) {
@@ -68,7 +68,7 @@ static uint16_t new_build(int mode, const gpad_t *g, uint8_t *o) {
         default: return rpt_xinput(g, o);
     }
 }
-static const uint8_t *row_of(int mode) { return (mode != MODE_KEYBOARD && mode != MODE_AUTO) ? g_ext.map[mode] : NULL; }
+static const uint8_t *row_of(int mode) { return (mode != MODE_KEYBOARD && mode != MODE_AUTO) ? g_ext.map[mode_map_row_index((uint8_t)mode)] : NULL; }
 
 // ---------------------------------------------------------------- golden
 static void golden(void) {
@@ -126,7 +126,7 @@ static void golden(void) {
     }
     g_cfg.flags = 0;
     printf("golden: HID/Auto byte 5 (Z, whammy) deliberately differs from 0.42 in %ld of those comparisons; all other bytes identical\n", hid_z_changed);
-    printf("golden: %ld report comparisons (11 modes x 512 digital x 11 tilt kinds x 6 whammy x 3 sensor x 2 flag settings), %ld differences (HID Z byte compared against the documented 0.43 value)\n", combos, diffs);
+    printf("golden: %ld report comparisons (13 modes x 512 digital x 11 tilt kinds x 6 whammy x 3 sensor x 2 flag settings), %ld differences (HID Z byte compared against the documented 0.43 value)\n", combos, diffs);
     checks += combos; fails += diffs;
 }
 
@@ -410,7 +410,7 @@ int main(void) {
     curves();
     sweep();
     stick_and_ext();
-    static const char *names[] = {"XInput", "PS3 GH", "HID", "PS3 RB", "Keyboard", "Switch", "Wii RB", "OG Xbox", "PS4", "Xbox One", "Auto", "PS5"};
+    static const char *names[] = {"XInput", "PS3 GH", "HID", "PS3 RB", "Keyboard", "Switch", "Wii RB", "OG Xbox", "PS4", "Xbox One", "Auto", "PS5", "Xbox 360"};
     printf("supported outputs (bit o = output o carried, o = 1..31):\n");
     for (int m = 0; m < M_COUNT; m++) {
         if (m == MODE_KEYBOARD) { printf("  %2d %-9s none (keyboard keeps its own key map)\n", m, names[m]); continue; }
@@ -418,6 +418,12 @@ int main(void) {
         for (int o = 1; o < NUM_OUT; o++) if (k & (1u << o)) printf(" %d", o);
         printf("\n");
     }
+    // MODE_X360: XInput in every way the host tests can see, and it must never index past the map rows
+    CHECK(MODE_X360 == NUM_MODES - 1 && NUM_MODES == M_COUNT, "mode count");
+    CHECK(mode_is_xinput(MODE_XINPUT) && mode_is_xinput(MODE_X360) && !mode_is_xinput(MODE_HID) && !mode_is_xinput(MODE_PS5), "mode_is_xinput");
+    CHECK(mode_map_row_index(MODE_X360) == MODE_XINPUT && mode_map_row_index(MODE_PS5) == MODE_PS5, "x360 shares row 0");
+    for (int m = 0; m < NUM_MODES; m++) CHECK(mode_map_row_index((uint8_t)m) < EXT_MAP_ROWS, "row index in range for mode %d", m);
+    CHECK(supported(MODE_X360) == supported(MODE_XINPUT), "x360 carries the XInput outputs");
     printf("%ld checks, %ld failures\n", checks, fails);
     return fails ? 1 : 0;
 }

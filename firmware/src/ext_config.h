@@ -28,7 +28,7 @@ enum {
     NUM_SRC
 };
 #define EXT_MAP_COLS 24        // bytes per mode row (22, 23 reserved = 0xFF)
-#define EXT_MAP_ROWS 12        // one per USB mode (MODE_* 0..11)
+#define EXT_MAP_ROWS 12        // one per USB mode (MODE_* 0..11); MODE_X360 (12) uses the MODE_XINPUT row
 #define NUM_EXT_PINS 7         // D-pad up/down/left/right, select, home, stick click
 
 // Generic outputs (map values). 0xFF = mode default, 0 = nothing

@@ -34,8 +34,13 @@ enum {
     MODE_XBONE  = 9,   // Xbox One Rock Band 4-style guitar; auth relayed to an Xbox One/Series pad on the host port
     MODE_AUTO   = 10,  // detect the console / computer and restart in its mode (Santroller's detection)
     MODE_PS5    = 11,  // PS5 Rock Band guitar; auth and report signing by a P5General dongle on the host port
+    MODE_X360   = 12,  // Xbox 360 guitar with a RedOctane / Harmonix identity: MODE_XINPUT in every way but the USB identity
     NUM_MODES
 };
+// MODE_X360 behaves exactly like MODE_XINPUT (report, interfaces, XSM3, config interface); only the identity differs
+static inline bool mode_is_xinput(uint8_t m) { return m == MODE_XINPUT || m == MODE_X360; }
+// the map row a mode uses: MODE_X360 shares MODE_XINPUT's (the ext config has one row per mode up to MODE_PS5)
+static inline uint8_t mode_map_row_index(uint8_t m) { return m == MODE_X360 ? MODE_XINPUT : m; }
 #define MODE_NONE 0xFF
 
 #define PIN_NONE 0xFF
