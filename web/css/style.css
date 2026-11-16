@@ -1210,3 +1210,7 @@ header.top.hl-probe.two-row .conn { max-width: 9em; }
 .ts-ch b, .ts-ch span { max-width: 100%; overflow-wrap: anywhere; hyphens: auto; }
 #view-hardware :is(h3, h4, li, p, td, b), #view-compat :is(h3, h4, li, p, td, b) { overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 480px) { table.sum td.sum-act { white-space: normal; } table.sum td.sum-act .btn { margin: 1px 0; } table.sum td { overflow-wrap: anywhere; } }
+.wcal { padding: 14px 0; border-top: 1px solid var(--line); }
+.wcal h3 { margin: 0 0 4px; }
+.wcal-read { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0 10px; }
+.wcal-read b { color: var(--cyan); }

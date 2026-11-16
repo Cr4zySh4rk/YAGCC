@@ -183,6 +183,13 @@
             <input type="range" id="wSmooth" min="0" max="6" step="1"></div>
           <div class="slider-row"><label for="wDead" data-i18n="tune.dead_zone">Dead zone</label><output class="val" id="wDeadVal"></output>
             <input type="range" id="wDead" min="0" max="30" step="1"></div>
+          <div class="wcal" id="wCal" hidden>
+            <h3 data-i18n="tune.whammy_cal.title">Recalibrate whammy</h3>
+            <p class="dim small" data-i18n="tune.whammy_cal.hint">Let go of the whammy bar, then press Set rest. Push it all the way down, then press Set full.</p>
+            <div class="wcal-read mono small"><span><span class="dim" data-i18n="tune.whammy_cal.live">Live</span> <b id="wCalRaw">–</b></span><span><span class="dim" data-i18n="tune.whammy_cal.rest">Rest</span> <b id="wCalRest">–</b></span><span><span class="dim" data-i18n="tune.whammy_cal.full">Full</span> <b id="wCalFull">–</b></span></div>
+            <div class="row" style="flex-wrap:wrap"><button class="btn small" id="wCalRestBtn" data-i18n="tune.whammy_cal.set_rest">Set rest</button><button class="btn small" id="wCalFullBtn" data-i18n="tune.whammy_cal.set_full">Set full</button></div>
+            <p class="small dim" id="wCalMsg" role="status" aria-live="polite"></p>
+          </div>
           <div class="opt"><div><h3 data-i18n="tune.invert_direction">Invert direction</h3><p class="dim" data-i18n="tune.flip_if_bar_reads_backwards">Flip it if the bar reads backwards.</p></div>
             <label class="switch"><input type="checkbox" id="wInv"><i></i></label></div>
         </div>
@@ -247,6 +254,8 @@
             <div class="opt adv" id="ledOrderRow"><div><h3 data-i18n="lights.colour_order">Colour order</h3><p class="dim" id="ledOrderHint" data-i18n="lights.if_red_shows_up_green">If red shows up green, try RGB.</p></div><select id="ledOrder" aria-label="Colour order" data-i18n-aria-label="lights.colour_order"></select></div>
             <div class="slider-row"><label for="rgbBri" data-i18n="common.brightness">Brightness</label><output class="val" id="rgbBriVal"></output>
               <input type="range" id="rgbBri" min="0" max="255" step="1"></div>
+            <div class="opt adv" id="overdriveRow"><div><h3 data-i18n="lights.overdrive.title">Overdrive LEDs</h3><p class="dim" data-i18n="lights.overdrive.desc">Let the brightness go all the way to 255 whatever the number of LEDs.</p><p class="dim small" id="overdriveNote" hidden data-i18n="lights.overdrive.needs_update">Update the firmware to 0.54 or newer to use this.</p></div>
+              <label class="switch"><input type="checkbox" id="overdriveSw" aria-label="Overdrive LEDs" data-i18n-aria-label="lights.overdrive.title"><i></i></label></div>
             <div id="rgbBriNote"></div>
             <p class="adv-hint" id="ledAdvHint" hidden></p>
           </div>

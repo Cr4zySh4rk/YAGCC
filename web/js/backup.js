@@ -20,7 +20,8 @@ export const SECTIONS = localized(() => ([
     keys: ['rgbEnabled', 'rgbBootFlash', 'rgbPin', 'rgbBrightness', 'rgbEffect', 'rgbSpeed', 'ledMap', 'colors', 'ledType', 'ledOrder', 'ledClkPin', 'rgbStarPower',
       'noFretLeds', 'strumLeds', 'strumMap', 'strumColor', 'strumRoles', 'fretLeds', 'ledMap2',
       'zoneFrets', 'zoneStrum', 'fretPress', 'fret2Colors', 'fret2Own', 'strumLedColors', 'strumUpColor', 'strumDownColor',
-      'starColor', 'starAnim', 'starZones', 'starSpeed', 'whammyFx', 'whammyZones', 'starFlash', 'sleepMin'] },
+      'starColor', 'starAnim', 'starZones', 'starSpeed', 'whammyFx', 'whammyZones', 'starFlash', 'sleepMin'],
+    extKeys: ['ledFlags'] },   // firmware 0.54+: the Overdrive LEDs option lives in the extension page
   { id: 'modes', name: t('common.modes'), desc: t('backup.section.modes.desc'),
     keys: ['usbMode', 'bootModes', 'xinputType', 'starDpadLeft', 'xinputOpts', 'keys'] },
   // firmware 0.42+: these live in the extension page (cfg.ext)
@@ -98,6 +99,7 @@ Object.assign(CHECK, {
   stickFlags: (v) => isInt(v, 0, 7), deadzone: (v) => isInt(v, 0, 50),
   devName: (v) => devNameValid(v),
   tiltSwType: (v) => v === 0 || v === 1, tiltSwFilter: (v) => isInt(v, 0, 250),
+  ledFlags: (v) => v === 0 || v === 1,
   strumGuard: (v) => v === 0 || v === 255 || isInt(v, 1, 40),
   btSleep: (v) => v === 0 || v === 255 || isInt(v, 1, 60),
   range: (v) => Array.isArray(v) && v.length === 4 && v.every((x) => x === 0 || x === 1),
@@ -105,7 +107,7 @@ Object.assign(CHECK, {
   cal: (v) => Array.isArray(v) && v.length === 6 && v.every((x) => isInt(x, 0, 4095)) && v[0] < v[1] && v[1] < v[2] && v[3] < v[4] && v[4] < v[5],
   map: (v) => Array.isArray(v) && v.length === NUM_MODE_ROWS && v.every((r) => Array.isArray(r) && r.length === MAP_ROW && r.every((x, i) => (i >= NUM_SRC ? x === 255 : x === 0 || x === 255 || isInt(x, 1, 31)))),
 });
-Object.assign(LABELS, { extPins: t('backup.d_pad_select_home_pins'), stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: t('backup.stick_dead_zone'), cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: t('backup.bluetooth_sleep_timer'), devName: 'controller name', tiltSwType: t('tune.tilt_switch.switch_type'), tiltSwFilter: t('tune.tilt_switch.settle_time'), strumGuard: t('tune.strum_guard.title') });
+Object.assign(LABELS, { extPins: t('backup.d_pad_select_home_pins'), stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: t('backup.stick_dead_zone'), cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: t('backup.bluetooth_sleep_timer'), devName: 'controller name', tiltSwType: t('tune.tilt_switch.switch_type'), tiltSwFilter: t('tune.tilt_switch.settle_time'), strumGuard: t('tune.strum_guard.title'), ledFlags: t('lights.overdrive.title') });
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));
 
 export function makeBackup(cfg, info) {
@@ -115,6 +117,7 @@ export function makeBackup(cfg, info) {
     const from = s.ext ? cfg.ext : cfg;
     settings[s.id] = {};
     for (const k of s.keys) if (from[k] !== undefined) settings[s.id][k] = from[k];
+    for (const k of s.extKeys || []) if (cfg.ext?.[k] !== undefined) settings[s.id][k] = cfg.ext[k];
   }
   return {
     app: 'YAGCC', format: BACKUP_FORMAT, created: new Date().toISOString(),
@@ -141,7 +144,7 @@ export function readBackup(text) {
     const src = data.settings[s.id];
     if (!src || typeof src !== 'object') continue;
     const out = {};
-    for (const k of s.keys) {
+    for (const k of [...s.keys, ...(s.extKeys || [])]) {
       if (!(k in src)) continue;
       if (valid(k, src[k])) out[k] = src[k]; else if (!skipped.includes(LABELS[k] || k)) skipped.push(LABELS[k] || k);
     }
@@ -157,7 +160,11 @@ export function applyBackup(cfg, parsed, chosen) {
   for (const id of chosen) {
     const sec = SECTIONS.find((x) => x.id === id);
     if (sec?.ext) { if (next.ext) Object.assign(next.ext, structuredClone(parsed.sections[id] || {})); }   // older firmware: nothing to restore into
-    else Object.assign(next, structuredClone(parsed.sections[id] || {}));
+    else {
+      const part = structuredClone(parsed.sections[id] || {});
+      for (const k of sec?.extKeys || []) if (k in part) { if (next.ext) next.ext[k] = part[k]; delete part[k]; }   // older firmware: nothing to restore into
+      Object.assign(next, part);
+    }
   }
   const used = new Map();
   const claim = (pin, who) => { if (pin === PIN_NONE) return true; if (used.has(pin)) return false; used.set(pin, who); return true; };

@@ -90,7 +90,11 @@ export function ledLayout(c) {
   return { frets, per, strum: n, strumFirst: firstStrum < firstFret, fretOrder, chain: (frets ? NUM_LEDS * per : 0) + n };
 }
 // brightness ceiling for the layout, same as the firmware's led_max_brightness
+// (255 whatever the layout when the Overdrive LEDs option is on: ext byte 357 bit 0, firmware 0.54+)
+export const LED_OVERDRIVE = 1;
+export const ledOverdrive = (c) => !!((c?.ext?.ledFlags ?? 0) & LED_OVERDRIVE);
 export function maxBrightness(c) {
+  if (ledOverdrive(c)) return 255;
   const two = c.fretLeds === 2 && !c.noFretLeds;
   if (!c.strumLeds) return two ? 160 : 255;
   if (c.noFretLeds) return 200;
@@ -656,6 +660,7 @@ export function defaultExt() {
     tiltSwType: 0,   // tilt switch type (firmware 0.51+, ext byte 354): 0 = mercury / generic, 1 = SW-520D ball switch
     tiltSwFilter: 0,   // tilt switch settle time (firmware 0.51+, ext byte 355): 0 = type default (SW-520D about 40 ms), 1..250 ms
     strumGuard: 0,   // strum release guard (firmware 0.53+, ext byte 356): 0 = default (15 ms), 1..40 ms, 255 = off
+    ledFlags: 0,   // LED options (firmware 0.54+, ext byte 357): bit 0 = overdrive, brightness up to 255 whatever the LED layout
     btSleep: 0,   // Bluetooth idle sleep (firmware 0.45+, ext byte 327): 0 = 2 minutes (default), 1..60 minutes, 255 = never
     map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
   };
@@ -703,6 +708,7 @@ export function parseExt(dv) {
     tiltSwType: dv.getUint8(354) === 1 ? 1 : 0,
     tiltSwFilter: Math.min(TILT_SW_FILTER_MAX, dv.getUint8(355)),
     strumGuard: ((b) => (b === STRUM_GUARD_OFF || b <= STRUM_GUARD_MAX ? b : 0))(dv.getUint8(356)),
+    ledFlags: dv.getUint8(357) & LED_OVERDRIVE,
   };
 }
 export function serializeExt(e) {
@@ -724,6 +730,7 @@ export function serializeExt(e) {
   dv.setUint8(354, e.tiltSwType === 1 ? 1 : 0);
   dv.setUint8(355, Math.max(0, Math.min(TILT_SW_FILTER_MAX, Math.round(e.tiltSwFilter) | 0)));
   { const g = e.strumGuard; dv.setUint8(356, g === STRUM_GUARD_OFF ? STRUM_GUARD_OFF : Number.isInteger(g) && g >= 1 && g <= STRUM_GUARD_MAX ? g : 0); }
+  dv.setUint8(357, (e.ledFlags ?? 0) & LED_OVERDRIVE);
   dv.setUint32(508, crc32(new Uint8Array(buf, 0, 508)), true);
   return buf;
 }

@@ -9,6 +9,7 @@
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
 #include "config.h"
+#include "ext_config.h"
 #include "input.h"
 #include "ws2812.pio.h"
 
@@ -605,8 +606,9 @@ void rgb_task(void) {
     frame_us = now - last_frame;
     last_frame = now;
 
-    uint8_t bright = g_cfg.rgb_brightness;                  // 0..255, capped for the layout (led_max_brightness)
-    if (bright > led_max_brightness(&g_cfg)) bright = led_max_brightness(&g_cfg);
+    uint8_t bright = g_cfg.rgb_brightness;                  // 0..255, capped for the layout (led_max_brightness), unless overdrive
+    const uint8_t ceil_b = led_brightness_ceiling(&g_cfg, g_ext.led_flags);
+    if (bright > ceil_b) bright = ceil_b;
     light_t L[MAX_LEDS];
     int chain;
     int n = build_lights(L, &chain);

@@ -1,6 +1,6 @@
 import { TILT_SW_FILTER_MAX, strumGuardMs, strumGuardByte, STRUM_GUARD_DEFAULT_MS, BT_SLEEP_CHOICES, btSleepByte, DEV_NAME_MAX, DEV_NAME_DEFAULT, devNameBadChars, checkDevName,
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName, modeBaseName,
-  DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, effectZone,
+  DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, ledOverdrive, LED_OVERDRIVE, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
   MAP_DEFAULT, MAP_NONE, ATILT_SOURCES, ACCEL2_MIN_MINOR, TILT_FUNC_MIN_MINOR, FUNC_STAR, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
 } from './protocol.js?v=dev';
@@ -94,6 +94,7 @@ function assignSelect(src, label) {
 }
 // firmware 0.44+: a 0..1 source (tilt switch, sensors) on a stick axis can rest at the centre or at the opposite end
 const strumGuardOk = () => fwAtLeast(53) && !!state.cfg?.ext;
+const overdriveOk = () => fwAtLeast(54) && !!state.cfg?.ext;
 const btSleepOk = () => fwAtLeast(45) && !!state.cfg?.ext;
 const btSleepLabel = (v) => (v === 255 ? t('bt.never') : t('app.bt_sleep.minutes', { n: v || 2 }));
 const rangeOk = () => fwAtLeast(44) && !!state.cfg?.ext?.range;
@@ -369,7 +370,8 @@ function advRefresh() {
   const host = keep('#hostPanel', set(c.hostPin) || needsHost);
   hint('#modesAdvHint', advOn(), [!rx && t('adv.steam_receiver_option'), !ports && t('adv.ps2_wii_ports'), !host && t('adv.usb_host_port')].filter(Boolean));
   const order = keep('#ledOrderRow', c.ledType === 2 || c.ledOrder !== 0);
-  hint('#ledAdvHint', advOn() || order || c.ledType === 1 || !c.rgbEnabled, [t('adv.name_colour_order')]);
+  const od = keep('#overdriveRow', ledOverdrive(c));
+  hint('#ledAdvHint', advOn() || !c.rgbEnabled, [!order && c.ledType !== 1 && t('adv.name_colour_order'), !od && t('adv.name_overdrive_leds')].filter(Boolean));
 }
 $('#advSw').addEventListener('change', (e) => {
   setAdv(e.target.checked);
@@ -659,7 +661,8 @@ async function autoConnect(navigate) {
 function onStatus(s) {
   state.status = s;
   if (state.view === 'lights') updateLedPreview(s);
-  if (state.view === 'tune') { updateTilt(s); updateTiltSwitch(s); }
+  if (state.view === 'tune') { updateTilt(s); updateTiltSwitch(s); updateWhammyCal(s); }
+  if (wcalSink) wcalSink.push(s);
   if (state.view === 'modes') updatePorts(s);
   if (state.view === 'test' && state.cfg?.ext) testPage.update(s);
   for (const v of viewers) if (v.container.offsetParent !== null) updateViewer(v, s);
@@ -1550,6 +1553,46 @@ function tickStep(s) {
   }
 }
 
+// ------------------------------------------------------------------ whammy recalibration (Tune)
+// Same capture as the Setup wizard's manual calibration (live raw ADC value of the whammy channel from the status
+// stream), averaged over ~250 ms; rest / full become whammyMin / whammyMax / whammyInvert.
+const WHAMMY_MIN_SPAN = 8;   // same threshold as Setup
+let wcalSink = null;
+const wcalRest = (c) => (c.whammyInvert ? c.whammyMax : c.whammyMin);
+const wcalFull = (c) => (c.whammyInvert ? c.whammyMin : c.whammyMax);
+function updateWhammyCal(s) {
+  const c = state.cfg, box = $('#wCal');
+  if (!box || !c) return;
+  const has = c.whammyCh !== PIN_NONE;
+  box.hidden = !has;
+  if (!has) return;
+  $('#wCalRaw').textContent = s?.adc ? s.adc[c.whammyCh] : '–';
+  $('#wCalRest').textContent = wcalRest(c);
+  $('#wCalFull').textContent = wcalFull(c);
+}
+async function whammyCapture(which) {
+  const c = state.cfg, msg = $('#wCalMsg');
+  if (!c || !state.dev || c.whammyCh === PIN_NONE) return;
+  const btns = [$('#wCalRestBtn'), $('#wCalFullBtn')];
+  btns.forEach((b) => { b.disabled = true; });
+  const got = [];
+  wcalSink = got;
+  await sleep(250);
+  wcalSink = null;
+  btns.forEach((b) => { b.disabled = false; });
+  const vals = got.map((s) => s.adc?.[c.whammyCh]).filter((v) => Number.isFinite(v));
+  if (!vals.length && state.status?.adc) vals.push(state.status.adc[c.whammyCh]);
+  if (!vals.length) { msg.textContent = t('tune.whammy_cal.no_reading'); return; }
+  const v = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  const rest = which === 'rest' ? v : wcalRest(c), full = which === 'full' ? v : wcalFull(c);
+  if (Math.abs(full - rest) < WHAMMY_MIN_SPAN) { msg.textContent = t('tune.whammy_cal.too_close'); return; }
+  Object.assign(c, { whammyMin: Math.min(rest, full), whammyMax: Math.max(rest, full), whammyInvert: rest > full });
+  $('#wInv').checked = c.whammyInvert;
+  msg.textContent = t(which === 'rest' ? 'tune.whammy_cal.rest_set' : 'tune.whammy_cal.full_set', { v });
+  updateWhammyCal(state.status);
+  pushCfg();
+}
+
 // ------------------------------------------------------------------ tune
 function buildTune() {
   const c = state.cfg;
@@ -1579,7 +1622,11 @@ function buildTune() {
   wd.oninput = () => { c.whammyDeadzone = +wd.value; live(); };
   $('#strumGuard').oninput = (e) => { if (strumGuardOk()) { c.ext.strumGuard = strumGuardByte(+e.target.value); live(); } };
   $('#combStrum').onchange = (e) => { c.combinedStrum = e.target.checked; live(); };
-  $('#wInv').onchange = (e) => { c.whammyInvert = e.target.checked; live(); };
+  $('#wInv').onchange = (e) => { c.whammyInvert = e.target.checked; live(); updateWhammyCal(state.status); };
+  $('#wCalRestBtn').onclick = () => whammyCapture('rest');
+  $('#wCalFullBtn').onclick = () => whammyCapture('full');
+  $('#wCalMsg').textContent = '';
+  updateWhammyCal(state.status);
   $('#debPresets').onclick = (e) => { const b = e.target.closest('[data-deb]'); if (b) { c.debounce100us = +b.dataset.deb; dt.value = c.debounce100us; live(); } };
   $('#resetCfg').onclick = async () => {
     if (!confirm(t('tune.reset_every_setting_pins_whammy'))) return;
@@ -2088,6 +2135,7 @@ function updateLedPreview(s) {
 
 // why the brightness slider stops short of 255
 function brightNote(c) {
+  if (ledOverdrive(c)) return `<p class="warn small">${t('lights.overdrive.warning')}</p>`;
   const m = maxBrightness(c);
   if (m === 255) return '';
   const two = c.fretLeds === 2 && !c.noFretLeds;
@@ -2295,6 +2343,10 @@ function buildLights() {
     $bri.max = maxBrightness(c); c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
     $bri.value = c.rgbBrightness; $('#rgbBriVal').textContent = c.rgbBrightness;
     $('#rgbBriNote').innerHTML = brightNote(c);
+    $('#overdriveSw').checked = ledOverdrive(c);
+    $('#overdriveSw').disabled = !overdriveOk();
+    $('#overdriveNote').hidden = overdriveOk() || !state.info;
+    advRefresh();
     $spd.value = c.rgbSpeed; $('#fxSpeedVal').textContent = c.rgbSpeed;
     $('#fxSel').value = String(c.rgbEffect); $('#fxDesc').textContent = EFFECTS.find((e) => e.id === c.rgbEffect)?.desc || '';
     document.querySelectorAll('[data-col]').forEach((i) => { i.value = c.colors[+i.dataset.col]; $(`[data-hex="${i.dataset.col}"]`).textContent = c.colors[+i.dataset.col].toUpperCase(); });
@@ -2315,6 +2367,12 @@ function buildLights() {
   $('#ledOrder').onchange = (e) => { c.ledOrder = +e.target.value; live(); };
   $('#ledClk').onchange = (e) => { c.ledClkPin = +e.target.value; if (c.ledClkPin === c.rgbPin) c.ledClkPin = PIN_NONE; live(); };
   $bri.oninput = () => { c.rgbBrightness = +$bri.value; live(); };
+  $('#overdriveSw').onchange = (e) => {
+    if (!overdriveOk()) { e.target.checked = false; return; }
+    c.ext.ledFlags = e.target.checked ? LED_OVERDRIVE : 0;
+    c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));   // off again: back under the layout's limit
+    live();
+  };
   // firmware before 0.34: one effect for everything (the preview and a later upgrade derive the zones from it)
   const legacyZones = () => { c.zoneFrets = effectZone(c.rgbEffect, c.rgbSpeed); c.zoneStrum = effectZone(c.rgbEffect, c.rgbSpeed); };
   $spd.oninput = () => { c.rgbSpeed = +$spd.value; legacyZones(); live(); };

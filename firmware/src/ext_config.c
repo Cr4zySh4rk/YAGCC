@@ -73,6 +73,7 @@ bool ext_validate(const ext_config_t *e, const yacc_config_t *main) {
     if (!devname_valid(e->dev_name)) return false;
     if (e->tilt_sw_type > 1 || e->tilt_sw_filter_ms > TILT_FILTER_MAX_MS) return false;
     if (!strum_guard_valid(e->strum_guard)) return false;
+    if (!led_flags_valid(e->led_flags)) return false;
     for (int r = 0; r < EXT_MAP_ROWS; r++)
         for (int c = 0; c < EXT_MAP_COLS; c++) {
             uint8_t v = e->map[r][c];

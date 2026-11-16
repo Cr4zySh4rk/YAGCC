@@ -66,13 +66,21 @@ typedef struct __attribute__((packed)) {
     uint8_t  tilt_sw_type;          // 354    (0.51) tilt switch: 0 = mercury / generic, 1 = SW-520D ball switch
     uint8_t  tilt_sw_filter_ms;     // 355    (0.51) settle time: 0 = type default, 1..250 ms
     uint8_t  strum_guard;           // 356    (0.53) strum release guard: 0 = default (15 ms), 1..40 ms, 255 = off
-    uint8_t  rsv2[151];             // 357..507
+    uint8_t  led_flags;             // 357    (0.54) LED_FLAG_*: bit0 = overdrive (no layout brightness ceiling); other bits must be 0
+    uint8_t  rsv2[150];             // 358..507
     uint32_t crc;                   // 508    crc32 of bytes 0..507
 } ext_config_t;
 _Static_assert(sizeof(ext_config_t) == EXT_SIZE, "ext config size");
-_Static_assert(offsetof(ext_config_t, map) == 32 && offsetof(ext_config_t, curve) == 320 && offsetof(ext_config_t, range) == 323 && offsetof(ext_config_t, bt_sleep) == 327 && offsetof(ext_config_t, dev_name) == 328 && offsetof(ext_config_t, tilt_sw_type) == 354 && offsetof(ext_config_t, tilt_sw_filter_ms) == 355 && offsetof(ext_config_t, strum_guard) == 356 && offsetof(ext_config_t, crc) == 508, "ext config layout");
+_Static_assert(offsetof(ext_config_t, map) == 32 && offsetof(ext_config_t, curve) == 320 && offsetof(ext_config_t, range) == 323 && offsetof(ext_config_t, bt_sleep) == 327 && offsetof(ext_config_t, dev_name) == 328 && offsetof(ext_config_t, tilt_sw_type) == 354 && offsetof(ext_config_t, tilt_sw_filter_ms) == 355 && offsetof(ext_config_t, strum_guard) == 356 && offsetof(ext_config_t, led_flags) == 357 && offsetof(ext_config_t, crc) == 508, "ext config layout");
 
 extern ext_config_t g_ext;
+
+#define LED_FLAG_OVERDRIVE 0x01
+static inline bool led_flags_valid(uint8_t f) { return (f & (uint8_t)~LED_FLAG_OVERDRIVE) == 0; }
+// Brightness ceiling in force: 255 with overdrive on, else the layout's led_max_brightness()
+static inline uint8_t led_brightness_ceiling(const yacc_config_t *c, uint8_t led_flags) {
+    return (led_flags & LED_FLAG_OVERDRIVE) ? 255 : led_max_brightness(c);
+}
 
 uint32_t yacc_crc32(const uint8_t *d, size_t n);   // the config crc (zlib crc32)
 void ext_defaults(ext_config_t *e);                // sealed

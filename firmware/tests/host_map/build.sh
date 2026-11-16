@@ -36,3 +36,6 @@ ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$TF" tilt_filter_test.c .
 SG="${TMPDIR:-/tmp}/yagcc_strum_guard_test"
 ${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$SG" strum_guard_test.c ../../src/ext_config.c
 "$SG"
+LO="${TMPDIR:-/tmp}/yagcc_led_overdrive_test"
+${CC:-cc} -std=gnu11 -O1 -Wall -Wextra -I../../src -o "$LO" led_overdrive_test.c ../../src/ext_config.c
+"$LO"
