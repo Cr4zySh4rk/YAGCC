@@ -1448,7 +1448,7 @@
   "backup.section.tiltsw.name": "Typ des Neigungsschalters",
   "backup.section.tiltsw.desc": "Quecksilber oder SW-520D und die Beruhigungszeit des Neigungsschalters",
   "tune.strum_guard.title": "Strum-Loslass-Schutz",
-  "tune.strum_guard.hint": "Ignoriert den entgegengesetzten Strum einen Moment lang, nachdem du die Strum-Leiste losgelassen hast, damit ein Zurückfedern der Leiste über die Mitte hinaus keinen zusätzlichen Strum auslöst. Erhöhe den Wert, wenn du noch doppelte Strums bekommst; senke ihn, wenn sehr schnelles abwechselndes Strummen verzögert wirkt.",
+  "tune.strum_guard.hint": "Ignoriert das Nachfedern der Strum-Leiste nach dem Loslassen: Der entgegengesetzte Anschlag wird kurz zurückgehalten, und derselbe Anschlag kann nicht doppelt auslösen. 15–25 ms passen für die meisten Gitarren. Erhöhen, wenn noch Doppelanschläge auftreten; verringern, wenn schnelles Wechselschlagen verzögert wirkt.",
   "tune.strum_guard.needs_update": "Aktualisiere die Firmware auf 0.53 oder neuer, um dies zu nutzen.",
   "tune.strum_guard.ms": "{ms} ms",
   "adv.name_overdrive_leds": "Overdrive-LEDs",

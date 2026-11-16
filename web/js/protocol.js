@@ -659,7 +659,7 @@ export function defaultExt() {
     devName: '',   // custom device name (firmware 0.46+, ext bytes 328..353; whole name since 0.51): up to 25 printable ASCII characters, '' = the default names
     tiltSwType: 0,   // tilt switch type (firmware 0.51+, ext byte 354): 0 = mercury / generic, 1 = SW-520D ball switch
     tiltSwFilter: 0,   // tilt switch settle time (firmware 0.51+, ext byte 355): 0 = type default (SW-520D about 40 ms), 1..250 ms
-    strumGuard: 0,   // strum release guard (firmware 0.53+, ext byte 356): 0 = default (15 ms), 1..40 ms, 255 = off
+    strumGuard: 0,   // strum release guard (firmware 0.53+, ext byte 356): 0 = default (20 ms since 0.55), 1..40 ms, 255 = off
     ledFlags: 0,   // LED options (firmware 0.54+, ext byte 357): bit 0 = overdrive, brightness up to 255 whatever the LED layout
     btSleep: 0,   // Bluetooth idle sleep (firmware 0.45+, ext byte 327): 0 = 2 minutes (default), 1..60 minutes, 255 = never
     map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
@@ -670,7 +670,7 @@ export const BT_SLEEP_CHOICES = [1, 0, 5, 10, 15, 30, 60, BT_SLEEP_NEVER];   // 
 export const btSleepByte = (v) => (v === BT_SLEEP_NEVER ? BT_SLEEP_NEVER : Number.isInteger(v) && v >= 1 && v <= 60 && v !== 2 ? v : 0);
 export const DEV_NAME_MAX = 25, DEV_NAME_BYTES = 26, DEV_NAME_DEFAULT = 'YAGCC Guitar Controller';
 export const TILT_SW_MERCURY = 0, TILT_SW_520D = 1, TILT_SW_FILTER_MAX = 250;
-export const STRUM_GUARD_OFF = 255, STRUM_GUARD_MAX = 40, STRUM_GUARD_DEFAULT_MS = 15;
+export const STRUM_GUARD_OFF = 255, STRUM_GUARD_MAX = 40, STRUM_GUARD_DEFAULT_MS = 20;
 // ext byte 356 -> milliseconds shown on the slider (0 = off); anything out of range reads as the default
 export const strumGuardMs = (b) => (b === STRUM_GUARD_OFF ? 0 : Number.isInteger(b) && b >= 1 && b <= STRUM_GUARD_MAX ? b : STRUM_GUARD_DEFAULT_MS);
 export const strumGuardByte = (ms) => (ms <= 0 ? STRUM_GUARD_OFF : Math.min(STRUM_GUARD_MAX, Math.round(ms)));

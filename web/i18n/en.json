@@ -1448,7 +1448,7 @@
   "backup.section.tiltsw.name": "Tilt switch type",
   "backup.section.tiltsw.desc": "Mercury or SW-520D, and the settle time of the tilt switch",
   "tune.strum_guard.title": "Strum release guard",
-  "tune.strum_guard.hint": "Ignores the opposite strum for a moment after you let go of the strum bar, so the bar bouncing past centre doesn't register an extra strum. Raise it if you still get double strums; lower it if very fast alternate strumming feels late.",
+  "tune.strum_guard.hint": "After you let go of the strum bar, ignores it bouncing: the opposite strum is held back for a moment and the same strum can't fire twice. 15–25 ms suits most guitars. Raise it if you still get double strums; lower it if fast alternate strumming feels late.",
   "tune.strum_guard.needs_update": "Update the firmware to 0.53 or newer to use this.",
   "tune.strum_guard.ms": "{ms} ms",
   "adv.name_overdrive_leds": "overdrive LEDs",

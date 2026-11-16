@@ -1452,7 +1452,7 @@
   "backup.section.tiltsw.name": "Tipo de chave de inclinação",
   "backup.section.tiltsw.desc": "Mercúrio ou SW-520D, e o tempo de estabilização da chave de inclinação",
   "tune.strum_guard.title": "Proteção ao soltar o strum",
-  "tune.strum_guard.hint": "Ignora o strum oposto por um instante depois que você solta a barra de strum, para que o quique da barra passando do centro não registre um strum a mais. Aumente se ainda aparecerem strums duplos; diminua se o strum alternado muito rápido parecer atrasado.",
+  "tune.strum_guard.hint": "Depois que você solta a barra de palhetada, ignora o rebote: a palhetada oposta é segurada por um instante e a mesma palhetada não dispara duas vezes. 15–25 ms serve para a maioria das guitarras. Aumente se ainda houver palhetadas duplas; diminua se a palhetada alternada rápida parecer atrasada.",
   "tune.strum_guard.needs_update": "Atualize o firmware para a versão 0.53 ou mais recente para usar isto.",
   "tune.strum_guard.ms": "{ms} ms",
   "adv.name_overdrive_leds": "LEDs em overdrive",

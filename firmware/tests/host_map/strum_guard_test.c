@@ -40,14 +40,14 @@ static void scenarios(uint32_t base, const char *tag) {
     { win_t up[1] = { { base + MS(302), base + MS(305) } };
       res_t r = sim(base, MS(500), up, 1, dn, 1, 0);
       CHECK(r.dn_seen && !r.up_seen && !r.up_end); }
-    // 2. real up press starting 5 ms after the release, held 50 ms: accepted at release + 15 ms
+    // 2. real up press starting 5 ms after the release, held 50 ms: accepted at release + 20 ms (default)
     { win_t up[1] = { { base + MS(305), base + MS(355) } };
       res_t r = sim(base, MS(500), up, 1, dn, 1, 0);
-      CHECK(r.up_seen && r.up_on >= MS(314.8) && r.up_on <= MS(315.3)); }
-    // 3. press starting 20 ms after the release: accepted immediately
-    { win_t up[1] = { { base + MS(320), base + MS(370) } };
+      CHECK(r.up_seen && r.up_on >= MS(319.8) && r.up_on <= MS(320.3)); }
+    // 3. press starting 25 ms after the release: accepted immediately
+    { win_t up[1] = { { base + MS(325), base + MS(370) } };
       res_t r = sim(base, MS(500), up, 1, dn, 1, 0);
-      CHECK(r.up_seen && r.up_on == MS(320)); }
+      CHECK(r.up_seen && r.up_on == MS(325)); }
     // 4. guard off (255): the bounce passes, and so does the very first press after the release
     { win_t up[1] = { { base + MS(302), base + MS(305) } };
       res_t r = sim(base, MS(500), up, 1, dn, 1, 255);
@@ -61,7 +61,7 @@ static void scenarios(uint32_t base, const char *tag) {
       CHECK(r.up_seen && r.up_on == MS(335));
       win_t up3[1] = { { base + MS(320), base + MS(327) } };   // 7 ms bounce, shorter than 30 ms: dropped
       r = sim(base, MS(500), up3, 1, dn, 1, 30); CHECK(!r.up_seen); }
-    // 6. same-direction re-press right after the release is not affected
+    // 6. 0.55 release hold: a same-direction re-close 2 ms after the release (chatter) is ONE strum; one 25 ms later is two
     { win_t dn2[2] = { { base + MS(100), base + MS(300) }, { base + MS(302), base + MS(340) } };
       res_t r = sim(base, MS(500), NULL, 0, dn2, 2, 0);
       CHECK(r.dn_seen && r.dn_end == false);
@@ -70,6 +70,15 @@ static void scenarios(uint32_t base, const char *tag) {
       for (uint32_t i = 0; i <= MS(500); i += 100) {
           uint32_t t = base + i; bool gu, gd;
           strum_guard_step(&g, false, in_win(dn2, 2, t), false, od, t, 15, &gu, &gd);
+          if (gd && !od) presses++;
+          od = gd;
+      }
+      CHECK(presses == 1);
+      win_t dn4[2] = { { base + MS(100), base + MS(300) }, { base + MS(325), base + MS(360) } };
+      memset(&g, 0, sizeof g); od = false; presses = 0;
+      for (uint32_t i = 0; i <= MS(500); i += 100) {
+          uint32_t t = base + i; bool gu, gd;
+          strum_guard_step(&g, false, in_win(dn4, 2, t), false, od, t, 20, &gu, &gd);
           if (gd && !od) presses++;
           od = gd;
       }
@@ -92,7 +101,7 @@ static void scenarios(uint32_t base, const char *tag) {
 }
 
 int main(void) {
-    CHECK(strum_guard_ms(0) == 15 && strum_guard_ms(1) == 1 && strum_guard_ms(40) == 40 && strum_guard_ms(255) == 0);
+    CHECK(strum_guard_ms(0) == 20 && strum_guard_ms(1) == 1 && strum_guard_ms(40) == 40 && strum_guard_ms(255) == 0);
     CHECK(strum_guard_valid(0) && strum_guard_valid(1) && strum_guard_valid(40) && strum_guard_valid(255));
     CHECK(!strum_guard_valid(41) && !strum_guard_valid(100) && !strum_guard_valid(254));
 

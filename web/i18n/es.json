@@ -1452,7 +1452,7 @@
   "backup.section.tiltsw.name": "Tipo de interruptor de inclinación",
   "backup.section.tiltsw.desc": "Mercurio o SW-520D, y el tiempo de estabilización del interruptor de inclinación",
   "tune.strum_guard.title": "Protección al soltar el strum",
-  "tune.strum_guard.hint": "Ignora el strum contrario durante un instante después de soltar la barra de strum, para que el rebote de la barra al pasar del centro no registre un strum de más. Súbelo si todavía te salen strums dobles; bájalo si el strum alterno muy rápido se siente con retraso.",
+  "tune.strum_guard.hint": "Al soltar la barra de rasgueo, ignora su rebote: el rasgueo contrario se retiene un instante y el mismo rasgueo no puede dispararse dos veces. 15–25 ms va bien en la mayoría de guitarras. Súbelo si aún tienes rasgueos dobles; bájalo si el rasgueo alterno rápido se siente tardío.",
   "tune.strum_guard.needs_update": "Actualiza el firmware a la 0.53 o posterior para usar esto.",
   "tune.strum_guard.ms": "{ms} ms",
   "adv.name_overdrive_leds": "LED en sobrecarga",

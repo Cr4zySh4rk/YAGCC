@@ -4,13 +4,16 @@
 // different switch, so its own debouncer can't catch it. After a direction was physically released, a NEW press of the
 // opposite direction is held back until G ms after that release. If the opposite switch is still closed when the guard
 // ends it is accepted then (a real fast alternate strum is only delayed, a bounce shorter than the guard is dropped).
-//   strum_guard byte: 0 = default (15 ms), 1..40 = ms, 255 = off
+// 0.55: the same window also holds a strum's release: the switch has to stay open for G ms before the strum lets go, so
+// contact chatter or a bounce of the SAME switch (seen at 14 ms after release on real hardware) can't fire it twice.
+// The release is only reported later; strums are press-triggered, so that costs nothing in games.
+//   strum_guard byte: 0 = default (20 ms), 1..40 = ms, 255 = off
 #ifndef YACC_STRUM_GUARD_H_
 #define YACC_STRUM_GUARD_H_
 #include <stdint.h>
 #include <stdbool.h>
 
-#define STRUM_GUARD_DEFAULT_MS 15
+#define STRUM_GUARD_DEFAULT_MS 20
 #define STRUM_GUARD_MAX_MS     40
 #define STRUM_GUARD_OFF        255
 
@@ -40,6 +43,8 @@ static inline void strum_guard_step(strum_guard_t *g, bool raw_up, bool raw_down
         else if (g->armed[d] && (guard_us == 0 || (uint32_t)(now_us - g->last_raw_us[d]) >= guard_us)) g->armed[d] = false;   // also keeps old stamps from wrapping into a window
     }
     if (guard_us != 0) {
+        for (int d = 0; d < 2; d++)    // release hold: a pressed strum stays pressed until its switch has been open for the guard
+            if (out[d] && !raw[d] && g->armed[d] && (uint32_t)(now_us - g->last_raw_us[d]) < guard_us) res[d] = true;
         for (int d = 0; d < 2; d++) {
             int o = 1 - d;   // the opposite direction
             if (raw[d] && !out[d] && !raw[o] && g->armed[o] && (uint32_t)(now_us - g->last_raw_us[o]) < guard_us) res[d] = false;

@@ -1452,7 +1452,7 @@
   "backup.section.tiltsw.name": "Type d’interrupteur d’inclinaison",
   "backup.section.tiltsw.desc": "Mercure ou SW-520D, et temps de stabilisation de l’interrupteur d’inclinaison",
   "tune.strum_guard.title": "Garde au relâchement du strum",
-  "tune.strum_guard.hint": "Ignore le strum opposé un court instant après que vous avez relâché la barre de strum, afin que le rebond de la barre au-delà du centre n'enregistre pas un strum en trop. Augmentez la valeur si vous avez encore des doubles strums ; diminuez-la si le strum alterné très rapide semble en retard.",
+  "tune.strum_guard.hint": "Quand vous relâchez la barre de grattage, ignore son rebond : le grattage opposé est retenu un instant et le même grattage ne peut pas se déclencher deux fois. 15–25 ms convient à la plupart des guitares. Augmentez si vous avez encore des grattages doubles ; diminuez si le grattage alterné rapide semble en retard.",
   "tune.strum_guard.needs_update": "Mettez le firmware à jour en 0.53 ou plus récent pour utiliser cette option.",
   "tune.strum_guard.ms": "{ms} ms",
   "adv.name_overdrive_leds": "LED en overdrive",
