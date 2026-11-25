@@ -1535,6 +1535,8 @@
   "lights.xled.group.buttons.name": "Boutons Star & Plus",
   "lights.xled.group.buttons.desc": "Une LED sous le bouton Star Power et une sous le bouton Plus / Select.",
   "lights.xled.pin_block": "Broche de données {n} (GP{pin})",
+  "lights.xled.strum_pin.backup": "broche de données des LED de strum",
+  "lights.xled.strum_pin.desc": "Branchez les LED de strum sur la même broche de données que les LED des frettes, ou sur une broche de données à part. Elles peuvent aussi partager une broche supplémentaire avec les LED supplémentaires.",
   "lights.xled.err.noclk": "Broche de données GP{pin} : choisissez une broche d'horloge pour les LED APA102.",
   "lights.xled.order_hint": "Les LED de cette broche de données, dans l'ordre de câblage. Déplacez une zone vers le haut ou le bas pour changer l'ordre ; les positions sont calculées pour vous.",
   "lights.xled.move_up": "Monter {zone}",

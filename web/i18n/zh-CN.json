@@ -1527,6 +1527,8 @@
   "lights.xled.group.buttons.name": "星力与加号按钮",
   "lights.xled.group.buttons.desc": "星力按钮下方和加号 / Select 按钮下方各一颗 LED。",
   "lights.xled.pin_block": "数据引脚 {n}(GP{pin})",
+  "lights.xled.strum_pin.backup": "拨弦灯数据引脚",
+  "lights.xled.strum_pin.desc": "把拨弦灯接到与品键灯相同的数据引脚,或接到它们自己的数据引脚。它们也可以与额外 LED 共用一个额外引脚。",
   "lights.xled.err.noclk": "数据引脚 GP{pin}:请为 APA102 LED 选择时钟引脚。",
   "lights.xled.order_hint": "此数据引脚上的 LED,按接线顺序排列。上移或下移区域即可改变顺序,位置会自动计算。",
   "lights.xled.move_up": "上移 {zone}",

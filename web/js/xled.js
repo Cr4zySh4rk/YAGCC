@@ -2,10 +2,80 @@
 // Settings live in cfg.ext.xzones / cfg.ext.xledPins (see protocol.js). The card redraws on structural changes and only
 // updates labels while a slider or colour is dragged.
 import { LED_TYPES, LED_ORDERS, xchainApa, PIN_NONE, NUM_DIGITAL_PINS, NUM_XLED_PINS, NUM_XZONES, MAX_CHAIN_LEDS, XZONE_MAX, XZONE_NAMES, XZONE_DESCS, XEFFECTS, ZX_REVERSE, ZX_STAR,
-  rgbToHex, hexToRgb, emptyXzone, xzoneOn, xzoneLed, xledErrors, xledChains, xledAutoStart, mainChainUsers, xledTotal, maxBrightness, ledOverdrive } from './protocol.js?v=dev';
+  rgbToHex, hexToRgb, emptyXzone, xzoneOn, xzoneLed, xledErrors, xledChains, xledAutoStart, mainChainUsers, xledTotal, maxBrightness, ledOverdrive, strumChainOf, applyLedLayout, ledLayout } from './protocol.js?v=dev';
 import { t } from './i18n.js?v=dev';
 
 const DEFAULT_COUNT = [4, 1, 1, 10];
+const SID = NUM_XZONES;   // id of the strum LEDs among the blocks that share a data pin (firmware 0.57: they may leave the main chain)
+const manual = new Set();   // zones whose start was typed by hand (Advanced): the packer leaves them where they are until Re-pack
+const zname = (id) => (id === SID ? t('common.strum_bar_leds') : XZONE_NAMES[id]);
+
+// ---- blocks on a chain: the zones, and the strum LEDs when they sit on an extra chain
+const blockChain = (c, id) => (id === SID ? strumChainOf(c) : c.ext.xzones[id].chain);
+const blockCount = (c, id) => (id === SID ? c.strumLeds || 0 : c.ext.xzones[id].count);
+const blockStart = (c, id) => (id === SID ? Math.min(...c.strumMap.slice(0, c.strumLeds)) : c.ext.xzones[id].start);
+const blockOn = (c, id) => (id === SID ? strumChainOf(c) > 0 : xzoneOn(c.ext.xzones[id]));
+// strum LEDs keep their order along the wire (their roles go with them); only the first position moves
+function setBlockStart(c, id, p) {
+  if (id !== SID) { c.ext.xzones[id].start = p; return; }
+  const n = c.strumLeds || 0;
+  [...Array(n).keys()].sort((a, b) => c.strumMap[a] - c.strumMap[b]).forEach((k, j) => { c.strumMap[k] = p + j; });
+}
+const onChainOf = (c, ch) => {
+  const ids = c.ext.xzones.map((zn, z) => z).filter((z) => xzoneOn(c.ext.xzones[z]) && c.ext.xzones[z].chain === ch);
+  if (ch > 0 && strumChainOf(c) === ch) ids.push(SID);
+  return ids;
+};
+const byStartOf = (c, ch) => onChainOf(c, ch).sort((x, y) => blockStart(c, x) - blockStart(c, y) || x - y);
+// extra data pins nothing uses any more are released
+function gcPinsOf(c) {
+  const e = c.ext;
+  for (let i = 0; i < NUM_XLED_PINS; i++) if (!onChainOf(c, i + 1).length) { e.xledPins[i] = PIN_NONE; e.xledClk[i] = PIN_NONE; e.xledType[i] = 0; e.xledOrder[i] = 0; }
+}
+// pack the blocks of one chain back to back in their order (default: by current position), around the fret / strum LEDs and any manual zones
+function repackChain(c, ch, order = byStartOf(c, ch)) {
+  const occ = Array(MAX_CHAIN_LEDS).fill(false);
+  const mark = (p, n) => { for (let k = 0; k < n; k++) if (p + k >= 0 && p + k < MAX_CHAIN_LEDS) occ[p + k] = true; };
+  if (ch === 0) mainChainUsers(c).forEach((u) => mark(u.pos, 1));
+  onChainOf(c, ch).filter((id) => id !== SID && manual.has(id)).forEach((id) => mark(blockStart(c, id), blockCount(c, id)));
+  let cur = 0;
+  for (const id of order) {
+    if ((id !== SID && manual.has(id)) || !blockOn(c, id)) continue;
+    const n = blockCount(c, id);
+    let p = cur;
+    while (p + n <= MAX_CHAIN_LEDS && occ.slice(p, p + n).some(Boolean)) p++;
+    if (p + n > MAX_CHAIN_LEDS) continue;   // does not fit: the error message says so
+    setBlockStart(c, id, p); mark(p, n); cur = p + n;
+  }
+}
+// the chain for a data pin choice: 'main' = 0, else the extra chain on that GPIO (it takes a free slot if the pin is new; 0 when there is none)
+function chainForPin(c, v) {
+  if (v === 'main') return 0;
+  const e = c.ext, p = +v;
+  let i = e.xledPins.indexOf(p);
+  if (i < 0) { i = e.xledPins.indexOf(PIN_NONE); if (i >= 0) e.xledPins[i] = p; }
+  return i >= 0 ? i + 1 : 0;
+}
+// firmware 0.57: put the strum LEDs on the main chain ('main') or on an extra data pin (a GPIO number)
+function setStrumChainPin(c, v) {
+  const e = c.ext, old = strumChainOf(c);
+  e.strumChain = 0; gcPinsOf(c);   // leave the old chain (an extra pin nobody else uses is released)
+  e.strumChain = chainForPin(c, v);
+  gcPinsOf(c);
+  const l = ledLayout(c), nw = strumChainOf(c);
+  applyLedLayout(c, { frets: l.frets, strum: l.strum, strumFirst: false, per: l.per });   // frets close up behind / the strum LEDs go behind the frets again
+  if (nw) setBlockStart(c, SID, 200);   // last in line on their new chain, then packed
+  if (old) repackChain(c, old);
+  if (nw) repackChain(c, nw);
+  if (!old || !nw) repackChain(c, 0);   // the zones on the main chain flow around the new fret / strum LED positions
+}
+// the Lights page changed the LED layout (count, per fret ...): keep the strum LEDs packed on their extra chain, release a pin they left
+export function fitStrumChain(c) {
+  if (!c.ext?.xzones) return;
+  gcPinsOf(c);
+  const sx = strumChainOf(c);
+  if (sx) repackChain(c, sx);
+}
 const ANIMATED = new Set([2, 3, 4, 6, 8]);   // effects that use the speed slider
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -16,36 +86,14 @@ export function createXled(ctx) {
   const { state, $ } = ctx;
   const body = $('#xledBody');
   let findRun = 0, finding = -1, findMsg = '';
-  const manual = new Set();   // zones whose start was typed by hand (Advanced): the packer leaves them where they are until Re-pack
 
   const ok = () => ctx.fwAtLeast(56) && !!state.cfg?.ext?.xzones;
   const ext = () => state.cfg.ext;
-  const chainPin = (ch) => (ch === 0 ? state.cfg.rgbPin : ext().xledPins[ch - 1]);
   const textOn = (hex) => { const [r, g, b] = hexToRgb(hex); return r * 0.3 + g * 0.59 + b * 0.11 > 150 ? '#10131a' : '#fff'; };
-
-  // extra data pins no zone uses any more are released
-  function gcPins() {
-    const e = ext();
-    for (let i = 0; i < NUM_XLED_PINS; i++) if (!e.xzones.some((zn) => xzoneOn(zn) && zn.chain === i + 1)) { e.xledPins[i] = PIN_NONE; e.xledClk[i] = PIN_NONE; e.xledType[i] = 0; e.xledOrder[i] = 0; }
-  }
-  const onChain = (ch) => ext().xzones.map((zn, z) => z).filter((z) => xzoneOn(ext().xzones[z]) && ext().xzones[z].chain === ch);
-  const byStart = (ch) => onChain(ch).sort((x, y) => ext().xzones[x].start - ext().xzones[y].start || x - y);
-  // pack the zones of one chain back to back in their order (default: by current position), around the fret / strum LEDs and any manual zones
-  function repack(ch, order = byStart(ch)) {
-    const c = state.cfg, zs = ext().xzones, occ = Array(MAX_CHAIN_LEDS).fill(false);
-    const mark = (p, n) => { for (let k = 0; k < n; k++) if (p + k >= 0 && p + k < MAX_CHAIN_LEDS) occ[p + k] = true; };
-    if (ch === 0) mainChainUsers(c).forEach((u) => mark(u.pos, 1));
-    onChain(ch).filter((z) => manual.has(z)).forEach((z) => mark(zs[z].start, zs[z].count));
-    let cur = 0;
-    for (const z of order) {
-      if (manual.has(z) || !xzoneOn(zs[z])) continue;
-      const n = zs[z].count;
-      let p = cur;
-      while (p + n <= MAX_CHAIN_LEDS && occ.slice(p, p + n).some(Boolean)) p++;
-      if (p + n > MAX_CHAIN_LEDS) continue;   // does not fit: the error message says so
-      zs[z].start = p; mark(p, n); cur = p + n;
-    }
-  }
+  const gcPins = () => gcPinsOf(state.cfg);
+  const onChain = (ch) => onChainOf(state.cfg, ch);
+  const byStart = (ch) => byStartOf(state.cfg, ch);
+  const repack = (ch, order) => repackChain(state.cfg, ch, order);
   function setOn(z, on) {
     const zn = ext().xzones[z], old = zn.chain;
     manual.delete(z);
@@ -57,37 +105,32 @@ export function createXled(ctx) {
     } else { zn.count = 0; zn.chain = 0; zn.start = 0; gcPins(); repack(old); }
     gcPins();
   }
-  // data pin choice: 'main' or a GPIO number
+  // data pin choice for zone z: 'main' or a GPIO number
   function setPin(z, v) {
     const e = ext(), zn = e.xzones[z], old = zn.chain;
     manual.delete(z);
     zn.start = 1000; zn.chain = 0; gcPins();   // leaves the old chain (an extra pin nobody else uses is released)
-    if (v === 'main') zn.chain = 0;
-    else {
-      const p = +v;
-      let i = e.xledPins.indexOf(p);
-      if (i < 0) { i = e.xledPins.indexOf(PIN_NONE); if (i >= 0) e.xledPins[i] = p; }
-      zn.chain = i >= 0 ? i + 1 : 0;
-    }
+    zn.chain = chainForPin(state.cfg, v);
     zn.start = 1000;
     gcPins();
     repack(old); repack(zn.chain);
   }
-  function move(z, dir) {
-    const zn = ext().xzones[z], ord = byStart(zn.chain), i = ord.indexOf(z), j = i + dir;
-    // swap with the neighbouring zone (fret / strum blocks stay where they are)
+  function move(id, dir) {
+    const ch = blockChain(state.cfg, id), ord = byStart(ch), i = ord.indexOf(id), j = i + dir;
+    // swap with the neighbouring block (on the main chain the fret / strum blocks stay where they are)
     if (j < 0 || j >= ord.length) return;
     [ord[i], ord[j]] = [ord[j], ord[i]];
-    manual.delete(z); manual.delete(ord[i]);
-    repack(zn.chain, ord);
+    manual.delete(id); manual.delete(ord[i]);
+    repack(ch, ord);
   }
 
   // ---- drawing
-  function pinOptions(z) {
-    const c = state.cfg, e = ext(), zn = e.xzones[z];
+  // the data pin choices for a block (a zone, or SID = the strum LEDs): the main chain's pin or any free GPIO
+  function pinOptions(id) {
+    const c = state.cfg, e = ext(), chain = blockChain(c, id);
     const taken = new Set(ctx.assignedPins().filter((p) => !e.xledPins.includes(p) || p === PIN_NONE));
-    const cur = zn.chain > 0 ? e.xledPins[zn.chain - 1] : 'main';
-    const sole = zn.chain > 0 && e.xzones.filter((o) => xzoneOn(o) && o.chain === zn.chain).length === 1;   // this zone's own pin slot can be re-used
+    const cur = chain > 0 ? e.xledPins[chain - 1] : 'main';
+    const sole = chain > 0 && onChain(chain).length === 1;   // this block's own pin slot can be re-used
     const full = !e.xledPins.includes(PIN_NONE) && !sole;
     const own = (p) => e.xledPins.includes(p) && p !== PIN_NONE;
     const opts = [`<option value="main" ${cur === 'main' ? 'selected' : ''}>${esc(c.rgbPin === PIN_NONE ? t('lights.xled.pin_same_none') : t('lights.xled.pin_same', { pin: c.rgbPin }))}</option>`];
@@ -129,7 +172,7 @@ export function createXled(ctx) {
   // per extra data pin: LED type, colour order, clock pin (APA102 only); one block per pin in use, not per zone
   function pinBlocksHtml() {
     const c = state.cfg, e = ext();
-    return [1, 2, 3].filter((ch) => e.xledPins[ch - 1] !== PIN_NONE && e.xzones.some((zn) => xzoneOn(zn) && zn.chain === ch)).map((ch) => {
+    return [1, 2, 3].filter((ch) => e.xledPins[ch - 1] !== PIN_NONE && onChain(ch).length).map((ch) => {
       const i = ch - 1, ty = e.xledType[i], taken = new Set(ctx.assignedPins().filter((p) => p !== e.xledClk[i]));
       taken.add(c.rgbPin);
       const clkOpts = `<option value="255">${esc(t('common.choose_pin'))}</option>` + [...Array(NUM_DIGITAL_PINS).keys()].filter((p) => !taken.has(p) || p === e.xledClk[i]).map((p) => `<option value="${p}" ${p === e.xledClk[i] ? 'selected' : ''}>GP${p}</option>`).join('');
@@ -151,7 +194,7 @@ export function createXled(ctx) {
   function orderHtml(ch) {
     const c = state.cfg, e = ext(), zs = byStart(ch);
     if (zs.length < 2 && !zs.some((z) => manual.has(z))) return '';
-    const items = zs.map((z) => ({ pos: e.xzones[z].start, z }));
+    const items = zs.map((z) => ({ pos: blockStart(c, z), z }));
     if (ch === 0) {
       const fr = mainChainUsers(c).filter((u) => u.kind === 'fret').map((u) => u.pos), st = mainChainUsers(c).filter((u) => u.kind === 'strum').map((u) => u.pos);
       if (fr.length) items.push({ pos: Math.min(...fr), fixed: t('common.fret_leds'), from: Math.min(...fr), to: Math.max(...fr) });
@@ -160,15 +203,15 @@ export function createXled(ctx) {
     items.sort((a, b) => a.pos - b.pos);
     const li = items.map((it) => {
       if (it.fixed) return `<li class="fixed"><span class="xo-name">${esc(it.fixed)}</span><span class="xz-where">${esc(t('lights.xled.where', { from: it.from + 1, to: it.to + 1 }))}</span></li>`;
-      const zn = e.xzones[it.z], i = zs.indexOf(it.z), nm = XZONE_NAMES[it.z];
-      return `<li><span class="xo-name">${esc(nm)}</span><span class="xz-where">${esc(t('lights.xled.where', { from: zn.start + 1, to: zn.start + zn.count }))}</span>${manual.has(it.z) ? `<span class="tag">${esc(t('lights.xled.manual'))}</span>` : ''}
+      const st = blockStart(c, it.z), i = zs.indexOf(it.z), nm = zname(it.z);
+      return `<li><span class="xo-name">${esc(nm)}</span><span class="xz-where">${esc(t('lights.xled.where', { from: st + 1, to: st + blockCount(c, it.z) }))}</span>${manual.has(it.z) ? `<span class="tag">${esc(t('lights.xled.manual'))}</span>` : ''}
         <span class="xo-btns"><button type="button" class="btn small" data-z="${it.z}" data-k="up" aria-label="${esc(t('lights.xled.move_up', { zone: nm }))}" title="${esc(t('lights.xled.move_up', { zone: nm }))}" ${i === 0 ? 'disabled' : ''}>▲</button><button type="button" class="btn small" data-z="${it.z}" data-k="down" aria-label="${esc(t('lights.xled.move_down', { zone: nm }))}" title="${esc(t('lights.xled.move_down', { zone: nm }))}" ${i === zs.length - 1 ? 'disabled' : ''}>▼</button></span></li>`;
     }).join('');
     return `<p class="dim small xo-hint">${esc(t('lights.xled.order_hint'))}</p><ol class="xorder">${li}</ol>`;
   }
   function mapHtml() {
     const c = state.cfg, e = ext(), chains = xledChains(c);
-    const used = [0, 1, 2, 3].filter((ch) => (ch === 0 ? e.xzones.some((zn) => xzoneOn(zn) && zn.chain === 0) : e.xzones.some((zn) => xzoneOn(zn) && zn.chain === ch)));
+    const used = [0, 1, 2, 3].filter((ch) => onChain(ch).length);   // chain 0 only while a zone is on it (the strum LEDs are fixed there)
     if (!used.length) return '';
     const rows = used.map((ch) => {
       const cells = chains[ch];
@@ -186,13 +229,13 @@ export function createXled(ctx) {
     }).join('');
     const legend = [];
     if (used.includes(0) && chains[0].some((u) => u.some((x) => x.kind === 'fret'))) legend.push([FRET_CELL, t('common.fret_leds')]);
-    if (used.includes(0) && chains[0].some((u) => u.some((x) => x.kind === 'strum'))) legend.push([STRUM_CELL, t('common.strum_bar_leds')]);
+    if (used.some((ch) => chains[ch].some((u) => u.some((x) => x.kind === 'strum')))) legend.push([STRUM_CELL, t('common.strum_bar_leds')]);
     e.xzones.forEach((zn, z) => { if (xzoneOn(zn)) legend.push([rgbToHex(...zn.color), XZONE_NAMES[z]]); });
     return `<div class="xmap"><h3>${esc(t('lights.xled.map_h'))}</h3><p class="dim small">${esc(t('lights.xled.map_hint'))}</p>${rows}
       <div class="xmap-legend">${legend.map(([col, nm]) => `<span><i style="background:${col}"></i>${esc(nm)}</span>`).join('')}</div></div>`;
   }
   function errText(er) {
-    const zone = er.z >= 0 ? XZONE_NAMES[er.z] : '';
+    const zone = er.z >= 0 ? zname(er.z) : '';
     if (er.code === 'pin') return t('lights.xled.err.pin', { pin: er.pin });
     if (er.code === 'nopin') return t('lights.xled.err.nopin', { zone });
     if (er.code === 'noclk') return t('lights.xled.err.noclk', { pin: er.pin });
@@ -292,7 +335,15 @@ export function createXled(ctx) {
     ctx.live();
   };
 
-  return { draw, stop: () => { findRun++; finding = -1; } };
+  // the strum LEDs' data pin row for the strum LED settings (firmware 0.57+); '' when it does not apply
+  function strumPinHtml() {
+    const c = state.cfg;
+    if (!ctx.fwAtLeast(57) || !c?.ext?.xzones || !(c.strumLeds > 0)) return '';
+    const sx = strumChainOf(c);
+    return `<div class="opt adv ${sx ? 'adv-keep' : ''}"><div><h3>${esc(t('lights.data_pin'))}</h3><p class="dim">${esc(t('lights.xled.strum_pin.desc'))}</p></div>
+      <select data-k="spin" aria-label="${esc(t('lights.data_pin'))}">${pinOptions(SID)}</select></div>`;
+  }
+  return { draw, stop: () => { findRun++; finding = -1; }, strumPinHtml, setStrumPin: (v) => { setStrumChainPin(state.cfg, v); } };
 }
 
 // Setup wizard helper: set the zone counts (0 = off) and place the zones one after another, each on the chain it is already on
@@ -310,5 +361,5 @@ export function applyXledCounts(c, counts) {
     zn.count = Math.min(XZONE_MAX[z], n);
     zn.start = Math.max(0, xledAutoStart(c, zn.chain, zn.count, z));
   });
-  for (let i = 0; i < NUM_XLED_PINS; i++) if (!e.xzones.some((zn) => xzoneOn(zn) && zn.chain === i + 1)) { e.xledPins[i] = PIN_NONE; e.xledClk[i] = PIN_NONE; e.xledType[i] = 0; e.xledOrder[i] = 0; }
+  gcPinsOf(c);
 }

@@ -1539,6 +1539,8 @@
   "lights.xled.group.buttons.name": "Кнопки Star и Plus",
   "lights.xled.group.buttons.desc": "LED под кнопкой Star Power и LED под кнопкой Plus / Select.",
   "lights.xled.pin_block": "Вывод данных {n} (GP{pin})",
+  "lights.xled.strum_pin.backup": "вывод данных LED панели удара",
+  "lights.xled.strum_pin.desc": "Подключите LED панели удара к тому же выводу данных, что и LED ладов, или к отдельному выводу данных. Они также могут делить дополнительный вывод с дополнительными LED.",
   "lights.xled.err.noclk": "Вывод данных GP{pin}: выберите вывод тактирования для LED APA102.",
   "lights.xled.order_hint": "LED на этом выводе данных в порядке подключения. Двигайте зону вверх или вниз, чтобы изменить порядок; позиции рассчитываются автоматически.",
   "lights.xled.move_up": "Поднять: {zone}",

@@ -409,11 +409,6 @@ static void output(const px_t *px, int n) {
     else ws_encode(&ch[0], px, n, cur_type, g_cfg.led_order);
 }
 
-// one shared (not inlined) colour path keeps rgb_task small
-static void __attribute__((noinline)) set_px(px_t *px, uint8_t pos, uint8_t r, uint8_t g, uint8_t b, uint8_t level, uint8_t bright) {
-    if (pos < MAX_LEDS) px[pos] = pack(r, g, b, level, bright);
-}
-
 // ---------------------------------------------------------------- LED engine v2
 // Two zones (frets, strum bar). Every frame each LED gets an idle result, then the press reaction, star power,
 // whammy, the star flash and the sleep fade. All maths is integer; colours are carried as linear light
@@ -431,6 +426,7 @@ typedef struct {
 } light_t;
 
 static bool last_up = true;   // the last strum direction held (colours the fade-out of a strum press)
+static int sxc;               // chain the strum LEDs draw on this frame (0.57): 0 = main, 1..3 = extra chain, -1 = that chain is not attached (not drawn)
 
 static int build_lights(light_t *l, int *chain) {
     int n = 0, len = 0;
@@ -455,7 +451,7 @@ static int build_lights(light_t *l, int *chain) {
         const uint8_t *p = (zs->zflags & ZF_SAME) ? c : upc ? g_cfg.strum_up_color : g_cfg.strum_down_color;
         l[n++] = (light_t){ strum_led_pos(&g_cfg, i), c[0], c[1], c[2], p[0], p[1], p[2], (uint8_t)(NUM_FRETS + i), -1, down, false };
     }
-    for (int k = 0; k < n; k++) if (l[k].pos < MAX_LEDS && l[k].pos + 1 > len) len = l[k].pos + 1;
+    for (int k = 0; k < n; k++) if ((l[k].fret >= 0 || sxc == 0) && l[k].pos < MAX_LEDS && l[k].pos + 1 > len) len = l[k].pos + 1;   // strum LEDs on an extra chain are not on this one
     *chain = len;
     return n;
 }
@@ -684,6 +680,26 @@ static void zone_lengths(void) {
         int e = x->start + x->count;
         if (e > xlen[x->chain]) xlen[x->chain] = (uint8_t)e;
     }
+    if (sxc > 0)                                            // the strum LEDs on an extra chain (0.57)
+        for (int i = 0; i < g_cfg.strum_leds && i < MAX_STRUM_LEDS; i++) {
+            int e = strum_led_pos(&g_cfg, i) + 1;
+            if (e <= MAX_CHAIN_LEDS && e > xlen[sxc]) xlen[sxc] = (uint8_t)e;
+        }
+}
+
+// where light l is drawn: its slot on its chain (the strum LEDs follow strum_chain), with pk_type set for that chain's LED type; NULL = nowhere
+static px_t *light_slot(const light_t *l) {
+    int c = l->fret < 0 ? sxc : 0;
+    if (c < 0) return NULL;
+    pk_type = c ? ch[c].type : cur_type;
+    if (l->pos >= (c ? MAX_CHAIN_LEDS : MAX_LEDS)) return NULL;
+    return &pxs[c][l->pos];
+}
+// one shared (not inlined) colour path keeps rgb_task small
+static void __attribute__((noinline)) set_light(const light_t *l, uint8_t r, uint8_t g, uint8_t b, uint8_t level, uint8_t bright) {
+    px_t *s = light_slot(l);
+    if (s) *s = pack(r, g, b, level, bright);
+    pk_type = cur_type;
 }
 
 static void render_zones(uint8_t bright, uint32_t t, bool star, bool ps, uint32_t slp) {
@@ -756,7 +772,7 @@ static void render_zones(uint8_t bright, uint32_t t, bool star, bool ps, uint32_
     }
 }
 
-static void render(const light_t *L, int n, px_t *px, uint8_t bright, uint32_t t) {
+static void render(const light_t *L, int n, uint8_t bright, uint32_t t) {
     const yacc_config_t *c = &g_cfg;
     bool pva = pv_active();
     bool pstar = pva && ((pv_bits >> 7) & 1);
@@ -815,7 +831,8 @@ static void render(const light_t *L, int n, px_t *px, uint8_t bright, uint32_t t
         }
         if (flash) white_mix(o, flash);
         if (slp != 255) scale(o, slp);
-        if (l->pos < MAX_LEDS) px[l->pos] = pack_l(o, bright);
+        px_t *slot = light_slot(l);
+        if (slot) *slot = pack_l(o, bright);
     }
     g_dh = 0;
     render_zones(bright, t, star, ps, slp);
@@ -831,7 +848,7 @@ void rgb_task(void) {
     for (int c = 1; c < NUM_XCHAINS; c++) {                 // extra chains: only the pins some zone uses, each with its own LED type
         uint8_t p = g_ext.xled_pin[c - 1], k = g_ext.xled_clk[c - 1], ty = g_ext.xled_type[c - 1];
         bool apa = ty == LED_APA102;
-        bool use = on && xled_chain_used(&g_ext, c) && p < NUM_DIGITAL_PINS && ty < NUM_LED_TYPES &&
+        bool use = on && (xled_zone_chain_used(&g_ext, c) || (g_ext.strum_chain == c && g_cfg.strum_leds)) && p < NUM_DIGITAL_PINS && ty < NUM_LED_TYPES &&
                    (!apa || (k < NUM_DIGITAL_PINS && k != p)) &&
                    (int)p != cur_pin && (int)p != cur_clk && (!apa || ((int)k != cur_pin && (int)k != cur_clk));
         xattach(c, use ? (int)p : -1, use && apa ? (int)k : -1, ty);
@@ -850,13 +867,14 @@ void rgb_task(void) {
     if (bright > ceil_b) bright = ceil_b;
     light_t L[MAX_LEDS];
     int chain;
+    sxc = (g_ext.strum_chain && g_cfg.strum_leds) ? (g_ext.strum_chain < NUM_XCHAINS && ch[g_ext.strum_chain].pin >= 0 ? (int)g_ext.strum_chain : -1) : 0;
     int n = build_lights(L, &chain);
     px_t *px = pxs[0];
     memset(pxs, 0, sizeof(pxs));
     pk_type = cur_type;
     zone_lengths();
     if (xlen[0] > chain) chain = xlen[0];
-#define SET(k, rr, gg, bb, lv) set_px(px, L[k].pos, (rr), (gg), (bb), (lv), bright)
+#define SET(k, rr, gg, bb, lv) set_light(&L[k], (rr), (gg), (bb), (lv), bright)
     bool testing = test_led >= 0 && (int32_t)(now - test_until) < 0;
     bool booting = (g_cfg.flags & CFG_FLAG_RGB_BOOTFLASH) && boot_fret >= 0 && (uint32_t)(now - boot_t0) < BOOT_FLASH_US;
 
@@ -905,7 +923,7 @@ void rgb_task(void) {
             SET(k, L[k].r, L[k].g, L[k].b, (uint8_t)lv);
         }
     } else {
-        render(L, n, px, bright, tick());
+        render(L, n, bright, tick());
     }
 #undef SET
     if (cur_pin >= 0) output(px, chain);

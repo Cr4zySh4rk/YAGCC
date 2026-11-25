@@ -105,6 +105,36 @@ int main(void) {
     m.fret_leds = 2; m.led_map2[4] = 8; CHECK(!ok(&e, &m)); m.no_fret_leds = 1; CHECK(ok(&e, &m));
     m = main_cfg();
     e.xzone[0].chain = 1; e.xzone[0].start = 0; e.xled_pin[0] = 11; CHECK(ok(&e, &m));                  // the same positions on another chain are fine
+    // strum LEDs on their own chain (0.57, ext byte 410)
+    CHECK(offsetof(ext_config_t, strum_chain) == 410 && offsetof(ext_config_t, rsv2) == 411);
+    e = mk(); m = main_cfg(); m.strum_leds = 3; m.strum_map[0] = 0; m.strum_map[1] = 1; m.strum_map[2] = 2;
+    for (int f = 0; f < NUM_FRETS; f++) m.led_map[f] = (uint8_t)(3 + f);
+    e.strum_chain = 4; CHECK(!ok(&e, &m) && !ok(&e, NULL));                       // chain 0..3
+    e.strum_chain = 1; CHECK(!ok(&e, &m) && !ok(&e, NULL));                       // chain 1 needs its pin
+    e.xled_pin[0] = 11; CHECK(ok(&e, &m) && ok(&e, NULL));                        // strum LEDs alone on chain 1, no zone there
+    e.xled_pin[0] = 10; CHECK(!ok(&e, &m));                                       // the main LED pin
+    e.xled_pin[0] = 11; e.xled_type[0] = LED_APA102; CHECK(!ok(&e, &m));          // APA102 needs its clock pin
+    e.xled_clk[0] = 12; e.xled_order[0] = ORDER_BGR; CHECK(ok(&e, &m));
+    e.xled_type[0] = LED_SK6812_RGBW; CHECK(!ok(&e, &m)); e.xled_clk[0] = PIN_NONE; CHECK(ok(&e, &m));
+    e.xled_type[0] = LED_WS2812; e.xled_order[0] = 0;
+    e.xled_pin[0] = 11; m.pins[0] = 11; CHECK(!ok(&e, &m)); m.pins[0] = PIN_NONE;
+    // the strum LEDs no longer count against the main chain: a neck at their old positions is fine there ...
+    e.strum_chain = 0; e.xled_pin[0] = PIN_NONE; e.xzone[0].count = 3; e.xzone[0].start = 0; CHECK(!ok(&e, &m));   // ... not while they are still on it
+    e.strum_chain = 1; e.xled_pin[0] = 11; e.xzone[0].chain = 0; CHECK(ok(&e, &m));
+    // zone and strum LEDs on the same extra chain: no overlap, either order
+    e.xzone[0].chain = 1; e.xzone[0].start = 2; CHECK(!ok(&e, &m) && ok(&e, NULL));
+    e.xzone[0].start = 3; CHECK(ok(&e, &m));
+    e.xzone[0].start = 0; m.strum_map[0] = 3; m.strum_map[1] = 4; m.strum_map[2] = 5; CHECK(ok(&e, &m));
+    e.xzone[0].flags = ZX_REVERSE; e.xzone[0].start = 2; CHECK(!ok(&e, &m)); e.xzone[0].flags = 0;
+    // strum positions: < MAX_CHAIN_LEDS
+    e = mk(); e.strum_chain = 1; e.xled_pin[0] = 11; m.strum_map[2] = 71; CHECK(ok(&e, &m));
+    m.strum_map[2] = 72; CHECK(!ok(&e, &m));
+    e.strum_chain = 0; m.strum_map[2] = 72; CHECK(!ok(&e, &m)); m.strum_map[2] = 17; CHECK(ok(&e, &m));
+    // a zone on a chain the strum LEDs left in use by neither: unused pin bytes are ignored again
+    e = mk(); e.xled_pin[0] = 5; e.xled_type[0] = 77; CHECK(ok(&e, &m));
+    // xled_chain_used covers zones and the strum LEDs
+    e = mk(); CHECK(!xled_chain_used(&e, 1)); e.strum_chain = 2; CHECK(xled_chain_used(&e, 2) && !xled_chain_used(&e, 1) && !xled_zone_chain_used(&e, 2));
+    e = mk(); m = main_cfg();
     // crc / corruption still covered
     e.crc ^= 1; CHECK(!ext_validate(&e, &m));
 

@@ -5,7 +5,7 @@ import { TILT_SW_FILTER_MAX, strumGuardMs, strumGuardByte, STRUM_GUARD_DEFAULT_M
   MAP_DEFAULT, MAP_NONE, XZONE_NAMES, XZONE_MAX, xzoneOn, ATILT_SOURCES, ACCEL2_MIN_MINOR, TILT_FUNC_MIN_MINOR, FUNC_STAR, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
 } from './protocol.js?v=dev';
 import { YaccDevice, webusbSupported } from './usb.js?v=dev';
-import { createXled, applyXledCounts } from './xled.js?v=dev';
+import { createXled, applyXledCounts, fitStrumChain } from './xled.js?v=dev';
 import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
 import { createGuitar } from './guitar.js?v=dev';
 import { renderHardware, renderCompat } from './pages.js?v=dev';
@@ -937,7 +937,7 @@ function renderStep() {
     renderRgb();
   } else if (step.kind === 'ledmap') {
     const c = state.cfg;
-    const lay = ledLayout(c);
+    const lay0 = ledLayout(c), lay = { ...lay0, strum: lay0.strumMain };   // strum LEDs on an extra data pin (0.57) are not part of this chain
     const why = ledWhyDark(c);
     if (why) {    // nothing would light, so don't start the wizard (and keep stepCtx empty so tickStep stays idle)
       card.innerHTML = `${head}<div class="result bad"><span>${why}</span></div>
@@ -963,7 +963,7 @@ function renderStep() {
       const left = [...Array(lay.chain).keys()].filter((p) => !taken.has(p));
       if (lay.frets) c.ledMap = stepCtx.assign.map((p) => (p >= 0 ? p : left.shift()));
       if (lay.frets && lay.per === 2) c.ledMap2 = stepCtx.assign2.map((p) => (p >= 0 ? p : left.shift()));
-      for (let k = 0; k < MAX_STRUM_LEDS; k++) c.strumMap[k] = k < lay.strum ? (stepCtx.strumAssign[k] ?? left.shift()) : 200 + k;
+      if (!lay0.sx) for (let k = 0; k < MAX_STRUM_LEDS; k++) c.strumMap[k] = k < lay.strum ? (stepCtx.strumAssign[k] ?? left.shift()) : 200 + k;
       pushCfg();
     };
     const label = (pos) => {
@@ -1525,7 +1525,7 @@ function tickStep(s) {
   } else if (step.kind === 'ledmap' && stepCtx.assign && stepCtx.idx < stepCtx.chain) {
     if (!stepCtx.base) { stepCtx.base = s.counts.slice(); return; }
     if (performance.now() < stepCtx.lockUntil) { stepCtx.base = s.counts.slice(); return; }
-    const lay = ledLayout(state.cfg);
+    const lay = { ...ledLayout(state.cfg), strum: ledLayout(state.cfg).strumMain };
     const hit = (pin) => pin !== PIN_NONE && diff8(s.counts[pin], stepCtx.base[pin]) >= 1;
     const next = () => { stepCtx.idx++; stepCtx.base = s.counts.slice(); stepCtx.lockUntil = performance.now() + 500; stepCtx.redraw(); };
     if (lay.strum && stepCtx.strumAssign.length < lay.strum && (hit(state.cfg.pins[5]) || hit(state.cfg.pins[6]))) {
@@ -2188,12 +2188,12 @@ function ledLayoutControls(c, pfx = 'lay', placement = false) {
     <div class="opt"><div><h3>${t('common.strum_bar_leds')}</h3><p class="dim">${t('lights.hw.leds_strum_bar_same_chain')}</p></div>
       <select id="${pfx}Strum">${STRUM_COUNTS.map((tv, n) => `<option value="${n}" ${n === l.strum ? 'selected' : ''}>${tv}</option>`).join('')}</select></div>
     ${placement && l.strum > 1 ? strumPlacementHtml(c) : ''}
-    ${l.frets && l.strum ? `<div class="opt"><div><h3>${t('lights.hw.wiring_order')}</h3><p class="dim">${t('lights.hw.which_leds_come_first_chain')}</p></div>
+    ${l.frets && l.strumMain ? `<div class="opt"><div><h3>${t('lights.hw.wiring_order')}</h3><p class="dim">${t('lights.hw.which_leds_come_first_chain')}</p></div>
       <select id="${pfx}Order"><option value="0" ${!l.strumFirst ? 'selected' : ''}>${t('lights.hw.frets_first')}</option><option value="1" ${l.strumFirst ? 'selected' : ''}>${t('lights.hw.strum_leds_first')}</option></select></div>` : ''}
     ${!l.frets && !l.strum ? `<p class="dim small">${t('lights.hw.choose_fret_leds_strum_leds')}</p>` : ''}`;
 }
 function wireLedLayout(c, changed, pfx = 'lay') {
-  const set = (patch) => { const l = ledLayout(c); applyLedLayout(c, { frets: l.frets, strum: l.strum, strumFirst: l.strumFirst, per: l.per, ...patch }); changed(); };
+  const set = (patch) => { const l = ledLayout(c); applyLedLayout(c, { frets: l.frets, strum: l.strum, strumFirst: l.strumFirst, per: l.per, ...patch }); fitStrumChain(c); changed(); };
   $(`#${pfx}Frets`)?.addEventListener('change', (e) => set({ frets: e.target.checked }));
   $(`#${pfx}Strum`)?.addEventListener('change', (e) => set({ strum: +e.target.value }));
   $(`#${pfx}Order`)?.addEventListener('change', (e) => set({ strumFirst: e.target.value === '1' }));
@@ -2206,7 +2206,7 @@ function chainLabels(c) {
     let f = l.frets ? c.ledMap.indexOf(p) : -1;
     if (f < 0 && l.frets && l.per === 2) f = (c.ledMap2 || []).indexOf(p);
     if (f >= 0) return { fret: f, color: c.colors[f], name: funcName(f) };
-    const k = c.strumMap.slice(0, l.strum).indexOf(p);
+    const k = c.strumMap.slice(0, l.strumMain).indexOf(p);
     return { strum: k, color: c.strumColor || '#ffffff', name: t('lights.hw.strum', { n: k + 1 }) };
   });
 }
@@ -2288,13 +2288,17 @@ let ledRun = 0, ledBusy = false;
 const ledWait = (ms) => new Promise((r) => setTimeout(r, ms));
 function stopLedTest() { if (!ledBusy) return; ledRun++; ledBusy = false; state.dev?.ledTest(-1).catch(() => {}); }
 async function runLedTest() {
-  const id = ++ledRun, n = ledLayout(state.cfg).chain || 1;
+  const id = ++ledRun, l = ledLayout(state.cfg);
+  // the main chain, then the strum LEDs when they have a data pin of their own (firmware 0.57)
+  const leds = [...Array(l.chain).keys()].map((i) => [i, 0]);
+  if (l.sx) leds.push(...state.cfg.strumMap.slice(0, l.strum).sort((a, b) => a - b).map((p) => [p, l.sx]));
+  if (!leds.length) leds.push([0, 0]);
   ledBusy = true;
   try {
     for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i < n; i++) {
+      for (const [i, ch] of leds) {
         if (id !== ledRun) return false;
-        await state.dev.ledTest(i);
+        await state.dev.ledTest(i, ch);
         await ledWait(300);
       }
     }
@@ -2374,10 +2378,22 @@ function buildLights() {
     applyColors();
     syncStudio();
     xl.draw();
+    drawStrumPin();
+  };
+  // the strum LEDs' data pin (firmware 0.57+), under their other settings; redrawn only when it changes
+  const drawStrumPin = () => {
+    const el = $('#strumPinRow'), html = xl.strumPinHtml();
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
   };
   const live = () => { refresh(); pushCfg(); };
   const xl = xledCtl = createXled({ state, $, fwAtLeast, advOn, live, pushCfg, assignedPins: () => assignedPins(), test: (pos, chain) => state.dev?.ledTest(pos, chain), active: () => state.view === 'lights' });
 
+  $('#strumPinRow').onchange = (e) => {
+    if (e.target.dataset.k !== 'spin') return;
+    xl.setStrumPin(e.target.value);
+    drawLayout(); live();
+    $('#strumPinRow select')?.focus();
+  };
   $on.onchange = () => { c.rgbEnabled = $on.checked; live(); };
   $pin.onchange = () => { c.rgbPin = +$pin.value; live(); };
   $('#ledSetupBtn').onclick = () => { ledHwOpen = !ledHwOpen; refresh(); };

@@ -1527,6 +1527,8 @@
   "lights.xled.group.buttons.name": "スターボタンとプラスボタン",
   "lights.xled.group.buttons.desc": "スターパワーボタンの下とプラス / セレクトボタンの下の LED。",
   "lights.xled.pin_block": "データピン {n}(GP{pin})",
+  "lights.xled.strum_pin.backup": "ストラム LED のデータピン",
+  "lights.xled.strum_pin.desc": "ストラム LED をフレット LED と同じデータピンに接続するか、専用のデータピンに接続します。追加 LED と追加ピンを共有することもできます。",
   "lights.xled.err.noclk": "データピン GP{pin}: APA102 LED のクロックピンを選んでください。",
   "lights.xled.order_hint": "このデータピンにつながる LED を配線順に並べています。ゾーンを上下に動かすと順序が変わり、位置は自動で計算されます。",
   "lights.xled.move_up": "{zone} を上へ",

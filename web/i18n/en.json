@@ -1531,6 +1531,8 @@
   "lights.xled.group.buttons.name": "Star & Plus buttons",
   "lights.xled.group.buttons.desc": "An LED under the star power button and one under the plus / select button.",
   "lights.xled.pin_block": "Data pin {n} (GP{pin})",
+  "lights.xled.strum_pin.backup": "strum LED data pin",
+  "lights.xled.strum_pin.desc": "Put the strum LEDs on the same data pin as the fret LEDs, or on a data pin of their own. They can also share an extra pin with the extra LEDs.",
   "lights.xled.err.noclk": "Data pin GP{pin}: choose a clock pin for the APA102 LEDs.",
   "lights.xled.order_hint": "The LEDs on this data pin, in wiring order. Move a zone up or down to change the order; the positions are worked out for you.",
   "lights.xled.move_up": "Move {zone} up",

@@ -1535,6 +1535,8 @@
   "lights.xled.group.buttons.name": "Botões Star e Plus",
   "lights.xled.group.buttons.desc": "Um LED sob o botão Star Power e outro sob o botão Plus / Select.",
   "lights.xled.pin_block": "Pino de dados {n} (GP{pin})",
+  "lights.xled.strum_pin.backup": "pino de dados dos LEDs de palhetada",
+  "lights.xled.strum_pin.desc": "Ligue os LEDs de palhetada ao mesmo pino de dados dos LEDs dos trastes ou a um pino de dados próprio. Eles também podem dividir um pino extra com os LEDs extras.",
   "lights.xled.err.noclk": "Pino de dados GP{pin}: escolha um pino de clock para os LEDs APA102.",
   "lights.xled.order_hint": "Os LEDs deste pino de dados, na ordem da fiação. Mova uma zona para cima ou para baixo para mudar a ordem; as posições são calculadas para você.",
   "lights.xled.move_up": "Mover {zone} para cima",

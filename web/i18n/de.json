@@ -1531,6 +1531,8 @@
   "lights.xled.group.buttons.name": "Star- & Plus-Tasten",
   "lights.xled.group.buttons.desc": "Eine LED unter der Star-Power-Taste und eine unter der Plus-/Select-Taste.",
   "lights.xled.pin_block": "Daten-Pin {n} (GP{pin})",
+  "lights.xled.strum_pin.backup": "Daten-Pin der Strum-LEDs",
+  "lights.xled.strum_pin.desc": "Hänge die Strum-LEDs an denselben Daten-Pin wie die Fret-LEDs oder an einen eigenen Daten-Pin. Sie können sich auch einen zusätzlichen Pin mit den zusätzlichen LEDs teilen.",
   "lights.xled.err.noclk": "Daten-Pin GP{pin}: Wähle einen Takt-Pin für die APA102-LEDs.",
   "lights.xled.order_hint": "Die LEDs an diesem Daten-Pin in Verdrahtungsreihenfolge. Verschiebe eine Zone nach oben oder unten, um die Reihenfolge zu ändern; die Positionen werden automatisch berechnet.",
   "lights.xled.move_up": "{zone} nach oben",

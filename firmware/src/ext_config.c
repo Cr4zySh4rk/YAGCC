@@ -48,6 +48,7 @@ bool ext_pin_used_by_main(const yacc_config_t *c, uint8_t g) {
 
 // extra LED zones: ranges, overlap, pins of the chains in use, LED type, overlap with the fret / strum LEDs
 static bool xled_validate(const ext_config_t *e, const yacc_config_t *main) {
+    if (e->strum_chain >= NUM_XCHAINS) return false;
     for (int z = 0; z < NUM_XZONES; z++) {
         const xzone_t *x = &e->xzone[z];
         if (!xz_valid(z, x)) return false;
@@ -61,9 +62,18 @@ static bool xled_validate(const ext_config_t *e, const yacc_config_t *main) {
                         if (main->led_map[f] == p) return false;
                         if (main->fret_leds == 2 && main->led_map2[f] == p) return false;
                     }
-                for (int i = 0; i < main->strum_leds && i < MAX_STRUM_LEDS; i++) if (strum_led_pos(main, i) == p) return false;
+                if (!e->strum_chain)
+                    for (int i = 0; i < main->strum_leds && i < MAX_STRUM_LEDS; i++) if (strum_led_pos(main, i) == p) return false;
             }
         }
+        if (main && e->strum_chain && x->chain == e->strum_chain) {            // the strum LEDs moved to this extra chain (0.57)
+            for (int k = 0; k < x->count; k++)
+                for (int i = 0; i < main->strum_leds && i < MAX_STRUM_LEDS; i++) if (strum_led_pos(main, i) == xz_pos(x, k)) return false;
+        }
+    }
+    if (main && main->strum_leds <= MAX_STRUM_LEDS) {                         // strum LED positions on the chain they are on (past MAX_LEDS on chain 0 they are simply not drawn)
+        for (int i = 0; i < main->strum_leds; i++)
+            if (strum_led_pos(main, i) >= MAX_CHAIN_LEDS) return false;
     }
     // chains in use: own data pin (and clock pin for APA102 / SK9822), LED type and colour order; no pin shared
     // with another chain, an ext input or the main config. Unused chains are not looked at (old configs hold zeros).

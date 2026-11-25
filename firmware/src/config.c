@@ -43,7 +43,7 @@ bool config_validate(const yacc_config_t *c) {
     if (c->host_dp_pin != PIN_NONE && c->host_dp_pin + 1 >= NUM_DIGITAL_PINS) return false;
     for (int i = 0; i < NUM_FRETS; i++) if (c->led_map[i] >= MAX_LEDS) return false;
     if (c->no_fret_leds > 1 || c->strum_leds > MAX_STRUM_LEDS) return false;
-    for (int i = 0; i < c->strum_leds; i++) if (strum_led_pos(c, i) >= MAX_LEDS) return false;
+    for (int i = 0; i < c->strum_leds; i++) if (strum_led_pos(c, i) >= MAX_CHAIN_LEDS) return false;   // 0.57: up to MAX_CHAIN_LEDS when they sit on an extra chain (ext_validate narrows it for the main chain)
     for (int i = 0; i < NUM_ATILT; i++) {
         const atilt_cfg_t *a = &c->atilt[i];
         if (a->ch != PIN_NONE && a->ch >= NUM_ATILT_SRC) return false;

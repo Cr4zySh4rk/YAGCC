@@ -1527,6 +1527,8 @@
   "lights.xled.group.buttons.name": "스타 & 플러스 버튼",
   "lights.xled.group.buttons.desc": "스타 파워 버튼 아래와 플러스 / 셀렉트 버튼 아래의 LED.",
   "lights.xled.pin_block": "데이터 핀 {n}(GP{pin})",
+  "lights.xled.strum_pin.backup": "스트럼 LED 데이터 핀",
+  "lights.xled.strum_pin.desc": "스트럼 LED를 프렛 LED와 같은 데이터 핀에 연결하거나 별도의 데이터 핀에 연결합니다. 추가 LED와 추가 핀을 함께 쓸 수도 있습니다.",
   "lights.xled.err.noclk": "데이터 핀 GP{pin}: APA102 LED의 클럭 핀을 선택하세요.",
   "lights.xled.order_hint": "이 데이터 핀에 연결된 LED를 배선 순서대로 보여 줍니다. 구역을 위아래로 옮겨 순서를 바꾸면 위치는 자동으로 계산됩니다.",
   "lights.xled.move_up": "{zone} 위로",

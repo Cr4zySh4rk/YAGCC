@@ -1,4 +1,4 @@
-import { DEVICE_FILTERS, isYaccUsb, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash, EXT_MIN_MINOR, EXT_SIZE, parseExt, serializeExt, STATUS_LEN_42, defaultExt, xledSafeExt, XLED_MIN_MINOR } from './protocol.js?v=dev';
+import { DEVICE_FILTERS, isYaccUsb, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash, EXT_MIN_MINOR, EXT_SIZE, parseExt, serializeExt, STATUS_LEN_42, defaultExt, xledSafeExt, XLED_MIN_MINOR, STRUM_CHAIN_MIN_MINOR } from './protocol.js?v=dev';
 
 const hexOf = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 const IFACE = 1;   // vendor config interface
@@ -64,7 +64,7 @@ export class YaccDevice extends EventTarget {
   async setConfig(cfg) {
     await this._out(VREQ.SETCFG, 0, serializeConfig(cfg));
     if (cfg.ext && this.hasExt) {
-      const buf = serializeExt(xledSafeExt(cfg), this.info.major > 0 || this.info.minor >= XLED_MIN_MINOR), h = hexOf(buf);
+      const buf = serializeExt(xledSafeExt(cfg), this.info.major > 0 || this.info.minor >= XLED_MIN_MINOR, this.info.major > 0 || this.info.minor >= STRUM_CHAIN_MIN_MINOR), h = hexOf(buf);
       if (h !== this._extSent) { await this._out(VREQ.SETEXT, 0, buf); this._extSent = h; }
     }
   }

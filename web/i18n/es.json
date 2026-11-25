@@ -1535,6 +1535,8 @@
   "lights.xled.group.buttons.name": "Botones Star y Plus",
   "lights.xled.group.buttons.desc": "Un LED bajo el botón Star Power y otro bajo el botón Plus / Select.",
   "lights.xled.pin_block": "Pin de datos {n} (GP{pin})",
+  "lights.xled.strum_pin.backup": "pin de datos de los LEDs de rasgueo",
+  "lights.xled.strum_pin.desc": "Conecta los LEDs de rasgueo al mismo pin de datos que los LEDs de trastes o a un pin de datos propio. También pueden compartir un pin adicional con los LEDs adicionales.",
   "lights.xled.err.noclk": "Pin de datos GP{pin}: elige un pin de reloj para los LEDs APA102.",
   "lights.xled.order_hint": "Los LEDs de este pin de datos, en orden de cableado. Mueve una zona arriba o abajo para cambiar el orden; las posiciones se calculan solas.",
   "lights.xled.move_up": "Subir {zone}",
