@@ -451,7 +451,7 @@ static int build_lights(light_t *l, int *chain) {
         const uint8_t *p = (zs->zflags & ZF_SAME) ? c : upc ? g_cfg.strum_up_color : g_cfg.strum_down_color;
         l[n++] = (light_t){ strum_led_pos(&g_cfg, i), c[0], c[1], c[2], p[0], p[1], p[2], (uint8_t)(NUM_FRETS + i), -1, down, false };
     }
-    for (int k = 0; k < n; k++) if ((l[k].fret >= 0 || sxc == 0) && l[k].pos < MAX_LEDS && l[k].pos + 1 > len) len = l[k].pos + 1;   // strum LEDs on an extra chain are not on this one
+    for (int k = 0; k < n; k++) if ((l[k].fret >= 0 || sxc == 0) && l[k].pos < MAX_CHAIN_LEDS && l[k].pos + 1 > len) len = l[k].pos + 1;   // strum LEDs on an extra chain are not on this one
     *chain = len;
     return n;
 }
@@ -692,7 +692,7 @@ static px_t *light_slot(const light_t *l) {
     int c = l->fret < 0 ? sxc : 0;
     if (c < 0) return NULL;
     pk_type = c ? ch[c].type : cur_type;
-    if (l->pos >= (c ? MAX_CHAIN_LEDS : MAX_LEDS)) return NULL;
+    if (l->pos >= MAX_CHAIN_LEDS) return NULL;
     return &pxs[c][l->pos];
 }
 // one shared (not inlined) colour path keeps rgb_task small
