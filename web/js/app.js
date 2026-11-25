@@ -2,9 +2,10 @@ import { TILT_SW_FILTER_MAX, strumGuardMs, strumGuardByte, STRUM_GUARD_DEFAULT_M
   FUNCS, FUNC_LABEL, PIN_NONE, NUM_DIGITAL_PINS, NUM_FRETS, MODES, MODE_NONE, BOARDS, modeName, modeBaseName,
   DEBOUNCE_MODES, defaultConfig, whammyValue, isPressed, EFFECTS, RGB_PRESETS, FRET_DEFAULT_COLORS, NUM_LEDS, MAX_STRUM_LEDS, STRUM_ROLES, ledLayout, applyLedLayout, maxBrightness, ledOverdrive, LED_OVERDRIVE, effectZone,
   LED_TYPES, LED_ORDERS, KEY_SLOTS, KEYS, KEY_PRESETS,
-  MAP_DEFAULT, MAP_NONE, ATILT_SOURCES, ACCEL2_MIN_MINOR, TILT_FUNC_MIN_MINOR, FUNC_STAR, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
+  MAP_DEFAULT, MAP_NONE, XZONE_NAMES, XZONE_MAX, xzoneOn, ATILT_SOURCES, ACCEL2_MIN_MINOR, TILT_FUNC_MIN_MINOR, FUNC_STAR, ACCEL_TYPES, i2cPinsOk, tiltSourceRaw, tiltValue,
 } from './protocol.js?v=dev';
 import { YaccDevice, webusbSupported } from './usb.js?v=dev';
+import { createXled, applyXledCounts } from './xled.js?v=dev';
 import { PinDetector, WhammyCalibrator } from './detect.js?v=dev';
 import { createGuitar } from './guitar.js?v=dev';
 import { renderHardware, renderCompat } from './pages.js?v=dev';
@@ -145,6 +146,7 @@ function showView(v) {
   $('#helpBtn').classList.toggle('active', v === 'hardware' || v === 'compat');
   closeHelp();
   updateBar();
+  if (v !== 'lights') xledCtl?.stop();
   if (v !== 'setup' && v !== 'lights') { stopLedTest(); if (stepCtx.timer) { clearInterval(stepCtx.timer); stepCtx.timer = 0; state.dev?.ledTest(-1).catch(() => {}); } }
   if (v === 'setup') renderStep();
   if (state.dev && state.cfg) {           // pick up anything changed on other pages
@@ -228,7 +230,8 @@ const hostPins = (c = state.cfg) => (c.hostPin !== undefined && c.hostPin !== PI
 const portPins = (c = state.cfg) => [...(c.ps2Pins || []), c.wiiSda ?? PIN_NONE, c.wiiScl ?? PIN_NONE].filter((p) => p !== PIN_NONE);
 const accelPins = (c = state.cfg) => (c.accelSda !== undefined && c.accelSda !== PIN_NONE ? [c.accelSda, c.accelScl] : []);
 // firmware 0.42+: the optional D-pad / Select / Home / stick click pins live in cfg.ext
-const extPinList = (c = state.cfg) => (c?.ext ? c.ext.extPins.filter((p) => p !== PIN_NONE) : []);
+// (firmware 0.56+: the extra LED data pins are listed here too, so every pin picker leaves them out)
+const extPinList = (c = state.cfg) => (c?.ext ? [...c.ext.extPins, ...(c.ext.xledPins || []), ...(c.ext.xledClk || [])].filter((p) => p !== PIN_NONE) : []);
 const assignedPins = () => [...state.cfg.pins, state.cfg.tiltPin, ...hostPins(), ...accelPins(), state.cfg.rumblePin ?? PIN_NONE, ...portPins(), ...extPinList()].filter((p) => p !== PIN_NONE);
 const isConfigured = (cfg) => cfg.pins.some((p) => p !== PIN_NONE);
 
@@ -877,7 +880,7 @@ function renderStep() {
         next = `<button class="btn primary" id="lNext">${t('common.continue')}</button>`;
       } else if (f.sub === 'layout') {
         q = t('setup.rgb.where_are_leds');
-        body = ledLayoutControls(c, 'lay', true);
+        body = ledLayoutControls(c, 'lay', true) + xledAsk(c);
         next = `<button class="btn primary" id="lNext" ${chain ? '' : 'disabled'}>${t('common.continue')}</button>`;
       } else if (f.sub === 'pins') {
         q = t('setup.rgb.which_pins_are_they_wired');
@@ -911,7 +914,11 @@ function renderStep() {
       $('#askYes')?.addEventListener('click', () => { c.rgbEnabled = true; applyColors(); pushCfg(); go('type'); });
       $('#askNo')?.addEventListener('click', () => { c.rgbEnabled = false; applyColors(); pushCfg(); leave(); });
       if (f.sub === 'type') wireLedTypeCards(card, c, () => { pushCfg(); renderRgb(); });
-      if (f.sub === 'layout') { wireLedLayout(c, () => { pushCfg(); renderRgb(); }); wireStrumPlacement(c, () => { pushCfg(); renderRgb(); }, card); }
+      if (f.sub === 'layout') {
+        const relayout = () => { if (xledOk() && c.ext.xzones.some(xzoneOn)) applyXledCounts(c, c.ext.xzones.map((zn) => zn.count)); pushCfg(); renderRgb(); };   // the other LEDs follow a changed layout
+        wireLedLayout(c, relayout); wireStrumPlacement(c, () => { pushCfg(); renderRgb(); }, card);
+        card.querySelectorAll('[data-xw]').forEach((sel) => sel.addEventListener('change', () => { const n = c.ext.xzones.map((zn) => zn.count); n[+sel.dataset.xw] = +sel.value; applyXledCounts(c, n); c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c)); pushCfg(); renderRgb(); }));
+      }
       if (f.sub === 'pins') {
         $('#rgbPinSel').addEventListener('change', (e) => { c.rgbPin = +e.target.value; pushCfg(); renderRgb(); });
         $('#rgbClkSel')?.addEventListener('change', (e) => { c.ledClkPin = +e.target.value; pushCfg(); renderRgb(); });
@@ -2267,6 +2274,15 @@ function ledHelpHtml(c, open = false) {
 }
 document.addEventListener('click', (e) => { if (e.target.closest('[data-led-update]')) goUpdate(); });
 
+// Setup wizard: optional question about the extra LED zones (firmware 0.56+)
+const xledOk = () => fwAtLeast(56) && !!state.cfg?.ext?.xzones;
+function xledAsk(c) {
+  if (!xledOk()) return '';
+  const names = XZONE_NAMES;
+  return `<div class="led-sub xw"><h3>${t('setup.rgb.xled.title')}</h3><p class="dim small">${t('setup.rgb.xled.desc')}</p>
+    ${c.ext.xzones.map((zn, z) => `<div class="opt xw-row"><div><h3>${names[z]}</h3></div><select data-xw="${z}" aria-label="${names[z]}"><option value="0">${t('common.none')}</option>${[...Array(XZONE_MAX[z]).keys()].map((i) => `<option value="${i + 1}" ${zn.count === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></div>`).join('')}</div>`;
+}
+
 // LED test chase: LED 1..n, 300 ms each, twice, then off. Cancellable; true when it ran to the end.
 let ledRun = 0, ledBusy = false;
 const ledWait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2295,6 +2311,7 @@ async function ledTestButton(btn, label) {
   return ok;
 }
 
+let xledCtl = null;   // the Lights page's extra LED card
 let ledHwOpen = false;   // the Lights page's "Change setup" disclosure (opens by itself while the LEDs would be dark)
 function buildLights() {
   const c = state.cfg;
@@ -2356,8 +2373,10 @@ function buildLights() {
       || `<p class="dim">${t('lights.no_leds_set_up_choose')}</p>`;
     applyColors();
     syncStudio();
+    xl.draw();
   };
   const live = () => { refresh(); pushCfg(); };
+  const xl = xledCtl = createXled({ state, $, fwAtLeast, advOn, live, pushCfg, assignedPins: () => assignedPins(), test: (pos, chain) => state.dev?.ledTest(pos, chain), active: () => state.view === 'lights' });
 
   $on.onchange = () => { c.rgbEnabled = $on.checked; live(); };
   $pin.onchange = () => { c.rgbPin = +$pin.value; live(); };

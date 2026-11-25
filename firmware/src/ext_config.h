@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include "config.h"
 #include "dev_name.h"
+#include "xled.h"
 
 #define EXT_MAGIC   0x54584559u   // "YEXT" little endian
 #define EXT_VERSION 1
@@ -67,11 +68,16 @@ typedef struct __attribute__((packed)) {
     uint8_t  tilt_sw_filter_ms;     // 355    (0.51) settle time: 0 = type default, 1..250 ms
     uint8_t  strum_guard;           // 356    (0.53) strum release guard: 0 = default (15 ms), 1..40 ms, 255 = off
     uint8_t  led_flags;             // 357    (0.54) LED_FLAG_*: bit0 = overdrive (no layout brightness ceiling); other bits must be 0
-    uint8_t  rsv2[150];             // 358..507
+    uint8_t  xled_pin[3];           // 358..360 (0.56) data GPIO of extra LED chains 1..3, PIN_NONE = none (only checked while a zone uses the chain)
+    xzone_t  xzone[NUM_XZONES];     // 361..400 (0.56) extra LED zones: neck, star, plus, body (see xled.h); all zeros = off
+    uint8_t  xled_clk[3];           // 401..403 (0.56) clock GPIO of an APA102 / SK9822 extra chain, PIN_NONE otherwise
+    uint8_t  xled_type[3];          // 404..406 (0.56) LED type of extra chains 1..3 (LED_* of the main config)
+    uint8_t  xled_order[3];         // 407..409 (0.56) colour order of extra chains 1..3 (ORDER_*)
+    uint8_t  rsv2[98];              // 410..507
     uint32_t crc;                   // 508    crc32 of bytes 0..507
 } ext_config_t;
 _Static_assert(sizeof(ext_config_t) == EXT_SIZE, "ext config size");
-_Static_assert(offsetof(ext_config_t, map) == 32 && offsetof(ext_config_t, curve) == 320 && offsetof(ext_config_t, range) == 323 && offsetof(ext_config_t, bt_sleep) == 327 && offsetof(ext_config_t, dev_name) == 328 && offsetof(ext_config_t, tilt_sw_type) == 354 && offsetof(ext_config_t, tilt_sw_filter_ms) == 355 && offsetof(ext_config_t, strum_guard) == 356 && offsetof(ext_config_t, led_flags) == 357 && offsetof(ext_config_t, crc) == 508, "ext config layout");
+_Static_assert(offsetof(ext_config_t, map) == 32 && offsetof(ext_config_t, curve) == 320 && offsetof(ext_config_t, range) == 323 && offsetof(ext_config_t, bt_sleep) == 327 && offsetof(ext_config_t, dev_name) == 328 && offsetof(ext_config_t, tilt_sw_type) == 354 && offsetof(ext_config_t, tilt_sw_filter_ms) == 355 && offsetof(ext_config_t, strum_guard) == 356 && offsetof(ext_config_t, led_flags) == 357 && offsetof(ext_config_t, xled_pin) == 358 && offsetof(ext_config_t, xzone) == 361 && offsetof(ext_config_t, xled_clk) == 401 && offsetof(ext_config_t, xled_type) == 404 && offsetof(ext_config_t, xled_order) == 407 && offsetof(ext_config_t, rsv2) == 410 && offsetof(ext_config_t, crc) == 508, "ext config layout");
 
 extern ext_config_t g_ext;
 
@@ -82,11 +88,26 @@ static inline uint8_t led_brightness_ceiling(const yacc_config_t *c, uint8_t led
     return (led_flags & LED_FLAG_OVERDRIVE) ? 255 : led_max_brightness(c);
 }
 
+// LEDs the zones add (all chains), and the ceiling with them counted (0.56): see xled_ceiling()
+static inline unsigned xled_total(const yacc_config_t *c, const ext_config_t *e) {
+    unsigned t = (c->no_fret_leds ? 0u : 5u * (c->fret_leds == 2 ? 2u : 1u)) + c->strum_leds;
+    for (int z = 0; z < NUM_XZONES; z++) t += e->xzone[z].count;
+    return t;
+}
+static inline uint8_t led_brightness_ceiling_x(const yacc_config_t *c, const ext_config_t *e) {
+    return xled_ceiling(led_max_brightness(c), xled_total(c, e), (e->led_flags & LED_FLAG_OVERDRIVE) != 0);
+}
+// some active zone sits on extra chain `chain` (1..3), i.e. xled_pin[chain-1] is in use
+static inline bool xled_chain_used(const ext_config_t *e, int chain) {
+    for (int z = 0; z < NUM_XZONES; z++) if (e->xzone[z].count && e->xzone[z].chain == chain) return true;
+    return false;
+}
+
 uint32_t yacc_crc32(const uint8_t *d, size_t n);   // the config crc (zlib crc32)
 void ext_defaults(ext_config_t *e);                // sealed
 void ext_seal(ext_config_t *e);                    // fill magic / version / crc
 // magic, version, crc, pins valid and unique and not used by `main` (NULL = skip that check), ADC channels,
-// deadzone, calibration (min < mid < max, <= 4095) and map values (0, 1..31, 0xFF), curves (-100..100), stick ranges (0/1), Bluetooth sleep (0, 1..60, 255), name (printable ASCII, 1..25), tilt switch type (0/1), settle time (0..250) and strum release guard (0, 1..40, 255)
+// deadzone, calibration (min < mid < max, <= 4095) and map values (0, 1..31, 0xFF), curves (-100..100), stick ranges (0/1), Bluetooth sleep (0, 1..60, 255), name (printable ASCII, 1..25), tilt switch type (0/1), settle time (0..250) and strum release guard (0, 1..40, 255), and the extra LED zones (0.56: counts, enums, positions, no overlap, pins / LED type / clock of the chains in use, no overlap with the fret / strum LEDs when `main` is given)
 bool ext_validate(const ext_config_t *e, const yacc_config_t *main);
 bool ext_pin_used_by_main(const yacc_config_t *c, uint8_t gpio);   // some other feature of the main config owns this GPIO
 

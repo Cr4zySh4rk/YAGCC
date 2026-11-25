@@ -6,7 +6,7 @@
 void rgb_init(void);
 void rgb_task(void);                       // call from the main loop, self-paced (~125 Hz)
 void rgb_boot_indicator(uint8_t usb_mode); // flash the fret LED that selects this mode for 1 s
-void rgb_test_led(int led);                // light only chain position `led` (white); -1 = normal again
+void rgb_test_led(int chain, int led);     // light only position `led` of chain 0..3 (white); led -1 = normal again
 bool rgb_active_pin(int p);
 #define RGB_BT_OFF 0
 #define RGB_BT_PAIRING 1

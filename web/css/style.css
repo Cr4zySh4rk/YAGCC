@@ -1214,3 +1214,64 @@ header.top.hl-probe.two-row .conn { max-width: 9em; }
 .wcal h3 { margin: 0 0 4px; }
 .wcal-read { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0 10px; }
 .wcal-read b { color: var(--cyan); }
+
+/* ---- extra LED zones (Lights page, firmware 0.56+) ---- */
+.xled-card { margin-top: 18px; padding: 18px 24px; }
+.xled-head h2 { font-size: 22px; }
+.xz .opt { padding: 10px 0; }
+.xz-head .xz-btns { flex: none; gap: 12px; align-items: center; }
+.xz-where { color: var(--cyan); font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+.xz-body, .xz-adv { display: grid; gap: 10px; }
+.xz-body { margin: 0 0 12px 2px; padding: 4px 0 4px 14px; border-left: 2px solid var(--line-2); }
+.xz-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.xz-row > label:first-child { font-weight: 600; font-size: 15px; }
+.xz-ctl { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.xz-ctl select, .xz-ctl input[type=number] { min-width: 0; }
+.xz-ctl select { width: 270px; max-width: 100%; }
+.xz input[type=number] { background-image: none; padding: 0 10px; width: 92px; cursor: text; }
+.xz-ctl input[type=color] { width: 46px; height: 30px; padding: 0; border: 1px solid var(--line-2); border-radius: 4px; background: none; cursor: pointer; }
+.xz-ctl .hex { font: 500 13px var(--mono); color: var(--dim); }
+.xz-desc { margin: -4px 0 0; }
+.xz-slider { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+.xz-slider label { font-weight: 600; font-size: 15px; }
+.xz-slider output { font: 700 14px var(--mono); color: var(--cyan); }
+.xz-slider input[type=range] { grid-column: 1 / -1; width: 100%; }
+.xz-adv p { margin: -4px 0 0; }
+.xz-err p { margin: 2px 0; }
+.xmap { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.xmap h3 { margin: 0 0 2px; }
+.xmap-row { margin-top: 10px; }
+.xmap-lbl { display: block; font: 600 13px var(--mono); color: var(--dim); margin-bottom: 6px; }
+.xmap-cells { display: flex; flex-wrap: wrap; gap: 4px; }
+.xc { width: 30px; height: 30px; padding: 0; border-radius: 6px; border: 1px solid rgba(255,255,255,.2); background: var(--c); color: var(--fg); font: 600 11px var(--mono); cursor: pointer; }
+.xc.free { background: var(--inset); border-style: dashed; border-color: var(--line-2); }
+.xc.first { box-shadow: inset 0 0 0 2px rgba(255,255,255,.85); }
+.xc.bad { border-color: var(--bad); box-shadow: 0 0 0 2px var(--bad); background: repeating-linear-gradient(45deg, var(--bad) 0 4px, #7a1c2a 4px 8px); color: #fff; }
+.xc:hover:not(:disabled) { filter: brightness(1.2); }
+.xc:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.xmap-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; font-size: 13px; color: var(--dim); }
+.xmap-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.xw .xw-row { padding: 8px 0; }
+.xw .xw-row select { min-width: 110px; }
+@media (max-width: 860px) { .xled-card { padding: 16px 14px; } }
+@media (max-width: 520px) {
+  .xz-row { flex-wrap: wrap; }
+  .xz-ctl select { width: 100%; }
+  .xz-row > .xz-ctl { flex: 1 1 140px; justify-content: flex-end; }
+  .xz-head { flex-wrap: wrap; }
+}
+
+.xz-group { margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+.xz-group h3 { margin: 0; }
+.xz-group + .xz-head { border-top: 0; }
+.xz-sub h3 { font-size: 15px; font-weight: 600; }
+.xz-sub { padding-left: 12px; }
+.xpin { display: grid; gap: 10px; margin: 6px 0 12px; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--inset); }
+.xpin h3 { margin: 0; }
+
+.xorder { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.xorder li { display: flex; align-items: center; gap: 10px; padding: 4px 10px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--inset); min-height: 40px; }
+.xorder li.fixed { opacity: .65; border-style: dashed; }
+.xo-name { font-weight: 600; font-size: 14px; }
+.xo-btns { margin-left: auto; display: flex; gap: 6px; }
+.xo-hint { margin: 8px 0 0; }

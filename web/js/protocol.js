@@ -96,9 +96,14 @@ export const ledOverdrive = (c) => !!((c?.ext?.ledFlags ?? 0) & LED_OVERDRIVE);
 export function maxBrightness(c) {
   if (ledOverdrive(c)) return 255;
   const two = c.fretLeds === 2 && !c.noFretLeds;
-  if (!c.strumLeds) return two ? 160 : 255;
-  if (c.noFretLeds) return 200;
-  return two ? 110 : 150;
+  let m;
+  if (!c.strumLeds) m = two ? 160 : 255;
+  else if (c.noFretLeds) m = 200;
+  else m = two ? 110 : 150;
+  // firmware 0.56: extra LED zones count towards the total; more than 18 LEDs in all lowers the ceiling (same as led_brightness_ceiling)
+  const total = (c.noFretLeds ? 0 : NUM_LEDS * (two ? 2 : 1)) + (c.strumLeds || 0) + xledTotal(c);
+  if (total > 18) m = Math.min(m, Math.max(48, Math.floor(255 * 18 / total)));
+  return m;
 }
 // per: LEDs under each fret. With two, the default order is each fret's pair side by side (G G R R ...); the LED
 // order step teaches any other wiring (two rows, a snake ...)
@@ -114,6 +119,98 @@ export function applyLedLayout(c, { frets, strum, strumFirst, per = c.fretLeds =
   // unused strum slots are parked past the chain (the firmware ignores slots beyond strumLeds) so they keep sorting last
   strumOrder.forEach((s, k) => { c.strumMap[s] = k < strum ? sBase + k : 200 + k; });
   c.rgbBrightness = Math.min(c.rgbBrightness, maxBrightness(c));
+}
+// ---------------------------------------------------------------- extra LED zones (firmware 0.56, ext bytes 358..400)
+// Four zones (neck, star power button, plus / select button, body edge) on the main chain or on up to three extra data pins.
+export const NUM_XZONES = 4, NUM_XLED_PINS = 3, MAX_CHAIN_LEDS = 72;
+export const XZONE_MAX = [15, 2, 2, 30];
+export const ZX_REVERSE = 1, ZX_STAR = 2;
+export const XLED_MIN_MINOR = 56;
+export const XZONE_NAMES = localized(() => ([t('lights.xled.zone.neck.name'), t('lights.xled.zone.star.name'), t('lights.xled.zone.plus.name'), t('lights.xled.zone.body.name')]));
+export const XZONE_DESCS = localized(() => ([t('lights.xled.zone.neck.desc'), t('lights.xled.zone.star.desc'), t('lights.xled.zone.plus.desc'), t('lights.xled.zone.body.desc')]));
+export const XEFFECTS = localized(() => ([
+  { id: 0, name: t('common.off_2'), desc: t('lights.xled.fx.off.desc') },
+  { id: 1, name: t('lights.xled.fx.solid.name'), desc: t('lights.xled.fx.solid.desc') },
+  { id: 2, name: t('lights.xled.fx.breathe.name'), desc: t('lights.xled.fx.breathe.desc') },
+  { id: 3, name: t('common.rainbow'), desc: t('lights.xled.fx.rainbow.desc') },
+  { id: 4, name: t('lights.xled.fx.chase.name'), desc: t('lights.xled.fx.chase.desc') },
+  { id: 5, name: t('lights.xled.fx.frets.name'), desc: t('lights.xled.fx.frets.desc') },
+  { id: 6, name: t('lights.xled.fx.flash.name'), desc: t('lights.xled.fx.flash.desc') },
+  { id: 7, name: t('lights.xled.fx.press.name'), desc: t('lights.xled.fx.press.desc') },
+  { id: 8, name: t('lights.xled.fx.sparkle.name'), desc: t('lights.xled.fx.sparkle.desc') },
+]));
+export const XZONE_COLORS = [[0, 180, 255], [255, 200, 40], [60, 220, 120], [255, 60, 200]];
+export const emptyXzone = (z = 0) => ({ count: 0, chain: 0, start: 0, flags: 0, effect: 1, speed: 128, color: XZONE_COLORS[z].slice(), level: 100 });
+export const defaultXzones = () => [0, 1, 2, 3].map(emptyXzone);
+export const xzoneOn = (zn) => !!zn && zn.count > 0;
+export const xzoneLed = (zn, k) => zn.start + ((zn.flags & ZX_REVERSE) ? zn.count - 1 - k : k);   // chain position of the zone's k-th LED
+export const xledTotal = (c) => (c?.ext?.xzones || []).reduce((n, zn) => n + (zn.count > 0 ? zn.count : 0), 0);
+// positions taken by the fret and strum LEDs on the main chain
+export function mainChainUsers(c) {
+  const out = [];
+  const l = ledLayout(c);
+  if (l.frets) { for (let f = 0; f < NUM_LEDS; f++) { out.push({ pos: c.ledMap[f], kind: 'fret', idx: f }); if (l.per === 2) out.push({ pos: (c.ledMap2 || [])[f], kind: 'fret', idx: f }); } }
+  for (let k = 0; k < l.strum; k++) out.push({ pos: c.strumMap[k], kind: 'strum', idx: k });
+  return out;
+}
+// what sits on each chain position: chains[ch] = array (length MAX_CHAIN_LEDS) of arrays of {kind, idx}
+export function xledChains(c) {
+  const chains = [0, 1, 2, 3].map(() => Array.from({ length: MAX_CHAIN_LEDS }, () => []));
+  for (const u of mainChainUsers(c)) if (u.pos >= 0 && u.pos < MAX_CHAIN_LEDS) chains[0][u.pos].push({ kind: u.kind, idx: u.idx });
+  (c?.ext?.xzones || []).forEach((zn, z) => {
+    if (!xzoneOn(zn)) return;
+    for (let k = 0; k < zn.count; k++) { const p = zn.start + k; if (p >= 0 && p < MAX_CHAIN_LEDS) chains[zn.chain][p].push({ kind: 'zone', idx: z }); }
+  });
+  return chains;
+}
+// pins other than the extra LED pins that are taken (same sources as the app's pin pickers)
+export function otherUsedPins(c) {
+  const e = c.ext || {};
+  const l = [...c.pins, c.tiltPin, c.rgbPin, c.rumblePin ?? PIN_NONE, c.accelSda ?? PIN_NONE, c.accelScl ?? PIN_NONE, c.wiiSda ?? PIN_NONE, c.wiiScl ?? PIN_NONE, ...(c.ps2Pins || []), ...(e.extPins || [])];
+  if (c.ledType === 2) l.push(c.ledClkPin);
+  if (c.hostPin !== undefined && c.hostPin !== PIN_NONE) l.push(c.hostPin, c.hostPin + 1);
+  return l.filter((p) => p !== PIN_NONE && p !== undefined);
+}
+// is extra chain ch (1..3) an APA102 / SK9822 chain
+export const xchainApa = (e, ch) => ch > 0 && e.xledType?.[ch - 1] === 2;
+// problems with the extra LED settings, mirroring the firmware's ext_validate. [{ z, code, ... }]; z = zone or -1 for a pin problem
+export function xledErrors(c) {
+  const e = c?.ext, out = [];
+  if (!e?.xzones) return out;
+  const taken = new Set(otherUsedPins(c));
+  const seen = new Set();
+  e.xledPins.forEach((p, i) => {
+    if (p === PIN_NONE) return;
+    const apa = xchainApa(e, i + 1);
+    const mine = [p, ...(apa && e.xledClk[i] !== PIN_NONE ? [e.xledClk[i]] : [])];
+    for (const q of mine) { if (q >= NUM_DIGITAL_PINS || taken.has(q) || seen.has(q)) out.push({ z: -1, code: 'pin', pin: q }); seen.add(q); }
+    if (apa && e.xledClk[i] === PIN_NONE && e.xzones.some((zn) => xzoneOn(zn) && zn.chain === i + 1)) out.push({ z: -1, code: 'noclk', pin: p });
+  });
+  const chains = xledChains(c);
+  e.xzones.forEach((zn, z) => {
+    if (!xzoneOn(zn)) return;
+    if (zn.count > XZONE_MAX[z]) out.push({ z, code: 'count' });
+    if (zn.chain > 0 && e.xledPins[zn.chain - 1] === PIN_NONE) out.push({ z, code: 'nopin' });
+    if (zn.start + zn.count > MAX_CHAIN_LEDS) { out.push({ z, code: 'range' }); return; }
+    const hit = new Set();
+    for (let k = 0; k < zn.count; k++) for (const o of chains[zn.chain][zn.start + k]) if (!(o.kind === 'zone' && o.idx === z)) hit.add(o.kind === 'zone' ? 'z' + o.idx : o.kind);
+    if (hit.size) out.push({ z, code: 'overlap', with: [...hit] });
+  });
+  return out;
+}
+// first position after everything already on the chain that fits `count` LEDs (or the first gap that does); -1 when it does not fit
+export function xledAutoStart(c, chain, count, skipZone = -1) {
+  const cells = xledChains({ ...c, ext: { ...c.ext, xzones: c.ext.xzones.map((zn, z) => (z === skipZone ? { ...zn, count: 0 } : zn)) } })[chain];
+  let last = -1;
+  cells.forEach((u, p) => { if (u.length) last = p; });
+  if (last + 1 + count <= MAX_CHAIN_LEDS) return last + 1;
+  for (let p = 0; p + count <= MAX_CHAIN_LEDS; p++) if (cells.slice(p, p + count).every((u) => !u.length)) return p;
+  return -1;
+}
+// what the device gets: an invalid extra LED setup would make the firmware refuse the whole extension page, so send those zones off
+export function xledSafeExt(c) {
+  if (!c.ext?.xzones || !xledErrors(c).length) return c.ext;
+  return { ...c.ext, xledPins: Array(NUM_XLED_PINS).fill(PIN_NONE), xledClk: Array(NUM_XLED_PINS).fill(PIN_NONE), xzones: c.ext.xzones.map((zn) => ({ ...zn, count: 0 })) };
 }
 export const LED_TYPES = localized(() => ([
   { id: 0, name: 'WS2812B / NeoPixel', desc: t('lights.hw.led_type.ws2812b_neopixel.desc') },
@@ -661,6 +758,11 @@ export function defaultExt() {
     tiltSwFilter: 0,   // tilt switch settle time (firmware 0.51+, ext byte 355): 0 = type default (SW-520D about 40 ms), 1..250 ms
     strumGuard: 0,   // strum release guard (firmware 0.53+, ext byte 356): 0 = default (20 ms since 0.55), 1..40 ms, 255 = off
     ledFlags: 0,   // LED options (firmware 0.54+, ext byte 357): bit 0 = overdrive, brightness up to 255 whatever the LED layout
+    xledPins: Array(NUM_XLED_PINS).fill(PIN_NONE),   // extra LED data pins for chains 1..3 (firmware 0.56+, ext bytes 358..360)
+    xledClk: Array(NUM_XLED_PINS).fill(PIN_NONE),   // clock pin of each extra chain, APA102 types only (ext bytes 401..403)
+    xledType: [0, 0, 0],   // LED type of each extra chain, same values as the main LED type (ext bytes 404..406)
+    xledOrder: [0, 0, 0],   // colour order of each extra chain (ext bytes 407..409)
+    xzones: defaultXzones(),   // extra LED zones: neck, star, plus, body (firmware 0.56+, ext bytes 361..400, 10 bytes each)
     btSleep: 0,   // Bluetooth idle sleep (firmware 0.45+, ext byte 327): 0 = 2 minutes (default), 1..60 minutes, 255 = never
     map: Array.from({ length: NUM_MODE_ROWS }, emptyMapRow),
   };
@@ -709,9 +811,22 @@ export function parseExt(dv) {
     tiltSwFilter: Math.min(TILT_SW_FILTER_MAX, dv.getUint8(355)),
     strumGuard: ((b) => (b === STRUM_GUARD_OFF || b <= STRUM_GUARD_MAX ? b : 0))(dv.getUint8(356)),
     ledFlags: dv.getUint8(357) & LED_OVERDRIVE,
+    xledPins: [0, 1, 2].map((i) => { const p = dv.getUint8(358 + i); return p < NUM_DIGITAL_PINS ? p : PIN_NONE; }),
+    xledClk: [0, 1, 2].map((i) => { const p = dv.getUint8(401 + i); return p < NUM_DIGITAL_PINS ? p : PIN_NONE; }),
+    xledType: [0, 1, 2].map((i) => { const v = dv.getUint8(404 + i); return v <= 2 ? v : 0; }),
+    xledOrder: [0, 1, 2].map((i) => { const v = dv.getUint8(407 + i); return v <= 5 ? v : 0; }),
+    xzones: [0, 1, 2, 3].map((z) => {
+      const o = 361 + z * 10, count = dv.getUint8(o);
+      const on = count > 0 && count <= XZONE_MAX[z];
+      const zn = { count: on ? count : 0, chain: Math.min(3, dv.getUint8(o + 1)), start: Math.min(MAX_CHAIN_LEDS - 1, dv.getUint8(o + 2)), flags: dv.getUint8(o + 3) & 3,
+        effect: dv.getUint8(o + 4) <= 8 ? dv.getUint8(o + 4) : 0, speed: dv.getUint8(o + 5), color: [dv.getUint8(o + 6), dv.getUint8(o + 7), dv.getUint8(o + 8)], level: Math.min(100, dv.getUint8(o + 9)) };
+      if (!on && zn.effect === 0 && zn.speed === 0 && !zn.color.some(Boolean) && !zn.level) return emptyXzone(z);   // all zeros = never set up
+      if (!zn.level) zn.level = 100;   // 0 = 100 %
+      return zn;
+    }),
   };
 }
-export function serializeExt(e) {
+export function serializeExt(e, xled = true) {   // xled false: leave bytes 358..409 zero (firmware before 0.56)
   const buf = new ArrayBuffer(EXT_SIZE), dv = new DataView(buf);
   dv.setUint32(0, EXT_MAGIC, true); dv.setUint8(4, 1);
   (e.extPins || []).slice(0, 7).forEach((p, i) => dv.setUint8(8 + i, p));
@@ -731,6 +846,24 @@ export function serializeExt(e) {
   dv.setUint8(355, Math.max(0, Math.min(TILT_SW_FILTER_MAX, Math.round(e.tiltSwFilter) | 0)));
   { const g = e.strumGuard; dv.setUint8(356, g === STRUM_GUARD_OFF ? STRUM_GUARD_OFF : Number.isInteger(g) && g >= 1 && g <= STRUM_GUARD_MAX ? g : 0); }
   dv.setUint8(357, (e.ledFlags ?? 0) & LED_OVERDRIVE);
+  if (xled) {   // an off zone is sent parked on chain 0, start 0
+  (e.xledPins || []).slice(0, NUM_XLED_PINS).forEach((p, i) => dv.setUint8(358 + i, Number.isInteger(p) && p >= 0 && p < NUM_DIGITAL_PINS ? p : PIN_NONE));
+  if (!e.xledPins) [0, 1, 2].forEach((i) => dv.setUint8(358 + i, PIN_NONE));
+  [0, 1, 2].forEach((i) => {   // per extra chain: clock pin (APA102 only), LED type, colour order; an unused chain is sent as 0xFF / 0 / 0
+    const inUse = Number.isInteger(e.xledPins?.[i]) && e.xledPins[i] < NUM_DIGITAL_PINS, ty = inUse ? Math.max(0, Math.min(2, e.xledType?.[i] | 0)) : 0;
+    const clk = e.xledClk?.[i];
+    dv.setUint8(401 + i, inUse && ty === 2 && Number.isInteger(clk) && clk >= 0 && clk < NUM_DIGITAL_PINS ? clk : PIN_NONE);
+    dv.setUint8(404 + i, ty); dv.setUint8(407 + i, inUse && ty !== 1 ? Math.max(0, Math.min(5, e.xledOrder?.[i] | 0)) : 0);
+  });
+  (e.xzones || []).slice(0, NUM_XZONES).forEach((zn, z) => {
+    const o = 361 + z * 10, cl = (v, hi) => Math.max(0, Math.min(hi, Math.round(v) | 0));
+    dv.setUint8(o, cl(zn.count, XZONE_MAX[z])); dv.setUint8(o + 1, zn.count > 0 ? cl(zn.chain, 3) : 0); dv.setUint8(o + 2, zn.count > 0 ? cl(zn.start, MAX_CHAIN_LEDS - 1) : 0);
+    dv.setUint8(o + 3, (zn.flags | 0) & 3);
+    dv.setUint8(o + 4, cl(zn.effect, 8)); dv.setUint8(o + 5, cl(zn.speed, 255));
+    (zn.color || [0, 0, 0]).slice(0, 3).forEach((v, i) => dv.setUint8(o + 6 + i, cl(v, 255)));
+    dv.setUint8(o + 9, cl(zn.level, 100));
+  });
+  }
   dv.setUint32(508, crc32(new Uint8Array(buf, 0, 508)), true);
   return buf;
 }

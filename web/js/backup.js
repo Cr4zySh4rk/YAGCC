@@ -1,6 +1,6 @@
 // Backup and restore of the controller's settings as a JSON file (in the spirit of GP2040-CE's
 // "Data Backup and Restoration"): pick which sections to save or restore.
-import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, NUM_ATILT_SRC, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX, NUM_MODE_ROWS, MAP_ROW, NUM_SRC, EXT_PIN_NAMES, devNameValid } from './protocol.js?v=dev';
+import { FUNCS, PIN_NONE, NUM_DIGITAL_PINS, NUM_ATILT_SRC, BOARDS, MODES, NUM_IDLE, NUM_PRESS, NUM_STAR, NUM_WFX, NUM_MODE_ROWS, MAP_ROW, NUM_SRC, EXT_PIN_NAMES, devNameValid, NUM_XZONES, NUM_XLED_PINS, XZONE_MAX, MAX_CHAIN_LEDS, xledErrors, defaultXzones } from './protocol.js?v=dev';
 import { t, localized } from './i18n.js?v=dev';
 
 export const BACKUP_FORMAT = 1;
@@ -21,7 +21,7 @@ export const SECTIONS = localized(() => ([
       'noFretLeds', 'strumLeds', 'strumMap', 'strumColor', 'strumRoles', 'fretLeds', 'ledMap2',
       'zoneFrets', 'zoneStrum', 'fretPress', 'fret2Colors', 'fret2Own', 'strumLedColors', 'strumUpColor', 'strumDownColor',
       'starColor', 'starAnim', 'starZones', 'starSpeed', 'whammyFx', 'whammyZones', 'starFlash', 'sleepMin'],
-    extKeys: ['ledFlags'] },   // firmware 0.54+: the Overdrive LEDs option lives in the extension page
+    extKeys: ['ledFlags', 'xledPins', 'xledClk', 'xledType', 'xledOrder', 'xzones'] },   // firmware 0.54+: the Overdrive LEDs option lives in the extension page; 0.56+: the extra LED zones
   { id: 'modes', name: t('common.modes'), desc: t('backup.section.modes.desc'),
     keys: ['usbMode', 'bootModes', 'xinputType', 'starDpadLeft', 'xinputOpts', 'keys'] },
   // firmware 0.42+: these live in the extension page (cfg.ext)
@@ -100,6 +100,13 @@ Object.assign(CHECK, {
   devName: (v) => devNameValid(v),
   tiltSwType: (v) => v === 0 || v === 1, tiltSwFilter: (v) => isInt(v, 0, 250),
   ledFlags: (v) => v === 0 || v === 1,
+  xledPins: (v) => Array.isArray(v) && v.length === NUM_XLED_PINS && v.every(isPin),
+  xledClk: (v) => Array.isArray(v) && v.length === NUM_XLED_PINS && v.every(isPin),
+  xledType: (v) => Array.isArray(v) && v.length === NUM_XLED_PINS && v.every((x) => isInt(x, 0, 2)),
+  xledOrder: (v) => Array.isArray(v) && v.length === NUM_XLED_PINS && v.every((x) => isInt(x, 0, 5)),
+  xzones: (v) => Array.isArray(v) && v.length === NUM_XZONES && v.every((zn, z) => !!zn && typeof zn === 'object' && isInt(zn.count, 0, XZONE_MAX[z]) && isInt(zn.chain, 0, 3) &&
+    isInt(zn.start, 0, MAX_CHAIN_LEDS - 1) && isInt(zn.flags, 0, 3) && isInt(zn.effect, 0, 8) && isInt(zn.speed, 0, 255) && isInt(zn.level, 1, 100) &&
+    Array.isArray(zn.color) && zn.color.length === 3 && zn.color.every(isByte)),
   strumGuard: (v) => v === 0 || v === 255 || isInt(v, 1, 40),
   btSleep: (v) => v === 0 || v === 255 || isInt(v, 1, 60),
   range: (v) => Array.isArray(v) && v.length === 4 && v.every((x) => x === 0 || x === 1),
@@ -107,7 +114,7 @@ Object.assign(CHECK, {
   cal: (v) => Array.isArray(v) && v.length === 6 && v.every((x) => isInt(x, 0, 4095)) && v[0] < v[1] && v[1] < v[2] && v[3] < v[4] && v[4] < v[5],
   map: (v) => Array.isArray(v) && v.length === NUM_MODE_ROWS && v.every((r) => Array.isArray(r) && r.length === MAP_ROW && r.every((x, i) => (i >= NUM_SRC ? x === 255 : x === 0 || x === 255 || isInt(x, 1, 31)))),
 });
-Object.assign(LABELS, { extPins: t('backup.d_pad_select_home_pins'), stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: t('backup.stick_dead_zone'), cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: t('backup.bluetooth_sleep_timer'), devName: 'controller name', tiltSwType: t('tune.tilt_switch.switch_type'), tiltSwFilter: t('tune.tilt_switch.settle_time'), strumGuard: t('tune.strum_guard.title'), ledFlags: t('lights.overdrive.title') });
+Object.assign(LABELS, { extPins: t('backup.d_pad_select_home_pins'), stickCh: 'stick pins', stickFlags: 'stick direction', deadzone: t('backup.stick_dead_zone'), cal: 'stick calibration', map: 'input mapping', curve: 'response curves', range: 'stick ranges', btSleep: t('backup.bluetooth_sleep_timer'), devName: 'controller name', tiltSwType: t('tune.tilt_switch.switch_type'), tiltSwFilter: t('tune.tilt_switch.settle_time'), strumGuard: t('tune.strum_guard.title'), ledFlags: t('lights.overdrive.title'), xledPins: t('lights.xled.backup_pins'), xledClk: t('lights.xled.backup_pins'), xledType: t('lights.xled.backup_pins'), xledOrder: t('lights.xled.backup_pins'), xzones: t('lights.xled.title') });
 const valid = (k, v) => (CHECK[k] ? CHECK[k](v) : typeof v === 'boolean' || isByte(v));
 
 export function makeBackup(cfg, info) {
@@ -175,6 +182,11 @@ export function applyBackup(cfg, parsed, chosen) {
   if (next.hostPin !== undefined && next.hostPin !== PIN_NONE && (!claim(next.hostPin, 'host') || !claim(next.hostPin + 1, 'host'))) next.hostPin = PIN_NONE;
   if (next.ext) {   // the optional pins must not clash with anything the main config uses
     next.ext.extPins = next.ext.extPins.map((p) => (claim(p, 'e') ? p : PIN_NONE));
+    if (next.ext.xzones && next.ext.xledPins) {   // extra LED pins and zones: drop them if they no longer fit the restored settings
+      next.ext.xledPins = next.ext.xledPins.map((p) => (claim(p, 'x') ? p : PIN_NONE));
+      next.ext.xledClk = (next.ext.xledClk || Array(NUM_XLED_PINS).fill(PIN_NONE)).map((p) => (claim(p, 'x') ? p : PIN_NONE));
+      if (xledErrors(next).length) { next.ext.xledPins = Array(NUM_XLED_PINS).fill(PIN_NONE); next.ext.xledClk = Array(NUM_XLED_PINS).fill(PIN_NONE); next.ext.xzones = defaultXzones(); }
+    }
     const bad = next.ext.stickCh.some((c, i) => c !== PIN_NONE && (c === next.whammyCh || next.ext.stickCh.indexOf(c) !== i || (next.atilt || []).some((tv) => tv.src === c)));
     if (bad) next.ext.stickCh = [PIN_NONE, PIN_NONE];
   }

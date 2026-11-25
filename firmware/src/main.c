@@ -216,7 +216,9 @@ bool usb_vendor_request(uint8_t rhport, uint8_t stage, tusb_control_request_t co
             rumble_test(req->wValue);
             return tud_control_status(rhport, req);
         case VREQ_LEDTEST:
-            rgb_test_led(req->wValue < MAX_LEDS ? (int)req->wValue : -1);
+            // wValue low byte = position, high byte = chain (0 = the main chain, which old configurators imply)
+            rgb_test_led((req->wValue >> 8) < NUM_XCHAINS ? (int)(req->wValue >> 8) : 0,
+                         (req->wValue >> 8) < NUM_XCHAINS && (req->wValue & 0xFF) < MAX_CHAIN_LEDS ? (int)(req->wValue & 0xFF) : -1);
             return tud_control_status(rhport, req);
         case VREQ_LEDPREVIEW:
             rgb_preview(req->wValue, req->wIndex != 0);

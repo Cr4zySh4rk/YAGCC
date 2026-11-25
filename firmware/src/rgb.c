@@ -8,10 +8,12 @@
 #include "hardware/pio.h"
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
+#include "hardware/dma.h"
 #include "config.h"
 #include "ext_config.h"
 #include "input.h"
 #include "ws2812.pio.h"
+#include "xled.h"
 
 #define FRAME_US    8000u
 #define BOOT_FLASH_US 1000000u
@@ -21,6 +23,9 @@
 static PIO rgb_pio = pio0;
 static const uint rgb_sm = 0;
 static uint rgb_offset;
+#if NUM_PIOS > 2
+static int pio2_offset = -1;              // the WS2812 program on PIO2 (RP2350), loaded when an extra chain needs it
+#endif
 static bool program_loaded;
 static int cur_pin = -1, cur_clk = -1, cur_type = -1;
 static uint32_t apa_half_cycles;      // APA102 clock half period in CPU cycles (see apa102_byte)
@@ -60,7 +65,7 @@ void rgb_set_bt(uint8_t state) {
 
 static uint32_t last_frame, boot_t0;
 static int boot_fret = -1;
-static int test_led = -1;
+static int test_led = -1, test_chain;
 static uint32_t test_until;
 
 // WS2812s are linear: a screen colour like #EF4444 (a clear red on a monitor) comes out pink and
@@ -85,9 +90,32 @@ static const uint8_t gamma8[256] = {
     218, 220, 223, 225, 227, 230, 232, 235, 237, 240, 242, 245, 247, 250, 252, 255,
 };
 
+// One LED chain: a WS2812 / SK6812 state machine with an optional DMA channel, or an APA102 / SK9822 bit-banged pair.
+// ch[0] is the main chain (PIO0 SM0, only while the LED type is not APA102, its APA102 state lives in cur_* / pend_*);
+// ch[1..3] are the extra chains of the zones, each with its own pin(s) and LED type.
+typedef struct {
+    int pin, clk;            // GPIOs being driven, -1 = not attached
+    int want, want_clk;      // GPIOs the config asks for (even if no state machine was free), -1 = none; reported by rgb_active_pin
+    int tried, tried_clk;    // the want that failed to attach, so it is not retried every pass
+    int type;                // LED type it was attached for
+    PIO pio; uint sm; uint offset;
+    int dma;                 // DMA channel, -1 = none claimed
+    bool dma_on;             // the DMA transfer of the current frame was started
+    uint16_t n, i;           // words (WS2812) or bytes (APA102) in the frame, handed over so far
+    union {
+        uint32_t w[MAX_CHAIN_LEDS + 3];                       // WS2812 / SK6812 words
+        uint8_t  b[4 * (MAX_CHAIN_LEDS + 3)];                 // APA102 bytes: start frame, LEDs, end frame
+    };
+} ws_t;
+#define CH_INIT { .pin = -1, .clk = -1, .want = -1, .want_clk = -1, .tried = -1, .tried_clk = -1, .type = -1, .dma = -1 }
+static ws_t ch[NUM_XCHAINS] = { CH_INIT, CH_INIT, CH_INIT, CH_INIT };
+static uint16_t pend_n, pend_i;                            // chain 0 APA102 frame being sent out, see output()
+static int pk_type;                                        // LED type pack_l() packs for (the chain being drawn)
+
 void rgb_init(void) {
     pio_sm_claim(rgb_pio, rgb_sm);           // so the CYW43 radio driver (Pico W) never takes this state machine
     rgb_offset = pio_add_program(rgb_pio, &ws2812_program);
+    ch[0].pio = rgb_pio; ch[0].sm = rgb_sm; ch[0].offset = rgb_offset;
     program_loaded = true;
     last_frame = time_us_32();
 }
@@ -99,14 +127,21 @@ static void release(int pin) {
     gpio_pull_up(pin);
 }
 
-static uint16_t pend_n, pend_i;                            // frame being sent out, see output()
+static void ws_stop(ws_t *c) {
+    if (c->dma >= 0 && c->dma_on) dma_channel_abort((uint)c->dma);
+    c->dma_on = false;
+    c->n = c->i = 0;
+}
+
+static bool ws_busy(const ws_t *c) { return c->i < c->n || (c->dma_on && c->dma >= 0 && dma_channel_is_busy((uint)c->dma)); }
 
 static void attach(int pin, int clk, int type) {
     if (pin == cur_pin && clk == cur_clk && type == cur_type) return;
-    if (cur_pin >= 0 && cur_type != LED_APA102) pio_sm_set_enabled(rgb_pio, rgb_sm, false);
+    if (cur_pin >= 0 && cur_type != LED_APA102) { ws_stop(&ch[0]); pio_sm_set_enabled(rgb_pio, rgb_sm, false); }
     release(cur_pin);
     release(cur_clk);
     cur_pin = cur_clk = cur_type = -1;
+    ch[0].pin = ch[0].want = -1;
     pend_i = pend_n = 0;
     if (pin < 0) return;
     if (type == LED_APA102) {
@@ -119,12 +154,74 @@ static void attach(int pin, int clk, int type) {
         cur_clk = clk;
     } else {
         ws2812_program_init(rgb_pio, rgb_sm, rgb_offset, (uint)pin, 800000.0f, type == LED_SK6812_RGBW ? 32 : 24);
+        ch[0].pin = pin;
     }
     cur_pin = pin;
     cur_type = type;
 }
 
-bool rgb_active_pin(int p) { return (cur_pin >= 0 && p == cur_pin) || (cur_clk >= 0 && p == cur_clk); }
+// ---- extra chains (zones on their own data pins), each on its own state machine running the same program
+static bool xclaim(ws_t *c) {
+    int sm = pio_claim_unused_sm(pio0, false);
+    if (sm >= 0) { c->pio = pio0; c->sm = (uint)sm; c->offset = rgb_offset; return true; }
+#if NUM_PIOS > 2
+    sm = pio_claim_unused_sm(pio2, false);
+    if (sm >= 0) {
+        if (pio2_offset < 0) {
+            if (!pio_can_add_program(pio2, &ws2812_program)) { pio_sm_unclaim(pio2, (uint)sm); return false; }
+            pio2_offset = (int)pio_add_program(pio2, &ws2812_program);
+        }
+        c->pio = pio2; c->sm = (uint)sm; c->offset = (uint)pio2_offset;
+        return true;
+    }
+#endif
+    return false;
+}
+
+static void xrelease(ws_t *c) {
+    if (c->pin < 0) return;
+    ws_stop(c);
+    if (c->type != LED_APA102) {
+        pio_sm_set_enabled(c->pio, c->sm, false);
+        pio_sm_unclaim(c->pio, c->sm);
+        if (c->dma >= 0) { dma_channel_unclaim((uint)c->dma); c->dma = -1; }
+    }
+    release(c->pin);
+    release(c->clk);
+    c->pin = c->clk = -1;
+    c->type = -1;
+}
+
+// chain 1..3: drive `pin` (-1 = none) as an LED chain of `type` (APA102 also needs `clk`); a failed claim leaves it dark
+static void xattach(int chain, int pin, int clk, int type) {
+    ws_t *c = &ch[chain];
+    c->want = pin; c->want_clk = clk;
+    if (pin == c->pin && clk == c->clk && type == c->type) return;
+    if (c->pin >= 0) xrelease(c);
+    if (pin < 0) { c->tried = c->tried_clk = -1; return; }
+    if (pin == c->tried && clk == c->tried_clk) return;
+    c->tried = pin; c->tried_clk = clk;
+    if (type == LED_APA102) {
+        if (clk < 0 || clk == pin) return;
+        gpio_init(pin); gpio_set_dir(pin, GPIO_OUT); gpio_put(pin, 0);
+        gpio_init(clk); gpio_set_dir(clk, GPIO_OUT); gpio_put(clk, 0);
+        gpio_set_drive_strength(pin, GPIO_DRIVE_STRENGTH_8MA);
+        gpio_set_drive_strength(clk, GPIO_DRIVE_STRENGTH_8MA);
+        apa_half_cycles = clock_get_hz(clk_sys) / 8000000u;
+        c->clk = clk;
+    } else {
+        if (!xclaim(c)) return;
+        ws2812_program_init(c->pio, c->sm, c->offset, (uint)pin, 800000.0f, type == LED_SK6812_RGBW ? 32 : 24);
+    }
+    c->pin = pin;
+    c->type = type;
+}
+
+bool rgb_active_pin(int p) {
+    if ((cur_pin >= 0 && p == cur_pin) || (cur_clk >= 0 && p == cur_clk)) return true;
+    for (int c = 1; c < NUM_XCHAINS; c++) if (p == ch[c].want || p == ch[c].want_clk || p == ch[c].pin || p == ch[c].clk) return true;   // extra chains
+    return false;
+}
 
 void rgb_boot_indicator(uint8_t mode) {
     boot_t0 = time_us_32();
@@ -134,7 +231,8 @@ void rgb_boot_indicator(uint8_t mode) {
                                  : (mode == MODE_SWITCH) ? F_ORANGE : F_GREEN;
 }
 
-void rgb_test_led(int led) {
+void rgb_test_led(int chain, int led) {
+    test_chain = chain;
     test_led = led;
     test_until = time_us_32() + TEST_HOLD_US;
 }
@@ -176,7 +274,7 @@ typedef struct { uint8_t r, g, b, gb; } px_t;   // gb: APA102 5-bit global brigh
 // l = gamma-corrected colour x level (0..255*255 per channel), i.e. linear light; scaled by the global brightness
 static px_t pack_l(const uint16_t l[3], uint8_t bright) {
     uint32_t vr = (uint32_t)l[0] * bright / 255u, vg = (uint32_t)l[1] * bright / 255u, vb = (uint32_t)l[2] * bright / 255u;   // colour x 255
-    if (cur_type == LED_APA102) {
+    if (pk_type == LED_APA102) {
         // APA102 / SK9822: put the dimming in the chip's 5-bit brightness and keep the colour bytes large,
         // so dim colours and slow fades keep their tint instead of stepping through a handful of levels
         uint32_t m = vr > vg ? (vr > vb ? vr : vb) : (vg > vb ? vg : vb);
@@ -196,21 +294,20 @@ static px_t pack(uint8_t r, uint8_t g, uint8_t b, uint8_t level, uint8_t bright)
 
 // APA102 clock: about 4 MHz whatever the system clock, slow enough for long or unshielded wires
 // (the chips take far more, but the edges round off over a metre of ribbon cable) and still under 0.2 ms a frame
-static void apa102_byte(uint8_t v) {
+static void apa102_byte(int dpin, int cpin, uint8_t v) {
     for (int i = 7; i >= 0; i--) {
-        gpio_put(cur_pin, (v >> i) & 1);
+        gpio_put(dpin, (v >> i) & 1);
         busy_wait_at_least_cycles(apa_half_cycles);
-        gpio_put(cur_clk, 1);
+        gpio_put(cpin, 1);
         busy_wait_at_least_cycles(apa_half_cycles);
-        gpio_put(cur_clk, 0);
+        gpio_put(cpin, 0);
     }
 }
 
 // the three colour bytes in wire order. APA102 / SK9822 chips take blue, green, red, so for them the
 // default setting (0) means BGR and the "BGR" slot means GRB; every other order reads the same for both types.
-static void order_bytes(uint8_t r, uint8_t g, uint8_t b, uint8_t c[3]) {
-    uint8_t o = g_cfg.led_order;
-    if (cur_type == LED_APA102) o = o == ORDER_GRB ? ORDER_BGR : o == ORDER_BGR ? ORDER_GRB : o;
+static void order_bytes(uint8_t r, uint8_t g, uint8_t b, uint8_t c[3], int type, uint8_t o) {
+    if (type == LED_APA102) o = o == ORDER_GRB ? ORDER_BGR : o == ORDER_BGR ? ORDER_GRB : o;
     switch (o) {
         case ORDER_RGB: c[0] = r; c[1] = g; c[2] = b; break;
         case ORDER_BRG: c[0] = b; c[1] = r; c[2] = g; break;
@@ -221,56 +318,95 @@ static void order_bytes(uint8_t r, uint8_t g, uint8_t b, uint8_t c[3]) {
     }
 }
 
-// Output never blocks the main loop: output() only encodes the frame into pend_*, and pump() (called on every
-// rgb_task() pass) hands a few words / bytes to the LED chain each time. A 9 LED WS2812 frame takes ~270 us on the
-// wire (a pio_sm_put_blocking loop held the loop ~30-230 us), an APA102 frame ~90-160 us of bit-banging.
+// Output never blocks the main loop: output() only encodes the frame, and pump() (called on every rgb_task() pass)
+// hands a few words / bytes to the LED chain each time. A 9 LED WS2812 frame takes ~270 us on the wire (a
+// pio_sm_put_blocking loop held the loop ~30-230 us), an APA102 frame ~90-160 us of bit-banging. A WS2812 frame of
+// more than the 8 FIFO words is fed by a DMA channel (it must not starve: a >50 us gap latches the frame early).
 #define APA_PUMP_BYTES 8                                   // ~16 us of bit-banging per pass
-static uint32_t pend_w[MAX_LEDS];                          // WS2812 / SK6812 words
-static uint8_t pend_b[4 + 4 * MAX_LEDS + 4 + 1];           // APA102 bytes: start frame, LEDs, end frame
+static uint8_t pend_b[4 + 4 * MAX_CHAIN_LEDS + 5 + 1];     // chain 0 APA102 bytes: start frame, LEDs, end frame
 
-static void pump(void) {
-    if (pend_i >= pend_n) return;
-    if (cur_type == LED_APA102) {
-        for (int k = 0; k < APA_PUMP_BYTES && pend_i < pend_n; k++) apa102_byte(pend_b[pend_i++]);
+static void apa_pump(int dpin, int cpin, const uint8_t *b, uint16_t *i, uint16_t n) {
+    for (int k = 0; k < APA_PUMP_BYTES && *i < n; k++) apa102_byte(dpin, cpin, b[(*i)++]);
+}
+
+static void ws_pump(ws_t *c) {
+    if (c->pin < 0 || c->i >= c->n) return;
+    while (c->i < c->n && !pio_sm_is_tx_fifo_full(c->pio, c->sm)) pio_sm_put(c->pio, c->sm, c->w[c->i++]);
+    if (c->i >= c->n || c->n <= 8) return;
+    if (c->dma < 0) {
+        c->dma = dma_claim_unused_channel(false);
+        if (c->dma >= 0) {
+            dma_channel_config d = dma_channel_get_default_config((uint)c->dma);
+            channel_config_set_transfer_data_size(&d, DMA_SIZE_32);
+            channel_config_set_read_increment(&d, true);
+            channel_config_set_write_increment(&d, false);
+            channel_config_set_dreq(&d, pio_get_dreq(c->pio, c->sm, true));
+            dma_channel_configure((uint)c->dma, &d, &c->pio->txf[c->sm], c->w, 0, false);
+        }
+    }
+    if (c->dma >= 0) {                                      // the rest of the frame follows the FIFO by itself
+        dma_channel_transfer_from_buffer_now((uint)c->dma, &c->w[c->i], c->n - c->i);
+        c->dma_on = true;
+        c->i = c->n;
     } else {
-        while (pend_i < pend_n && !pio_sm_is_tx_fifo_full(rgb_pio, rgb_sm)) pio_sm_put(rgb_pio, rgb_sm, pend_w[pend_i++]);
-        // The 8 word FIFO holds a whole frame of up to 8 LEDs, which then drains by itself (~240 us). A longer chain
-        // must not starve (a >50 us gap latches the frame early and garbles the rest), so only its tail waits here:
-        // at most (n - 8) words, 30-40 us each.
-        while (pend_i < pend_n && pend_n > 8) pio_sm_put_blocking(rgb_pio, rgb_sm, pend_w[pend_i++]);
+        while (c->i < c->n) pio_sm_put_blocking(c->pio, c->sm, c->w[c->i++]);   // no channel free: only the tail waits
     }
 }
 
-static void output(const px_t *px, int n) {
-    uint8_t c[3];
-    pend_i = pend_n = 0;
-    if (cur_type == LED_APA102) {
-        uint16_t m = 0;
-        for (int i = 0; i < 4; i++) pend_b[m++] = 0x00;                   // start frame
-        for (int i = 0; i < n; i++) {
-            order_bytes(px[i].r, px[i].g, px[i].b, c);
-            pend_b[m++] = 0xE0 | px[i].gb;                                // 111 + 5-bit brightness
-            pend_b[m++] = c[0]; pend_b[m++] = c[1]; pend_b[m++] = c[2];
-        }
-        // end frame: the data runs one half clock behind per LED, so n/2 more clocks push it to the last one.
-        // Zeros rather than 0xFF: SK9822 clones latch on them, and an extra LED past the chain stays dark.
-        int end = (n + 15) / 16; if (end < 4) end = 4;
-        for (int i = 0; i < end; i++) pend_b[m++] = 0x00;
-        pend_n = m;
-    } else {
-        for (int i = 0; i < n; i++) {
-            uint8_t r = px[i].r, g = px[i].g, b = px[i].b;
-            if (cur_type == LED_SK6812_RGBW) {
-                uint8_t w = r < g ? (r < b ? r : b) : (g < b ? g : b);    // move the shared white into W
-                pend_w[i] = ((uint32_t)(g - w) << 24) | ((uint32_t)(r - w) << 16) | ((uint32_t)(b - w) << 8) | w;
-            } else {
-                order_bytes(r, g, b, c);
-                pend_w[i] = (((uint32_t)c[0] << 16) | ((uint32_t)c[1] << 8) | c[2]) << 8;
-            }
-        }
-        pend_n = (uint16_t)n;
+static void pump(void) {
+    if (cur_type == LED_APA102) apa_pump(cur_pin, cur_clk, pend_b, &pend_i, pend_n);
+    else ws_pump(&ch[0]);
+    for (int c = 1; c < NUM_XCHAINS; c++) {
+        if (ch[c].type == LED_APA102) { if (ch[c].pin >= 0) apa_pump(ch[c].pin, ch[c].clk, ch[c].b, &ch[c].i, ch[c].n); }
+        else ws_pump(&ch[c]);
     }
-    pump();
+}
+
+static bool chains_busy(void) {
+    if (pend_i < pend_n) return true;
+    for (int c = 0; c < NUM_XCHAINS; c++) if (ws_busy(&ch[c])) return true;
+    return false;
+}
+
+// encode n LEDs for a WS2812 / SK6812 chain
+static void ws_encode(ws_t *c, const px_t *px, int n, int type, uint8_t order) {
+    uint8_t o[3];
+    for (int i = 0; i < n; i++) {
+        uint8_t r = px[i].r, g = px[i].g, b = px[i].b;
+        if (type == LED_SK6812_RGBW) {
+            uint8_t w = r < g ? (r < b ? r : b) : (g < b ? g : b);    // move the shared white into W
+            c->w[i] = ((uint32_t)(g - w) << 24) | ((uint32_t)(r - w) << 16) | ((uint32_t)(b - w) << 8) | w;
+        } else {
+            order_bytes(r, g, b, o, type, order);
+            c->w[i] = (((uint32_t)o[0] << 16) | ((uint32_t)o[1] << 8) | o[2]) << 8;
+        }
+    }
+    c->i = 0;
+    c->n = (uint16_t)n;
+}
+
+// APA102 / SK9822 frame into b, returns its length
+static uint16_t apa_encode(uint8_t *b, const px_t *px, int n, uint8_t order) {
+    uint8_t c[3];
+    uint16_t m = 0;
+    for (int i = 0; i < 4; i++) b[m++] = 0x00;                        // start frame
+    for (int i = 0; i < n; i++) {
+        order_bytes(px[i].r, px[i].g, px[i].b, c, LED_APA102, order);
+        b[m++] = 0xE0 | px[i].gb;                                     // 111 + 5-bit brightness
+        b[m++] = c[0]; b[m++] = c[1]; b[m++] = c[2];
+    }
+    // end frame: the data runs one half clock behind per LED, so n/2 more clocks push it to the last one.
+    // Zeros rather than 0xFF: SK9822 clones latch on them, and an extra LED past the chain stays dark.
+    int end = (n + 15) / 16; if (end < 4) end = 4;
+    for (int i = 0; i < end; i++) b[m++] = 0x00;
+    return m;
+}
+
+// chain 0 (the main pin; APA102 or WS2812 / SK6812)
+static void output(const px_t *px, int n) {
+    pend_i = pend_n = 0;
+    if (cur_type == LED_APA102) pend_n = apa_encode(pend_b, px, n, g_cfg.led_order);
+    else ws_encode(&ch[0], px, n, cur_type, g_cfg.led_order);
 }
 
 // one shared (not inlined) colour path keeps rgb_task small
@@ -529,6 +665,97 @@ static void press_light(uint16_t *o, const light_t *l, const led_zone_t *z, cons
     if (a) mix(o, o, P, a);
 }
 
+// ---------------------------------------------------------------- extra LED zones (0.56)
+// Neck, star, plus and body edge LEDs: each zone is a run of positions on one chain (xled.h). They have their own
+// effects (ZE_*); the input driven ones come from xz_input_led(), the animated ones are drawn here.
+static px_t pxs[NUM_XCHAINS][MAX_CHAIN_LEDS];
+static uint8_t xlen[NUM_XCHAINS];                          // LEDs to send per chain (0 = nothing to drive)
+typedef struct { uint8_t spark, noise, target; } xs_t;     // per zone LED animation state
+static xs_t xst[NUM_XZONES][30];
+static uint32_t xflash_t0, xfire_t;
+static bool xflash_on, xstrum_prev;
+
+static void zone_lengths(void) {
+    memset(xlen, 0, sizeof(xlen));
+    for (int z = 0; z < NUM_XZONES; z++) {
+        const xzone_t *x = &g_ext.xzone[z];
+        if (!x->count || !xz_valid(z, x)) continue;
+        if (x->chain && ch[x->chain].pin < 0) continue;     // chain not attached: nothing to light
+        int e = x->start + x->count;
+        if (e > xlen[x->chain]) xlen[x->chain] = (uint8_t)e;
+    }
+}
+
+static void render_zones(uint8_t bright, uint32_t t, bool star, bool ps, uint32_t slp) {
+    uint8_t held = 0;
+    for (int f = 0; f < NUM_FRETS; f++) if (fn_in(f)) held |= (uint8_t)(1u << f);
+    bool su = fn_in(F_STRUM_UP), sd = fn_in(F_STRUM_DOWN), strum = su || sd;
+    if (strum && !xstrum_prev) { xflash_t0 = t; xflash_on = true; }
+    xstrum_prev = strum;
+    bool press_src[NUM_XZONES] = { held != 0, fn_in(F_STAR) || ps, fn_in(F_PLUS), strum };
+    uint8_t fc[NUM_FRETS][3];
+    for (int f = 0; f < NUM_FRETS; f++) memcpy(fc[f], g_cfg.colors[f], 3);
+    if (xflash_on && t - xflash_t0 > 800u) xflash_on = false;     // longest fade: 200 ms / 0.25
+    bool nt = (int32_t)(t - xfire_t) >= 0;                  // new fire targets every ~60 ms
+    if (nt) xfire_t = t + 60;
+    for (int z = 0; z < NUM_XZONES; z++) {
+        const xzone_t *x = &g_ext.xzone[z];
+        int n = x->count;
+        if (!n || x->effect == ZE_OFF || !xz_valid(z, x) || x->chain >= NUM_XCHAINS) continue;
+        if (x->chain && ch[x->chain].pin < 0) continue;
+        pk_type = x->chain ? ch[x->chain].type : cur_type;
+        uint32_t rate = xz_rate(x->speed), ph = t * rate / 128u;
+        uint32_t zl = xz_level(x);
+        bool starlit = star && (x->flags & ZX_STAR);
+        uint32_t flash = 0;                                 // strum flash: fades over ~200 ms at normal speed
+        if (xflash_on) {
+            uint32_t D = 200u * 128u / rate + 1, age = t - xflash_t0;
+            if (age < D) flash = 255u * (D - age) / D;
+        }
+        for (int k = 0; k < n; k++) {
+            xs_t *q = &xst[z][k];
+            uint16_t o[3];
+            uint8_t col[3];
+            uint32_t lv = 255;
+            q->spark = q->spark > 8 ? q->spark - 8 : 0;
+            if (x->effect == ZE_SPARKLE || starlit) {
+                if (rnd() % 1000u < 6u * rate / 128u) q->spark = 255;
+                if (nt) q->target = (uint8_t)rnd();
+                q->noise = (uint8_t)(q->noise + ((int)q->target - q->noise) / 4);
+            }
+            memcpy(col, x->color, 3);
+            if (starlit) {
+                st_t tmp = { 0, 0, q->spark, q->noise, 0, 0, 0 };
+                star_light(o, &tmp, (uint32_t)k, (uint32_t)n, t);
+                scale(o, zl);
+                if (slp != 255) scale(o, slp);
+                int pos = xz_pos(x, k);
+                if (pos < MAX_CHAIN_LEDS) pxs[x->chain][pos] = pack_l(o, bright);
+                continue;
+            }
+            switch (x->effect) {
+                case ZE_BREATHE: lv = 40u + 215u * tri(ph, 3000u) / 255u; break;
+                case ZE_RAINBOW: hsv((uint8_t)(ph / 12u + 256u * (uint32_t)k / (uint32_t)n), &col[0], &col[1], &col[2]); break;
+                case ZE_CHASE: {                                    // a comet with a 3.5 LED tail, running one LED per ~60 ms
+                    uint32_t span = (uint32_t)n * 1000u, head = ph * 16u % span;
+                    uint32_t d = (head + span - (uint32_t)k * 1000u) % span;
+                    lv = d < 3500u ? 255u - d * 217u / 3500u : 38u;
+                    break;
+                }
+                case ZE_SPARKLE: lv = 38u + 217u * q->spark / 255u; break;
+                case ZE_SOLID: case ZE_FRETS: case ZE_FLASH: case ZE_PRESS:
+                    lv = xz_input_led(x, k, n, fc, held, press_src[z], (uint8_t)flash, col);
+                    break;
+                default: break;
+            }
+            lit(o, col, lv * zl / 255u);
+            if (slp != 255) scale(o, slp);
+            int pos = xz_pos(x, k);
+            if (pos < MAX_CHAIN_LEDS) pxs[x->chain][pos] = pack_l(o, bright);
+        }
+    }
+}
+
 static void render(const light_t *L, int n, px_t *px, uint8_t bright, uint32_t t) {
     const yacc_config_t *c = &g_cfg;
     bool pva = pv_active();
@@ -591,29 +818,44 @@ static void render(const light_t *L, int n, px_t *px, uint8_t bright, uint32_t t
         if (l->pos < MAX_LEDS) px[l->pos] = pack_l(o, bright);
     }
     g_dh = 0;
+    render_zones(bright, t, star, ps, slp);
+    pk_type = cur_type;
 }
 
 void rgb_task(void) {
-    bool enabled = (g_cfg.flags & CFG_FLAG_RGB_ENABLED) && g_cfg.rgb_pin < NUM_DIGITAL_PINS;
+    bool on = (g_cfg.flags & CFG_FLAG_RGB_ENABLED) != 0;
+    bool enabled = on && g_cfg.rgb_pin < NUM_DIGITAL_PINS;
     if (!program_loaded) return;
     int clk = (g_cfg.led_type == LED_APA102 && g_cfg.led_clk_pin < NUM_DIGITAL_PINS) ? (int)g_cfg.led_clk_pin : -1;
     attach(enabled ? (int)g_cfg.rgb_pin : -1, clk, g_cfg.led_type);
-    if (!enabled || cur_pin < 0) { pend_i = pend_n = 0; return; }
+    for (int c = 1; c < NUM_XCHAINS; c++) {                 // extra chains: only the pins some zone uses, each with its own LED type
+        uint8_t p = g_ext.xled_pin[c - 1], k = g_ext.xled_clk[c - 1], ty = g_ext.xled_type[c - 1];
+        bool apa = ty == LED_APA102;
+        bool use = on && xled_chain_used(&g_ext, c) && p < NUM_DIGITAL_PINS && ty < NUM_LED_TYPES &&
+                   (!apa || (k < NUM_DIGITAL_PINS && k != p)) &&
+                   (int)p != cur_pin && (int)p != cur_clk && (!apa || ((int)k != cur_pin && (int)k != cur_clk));
+        xattach(c, use ? (int)p : -1, use && apa ? (int)k : -1, ty);
+    }
+    bool any_x = ch[1].pin >= 0 || ch[2].pin >= 0 || ch[3].pin >= 0;
+    if (cur_pin < 0 && !any_x) { pend_i = pend_n = 0; return; }
     pump();                                                 // finish the previous frame a few words at a time
 
     uint32_t now = time_us_32();
-    if ((uint32_t)(now - last_frame) < FRAME_US || pend_i < pend_n) return;
+    if ((uint32_t)(now - last_frame) < FRAME_US || chains_busy()) return;
     frame_us = now - last_frame;
     last_frame = now;
 
-    uint8_t bright = g_cfg.rgb_brightness;                  // 0..255, capped for the layout (led_max_brightness), unless overdrive
-    const uint8_t ceil_b = led_brightness_ceiling(&g_cfg, g_ext.led_flags);
+    uint8_t bright = g_cfg.rgb_brightness;                  // 0..255, capped for the layout and the zones (xled_ceiling), unless overdrive
+    const uint8_t ceil_b = led_brightness_ceiling_x(&g_cfg, &g_ext);
     if (bright > ceil_b) bright = ceil_b;
     light_t L[MAX_LEDS];
     int chain;
     int n = build_lights(L, &chain);
-    px_t px[MAX_LEDS];
-    memset(px, 0, sizeof(px));
+    px_t *px = pxs[0];
+    memset(pxs, 0, sizeof(pxs));
+    pk_type = cur_type;
+    zone_lengths();
+    if (xlen[0] > chain) chain = xlen[0];
 #define SET(k, rr, gg, bb, lv) set_px(px, L[k].pos, (rr), (gg), (bb), (lv), bright)
     bool testing = test_led >= 0 && (int32_t)(now - test_until) < 0;
     bool booting = (g_cfg.flags & CFG_FLAG_RGB_BOOTFLASH) && boot_fret >= 0 && (uint32_t)(now - boot_t0) < BOOT_FLASH_US;
@@ -621,7 +863,12 @@ void rgb_task(void) {
     if (force_off && to_ms_since_boot(get_absolute_time()) - off_t0 >= 1000) {
         // Bluetooth idle sleep: black (the pixels are already zero)
     } else if (testing) {
-        if (test_led < MAX_LEDS) { px[test_led] = pack(255, 255, 255, 255, bright); if (test_led + 1 > chain) chain = test_led + 1; }
+        if (test_led < MAX_CHAIN_LEDS && test_chain < NUM_XCHAINS) {
+            pk_type = test_chain ? ch[test_chain].type : cur_type;
+            pxs[test_chain][test_led] = pack(255, 255, 255, 255, bright);
+            pk_type = cur_type;
+            if (test_led + 1 > (test_chain ? xlen[test_chain] : chain)) { if (test_chain) xlen[test_chain] = (uint8_t)(test_led + 1); else chain = test_led + 1; }
+        }
     } else if (booting) {
         // the fret that picks the running mode flashes; with no fret LEDs the strum LEDs flash in its colour
         if (((now - boot_t0) / BLINK_US) % 2 == 0) {
@@ -661,5 +908,11 @@ void rgb_task(void) {
         render(L, n, px, bright, tick());
     }
 #undef SET
-    output(px, chain);
+    if (cur_pin >= 0) output(px, chain);
+    for (int c = 1; c < NUM_XCHAINS; c++) {
+        if (ch[c].pin < 0 || !xlen[c]) continue;
+        if (ch[c].type == LED_APA102) { ch[c].n = apa_encode(ch[c].b, pxs[c], xlen[c], g_ext.xled_order[c - 1]); ch[c].i = 0; }
+        else ws_encode(&ch[c], pxs[c], xlen[c], ch[c].type, g_ext.xled_order[c - 1]);
+    }
+    pump();
 }

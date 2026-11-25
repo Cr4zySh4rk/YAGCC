@@ -25,6 +25,8 @@ void ext_defaults(ext_config_t *e) {
     memset(e, 0, sizeof(*e));
     memset(e->pin_ext, PIN_NONE, sizeof(e->pin_ext));
     e->rsv1 = 0xFF;
+    memset(e->xled_pin, PIN_NONE, sizeof(e->xled_pin));
+    memset(e->xled_clk, PIN_NONE, sizeof(e->xled_clk));
     e->stick_x_ch = e->stick_y_ch = PIN_NONE;
     e->stick_deadzone = 10;
     e->x_min = e->y_min = 0;
@@ -42,6 +44,48 @@ bool ext_pin_used_by_main(const yacc_config_t *c, uint8_t g) {
                            c->ps2_dat, c->ps2_clk, c->ps2_ack, c->wii_sda, c->wii_scl, c->accel_sda, c->accel_scl};
     for (unsigned i = 0; i < sizeof(one); i++) if (one[i] == g) return true;
     return c->host_dp_pin != PIN_NONE && (unsigned)c->host_dp_pin + 1 == g;
+}
+
+// extra LED zones: ranges, overlap, pins of the chains in use, LED type, overlap with the fret / strum LEDs
+static bool xled_validate(const ext_config_t *e, const yacc_config_t *main) {
+    for (int z = 0; z < NUM_XZONES; z++) {
+        const xzone_t *x = &e->xzone[z];
+        if (!xz_valid(z, x)) return false;
+        if (!x->count) continue;
+        for (int y = 0; y < z; y++) if (xz_overlap(x, &e->xzone[y])) return false;
+        if (main && !x->chain) {                                               // the main chain also carries the fret and strum LEDs
+            for (int k = 0; k < x->count; k++) {
+                int p = xz_pos(x, k);
+                if (!main->no_fret_leds)
+                    for (int f = 0; f < NUM_FRETS; f++) {
+                        if (main->led_map[f] == p) return false;
+                        if (main->fret_leds == 2 && main->led_map2[f] == p) return false;
+                    }
+                for (int i = 0; i < main->strum_leds && i < MAX_STRUM_LEDS; i++) if (strum_led_pos(main, i) == p) return false;
+            }
+        }
+    }
+    // chains in use: own data pin (and clock pin for APA102 / SK9822), LED type and colour order; no pin shared
+    // with another chain, an ext input or the main config. Unused chains are not looked at (old configs hold zeros).
+    uint8_t used[2 * NUM_XCHAINS];
+    int nu = 0;
+    for (int c = 1; c < NUM_XCHAINS; c++) {
+        if (!xled_chain_used(e, c)) continue;
+        uint8_t p = e->xled_pin[c - 1], k = e->xled_clk[c - 1], ty = e->xled_type[c - 1];
+        if (p >= NUM_DIGITAL_PINS || ty >= NUM_LED_TYPES || e->xled_order[c - 1] >= NUM_ORDERS) return false;
+        if (ty == LED_APA102) { if (k >= NUM_DIGITAL_PINS) return false; }
+        else if (k != PIN_NONE) return false;
+        uint8_t mine[2] = { p, k };
+        for (int m = 0; m < 2; m++) {
+            if (mine[m] == PIN_NONE) continue;
+            for (int j = 0; j < nu; j++) if (used[j] == mine[m]) return false;
+            for (int j = 0; j < NUM_EXT_PINS; j++) if (e->pin_ext[j] == mine[m]) return false;
+            if (main && ext_pin_used_by_main(main, mine[m])) return false;
+            used[nu++] = mine[m];
+        }
+        if (k == p) return false;
+    }
+    return true;
 }
 
 bool ext_validate(const ext_config_t *e, const yacc_config_t *main) {
@@ -74,6 +118,7 @@ bool ext_validate(const ext_config_t *e, const yacc_config_t *main) {
     if (e->tilt_sw_type > 1 || e->tilt_sw_filter_ms > TILT_FILTER_MAX_MS) return false;
     if (!strum_guard_valid(e->strum_guard)) return false;
     if (!led_flags_valid(e->led_flags)) return false;
+    if (!xled_validate(e, main)) return false;
     for (int r = 0; r < EXT_MAP_ROWS; r++)
         for (int c = 0; c < EXT_MAP_COLS; c++) {
             uint8_t v = e->map[r][c];

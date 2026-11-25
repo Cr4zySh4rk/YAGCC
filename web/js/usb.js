@@ -1,4 +1,4 @@
-import { DEVICE_FILTERS, isYaccUsb, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash, EXT_MIN_MINOR, EXT_SIZE, parseExt, serializeExt, STATUS_LEN_42, defaultExt } from './protocol.js?v=dev';
+import { DEVICE_FILTERS, isYaccUsb, VREQ, CFG_SIZE, parseConfig, serializeConfig, parseInfo, parseStatus, parseBtLog, parseBtLogFlash, EXT_MIN_MINOR, EXT_SIZE, parseExt, serializeExt, STATUS_LEN_42, defaultExt, xledSafeExt, XLED_MIN_MINOR } from './protocol.js?v=dev';
 
 const hexOf = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 const IFACE = 1;   // vendor config interface
@@ -64,14 +64,15 @@ export class YaccDevice extends EventTarget {
   async setConfig(cfg) {
     await this._out(VREQ.SETCFG, 0, serializeConfig(cfg));
     if (cfg.ext && this.hasExt) {
-      const buf = serializeExt(cfg.ext), h = hexOf(buf);
+      const buf = serializeExt(xledSafeExt(cfg), this.info.major > 0 || this.info.minor >= XLED_MIN_MINOR), h = hexOf(buf);
       if (h !== this._extSent) { await this._out(VREQ.SETEXT, 0, buf); this._extSent = h; }
     }
   }
   async save() { await this._out(VREQ.SAVE); }
   async defaults() { await this._out(VREQ.DEFAULTS); this._extSent = null; }
   async rumbleTest(ms = 400) { await this._out(VREQ.RUMBLE, ms); }
-  async ledTest(i) { await this._out(VREQ.LEDTEST, i < 0 ? 0xffff : i); }
+  // position on a chain (firmware 0.56+: chain 0..3 in the high byte, 0 = the main chain, which older firmware also assumes); i < 0 = off
+  async ledTest(i, chain = 0) { await this._out(VREQ.LEDTEST, i < 0 ? 0xffff : ((chain & 3) << 8) | (i & 0xff)); }
   // Lights page preview on the real LEDs (firmware 0.35+): bits 0..4 frets, 5 strum up, 6 down, 7 star power, 8..15 whammy
   async ledPreview(bits, on) { await this._out(VREQ.LEDPREVIEW, bits & 0xffff, undefined, on ? 1 : 0); }
   async reboot(bootsel = false) { await this._out(VREQ.REBOOT, bootsel ? 1 : 0); }
